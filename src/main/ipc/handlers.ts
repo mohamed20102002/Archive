@@ -17,6 +17,11 @@ import * as issueService from '../services/issue.service'
 import * as credentialService from '../services/credential.service'
 import * as secureReferenceService from '../services/secure-reference.service'
 import * as auditService from '../database/audit'
+import * as settingsService from '../services/settings.service'
+import * as aiService from '../services/ai.service'
+import * as attendanceService from '../services/attendance.service'
+import * as attendancePdfService from '../services/attendance-pdf.service'
+import * as momService from '../services/mom.service'
 
 export function registerIpcHandlers(): void {
   // ===== Auth Handlers =====
@@ -390,6 +395,14 @@ export function registerIpcHandlers(): void {
     return letterService.getPendingLetters()
   })
 
+  ipcMain.handle('letters:getByLetterId', async (_event, letterId: string) => {
+    return letterService.getLetterByLetterId(letterId)
+  })
+
+  ipcMain.handle('letters:getLinkedMoms', async (_event, letterInternalId: string) => {
+    return letterService.getLinkedMoms(letterInternalId)
+  })
+
   ipcMain.handle('letters:getOverdue', async () => {
     return letterService.getOverdueLetters()
   })
@@ -569,8 +582,28 @@ export function registerIpcHandlers(): void {
     return issueService.reopenIssue(id, userId)
   })
 
-  ipcMain.handle('issues:addComment', async (_event, issueId: string, comment: string, userId: string) => {
-    return issueService.addComment(issueId, comment, userId)
+  ipcMain.handle('issues:addComment', async (_event, issueId: string, comment: string, userId: string, linkedRecordIds?: string[]) => {
+    return issueService.addComment(issueId, comment, userId, linkedRecordIds)
+  })
+
+  ipcMain.handle('issues:searchRecordsForLinking', async (_event, query: string, topicId?: string) => {
+    return issueService.searchRecordsForLinking(query, topicId)
+  })
+
+  ipcMain.handle('issues:getRecordForLinking', async (_event, id: string) => {
+    return issueService.getRecordForLinking(id)
+  })
+
+  ipcMain.handle('issues:updateComment', async (_event, historyId: string, comment: string, userId: string) => {
+    return issueService.updateComment(historyId, comment, userId)
+  })
+
+  ipcMain.handle('issues:addLinkedRecords', async (_event, historyId: string, recordIds: string[], userId: string) => {
+    return issueService.addLinkedRecordsToComment(historyId, recordIds, userId)
+  })
+
+  ipcMain.handle('issues:getCommentEdits', async (_event, historyId: string) => {
+    return issueService.getCommentEdits(historyId)
   })
 
   ipcMain.handle('issues:getHistory', async (_event, issueId: string) => {
@@ -660,6 +693,352 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle('secureReferences:getStats', async () => {
     return credentialService.getSecureResourceStats()
+  })
+
+  // ===== Settings Handlers =====
+
+  ipcMain.handle('settings:get', async (_event, key: string) => {
+    return settingsService.getSetting(key)
+  })
+
+  ipcMain.handle('settings:getAll', async () => {
+    return settingsService.getAllSettings()
+  })
+
+  ipcMain.handle('settings:update', async (_event, key: string, value: string, userId: string) => {
+    return settingsService.updateSetting(key, value, userId)
+  })
+
+  ipcMain.handle('settings:updateAll', async (_event, settings: Record<string, string>, userId: string) => {
+    return settingsService.updateSettings(settings, userId)
+  })
+
+  // ===== AI Handlers =====
+
+  ipcMain.handle('ai:getStatus', async () => {
+    return aiService.getModelStatus()
+  })
+
+  ipcMain.handle('ai:summarize', async (_event, topicId: string, mode?: string) => {
+    return aiService.summarizeTopic(topicId, (mode as any) || 'full')
+  })
+
+  ipcMain.handle('ai:dispose', async () => {
+    aiService.disposeModel()
+  })
+
+  // ===== Attendance Handlers =====
+
+  ipcMain.handle('attendance:createCondition', async (_event, data: unknown, userId: string) => {
+    return attendanceService.createCondition(data as attendanceService.CreateConditionData, userId)
+  })
+
+  ipcMain.handle('attendance:updateCondition', async (_event, id: string, data: unknown, userId: string) => {
+    return attendanceService.updateCondition(id, data as attendanceService.UpdateConditionData, userId)
+  })
+
+  ipcMain.handle('attendance:deleteCondition', async (_event, id: string, userId: string) => {
+    return attendanceService.deleteCondition(id, userId)
+  })
+
+  ipcMain.handle('attendance:getConditions', async (_event, includeDeleted?: boolean) => {
+    return attendanceService.getAllConditions(includeDeleted)
+  })
+
+  ipcMain.handle('attendance:saveEntry', async (_event, data: unknown, userId: string) => {
+    return attendanceService.saveEntry(data as attendanceService.SaveEntryData, userId)
+  })
+
+  ipcMain.handle('attendance:saveBulkEntries', async (_event, data: unknown, userId: string) => {
+    return attendanceService.saveBulkEntries(data as attendanceService.BulkSaveEntryData, userId)
+  })
+
+  ipcMain.handle('attendance:deleteEntry', async (_event, entryId: string, userId: string) => {
+    return attendanceService.deleteEntry(entryId, userId)
+  })
+
+  ipcMain.handle('attendance:getEntry', async (_event, userId: string, entryDate: string) => {
+    return attendanceService.getEntry(userId, entryDate)
+  })
+
+  ipcMain.handle('attendance:getEntriesForYear', async (_event, filters: unknown) => {
+    return attendanceService.getEntriesForYear(filters as attendanceService.AttendanceFilters)
+  })
+
+  ipcMain.handle('attendance:getSummary', async (_event, userId: string, year: number) => {
+    return attendanceService.getSummaryForYear(userId, year)
+  })
+
+  ipcMain.handle('attendance:getAllSummaries', async (_event, year: number) => {
+    return attendanceService.getAllSummariesForYear(year)
+  })
+
+  ipcMain.handle('attendance:getAvailableYears', async () => {
+    return attendanceService.getAvailableYears()
+  })
+
+  ipcMain.handle('attendance:isYearEditable', async (_event, year: number) => {
+    return attendanceService.isYearEditable(year)
+  })
+
+  // Shift CRUD
+  ipcMain.handle('attendance:createShift', async (_event, data: unknown, userId: string) => {
+    return attendanceService.createShift(data as attendanceService.CreateShiftData, userId)
+  })
+
+  ipcMain.handle('attendance:updateShift', async (_event, id: string, data: unknown, userId: string) => {
+    return attendanceService.updateShift(id, data as attendanceService.UpdateShiftData, userId)
+  })
+
+  ipcMain.handle('attendance:deleteShift', async (_event, id: string, userId: string) => {
+    return attendanceService.deleteShift(id, userId)
+  })
+
+  ipcMain.handle('attendance:getShifts', async (_event, includeDeleted?: boolean) => {
+    return attendanceService.getAllShifts(includeDeleted)
+  })
+
+  // PDF export with save dialog
+  ipcMain.handle('attendance:exportUserPdfDialog', async (_event, targetUserId: string, year: number, userId: string) => {
+    const result = await attendancePdfService.exportUserPdf(targetUserId, year, userId)
+    if (!result.success || !result.buffer) {
+      return { success: false, error: result.error || 'Failed to generate PDF' }
+    }
+
+    const win = BrowserWindow.getFocusedWindow()
+    if (!win) return { success: false, error: 'No active window' }
+
+    const dialogResult = await dialog.showSaveDialog(win, {
+      title: 'Save Attendance PDF',
+      defaultPath: `attendance_${year}.pdf`,
+      filters: [{ name: 'PDF Files', extensions: ['pdf'] }]
+    })
+
+    if (dialogResult.canceled || !dialogResult.filePath) {
+      return { success: false, error: 'Export canceled' }
+    }
+
+    fs.writeFileSync(dialogResult.filePath, result.buffer)
+    return { success: true, filePath: dialogResult.filePath }
+  })
+
+  ipcMain.handle('attendance:exportPdfDialog', async (_event, year: number, userId: string) => {
+    const result = await attendancePdfService.exportYearPdf(year, userId)
+    if (!result.success || !result.buffer) {
+      return { success: false, error: result.error || 'Failed to generate PDF' }
+    }
+
+    const win = BrowserWindow.getFocusedWindow()
+    if (!win) return { success: false, error: 'No active window' }
+
+    const dialogResult = await dialog.showSaveDialog(win, {
+      title: 'Save Attendance PDF',
+      defaultPath: `attendance_all_${year}.pdf`,
+      filters: [{ name: 'PDF Files', extensions: ['pdf'] }]
+    })
+
+    if (dialogResult.canceled || !dialogResult.filePath) {
+      return { success: false, error: 'Export canceled' }
+    }
+
+    fs.writeFileSync(dialogResult.filePath, result.buffer)
+    return { success: true, filePath: dialogResult.filePath }
+  })
+
+  // ===== MOM Location Handlers =====
+
+  ipcMain.handle('momLocations:create', async (_event, data: unknown, userId: string) => {
+    return momService.createLocation(data as momService.CreateMomLocationData, userId)
+  })
+
+  ipcMain.handle('momLocations:update', async (_event, id: string, data: unknown, userId: string) => {
+    return momService.updateLocation(id, data as momService.UpdateMomLocationData, userId)
+  })
+
+  ipcMain.handle('momLocations:delete', async (_event, id: string, userId: string) => {
+    return momService.deleteLocation(id, userId)
+  })
+
+  ipcMain.handle('momLocations:getAll', async () => {
+    return momService.getAllLocations()
+  })
+
+  // ===== MOM Handlers =====
+
+  ipcMain.handle('moms:create', async (_event, data: unknown, userId: string) => {
+    return momService.createMom(data as momService.CreateMomData, userId)
+  })
+
+  ipcMain.handle('moms:getById', async (_event, id: string) => {
+    return momService.getMomById(id)
+  })
+
+  ipcMain.handle('moms:getByMomId', async (_event, momId: string) => {
+    return momService.getMomByMomId(momId)
+  })
+
+  ipcMain.handle('moms:getAll', async (_event, filters?: unknown) => {
+    return momService.getAllMoms(filters as momService.MomFilters | undefined)
+  })
+
+  ipcMain.handle('moms:update', async (_event, id: string, data: unknown, userId: string) => {
+    return momService.updateMom(id, data as momService.UpdateMomData, userId)
+  })
+
+  ipcMain.handle('moms:delete', async (_event, id: string, userId: string) => {
+    return momService.deleteMom(id, userId)
+  })
+
+  ipcMain.handle('moms:close', async (_event, id: string, userId: string) => {
+    return momService.closeMom(id, userId)
+  })
+
+  ipcMain.handle('moms:reopen', async (_event, id: string, userId: string) => {
+    return momService.reopenMom(id, userId)
+  })
+
+  ipcMain.handle('moms:saveFile', async (_event, momId: string, fileBase64: string, filename: string, userId: string) => {
+    const fileBuffer = Buffer.from(fileBase64, 'base64')
+    return momService.saveMomFile(momId, fileBuffer, filename, userId)
+  })
+
+  ipcMain.handle('moms:getFilePath', async (_event, momId: string) => {
+    return momService.getMomFilePath(momId)
+  })
+
+  ipcMain.handle('moms:getStats', async () => {
+    return momService.getMomStats()
+  })
+
+  ipcMain.handle('moms:linkTopic', async (_event, momInternalId: string, topicId: string, userId: string) => {
+    return momService.linkTopic(momInternalId, topicId, userId)
+  })
+
+  ipcMain.handle('moms:unlinkTopic', async (_event, momInternalId: string, topicId: string, userId: string) => {
+    return momService.unlinkTopic(momInternalId, topicId, userId)
+  })
+
+  ipcMain.handle('moms:getLinkedTopics', async (_event, momInternalId: string) => {
+    return momService.getLinkedTopics(momInternalId)
+  })
+
+  ipcMain.handle('moms:linkRecord', async (_event, momInternalId: string, recordId: string, userId: string) => {
+    return momService.linkRecord(momInternalId, recordId, userId)
+  })
+
+  ipcMain.handle('moms:unlinkRecord', async (_event, momInternalId: string, recordId: string, userId: string) => {
+    return momService.unlinkRecord(momInternalId, recordId, userId)
+  })
+
+  ipcMain.handle('moms:getLinkedRecords', async (_event, momInternalId: string) => {
+    return momService.getLinkedRecords(momInternalId)
+  })
+
+  // MOM-Letter linking
+  ipcMain.handle('moms:linkLetter', async (_event, momInternalId: string, letterInternalId: string, userId: string) => {
+    return momService.linkLetter(momInternalId, letterInternalId, userId)
+  })
+
+  ipcMain.handle('moms:unlinkLetter', async (_event, momInternalId: string, letterInternalId: string, userId: string) => {
+    return momService.unlinkLetter(momInternalId, letterInternalId, userId)
+  })
+
+  ipcMain.handle('moms:getLinkedLetters', async (_event, momInternalId: string) => {
+    return momService.getLinkedLetters(momInternalId)
+  })
+
+  ipcMain.handle('moms:getByTopic', async (_event, topicId: string) => {
+    return momService.getMomsByTopic(topicId)
+  })
+
+  ipcMain.handle('moms:getByRecord', async (_event, recordId: string) => {
+    return momService.getMomsByRecord(recordId)
+  })
+
+  ipcMain.handle('moms:getHistory', async (_event, momInternalId: string) => {
+    return momService.getMomHistory(momInternalId)
+  })
+
+  // ===== MOM Action Handlers =====
+
+  ipcMain.handle('momActions:create', async (_event, data: unknown, userId: string) => {
+    return momService.createAction(data as momService.CreateMomActionData, userId)
+  })
+
+  ipcMain.handle('momActions:getById', async (_event, id: string) => {
+    return momService.getActionById(id)
+  })
+
+  ipcMain.handle('momActions:getByMom', async (_event, momInternalId: string) => {
+    return momService.getActionsByMom(momInternalId)
+  })
+
+  ipcMain.handle('momActions:update', async (_event, id: string, data: unknown, userId: string) => {
+    return momService.updateAction(id, data as momService.UpdateMomActionData, userId)
+  })
+
+  ipcMain.handle('momActions:resolve', async (_event, id: string, data: unknown, userId: string) => {
+    return momService.resolveAction(id, data as momService.ResolveMomActionData, userId)
+  })
+
+  ipcMain.handle('momActions:reopen', async (_event, id: string, userId: string) => {
+    return momService.reopenAction(id, userId)
+  })
+
+  ipcMain.handle('momActions:saveResolutionFile', async (_event, actionId: string, fileBase64: string, filename: string, userId: string) => {
+    const fileBuffer = Buffer.from(fileBase64, 'base64')
+    return momService.saveActionResolutionFile(actionId, fileBuffer, filename, userId)
+  })
+
+  ipcMain.handle('momActions:getResolutionFilePath', async (_event, actionId: string) => {
+    return momService.getActionResolutionFilePath(actionId)
+  })
+
+  ipcMain.handle('momActions:getDueReminders', async () => {
+    return momService.getActionsWithDueReminders()
+  })
+
+  ipcMain.handle('momActions:getWithReminders', async () => {
+    return momService.getActionsWithReminders()
+  })
+
+  ipcMain.handle('momActions:getWithDeadlines', async () => {
+    return momService.getActionsWithDeadlines()
+  })
+
+  ipcMain.handle('momActions:markReminderNotified', async (_event, id: string) => {
+    return momService.markActionReminderNotified(id)
+  })
+
+  // ===== MOM Draft Handlers =====
+
+  ipcMain.handle('momDrafts:create', async (_event, data: unknown, userId: string) => {
+    return momService.createDraft(data as momService.CreateMomDraftData, userId)
+  })
+
+  ipcMain.handle('momDrafts:getById', async (_event, id: string) => {
+    return momService.getDraftById(id)
+  })
+
+  ipcMain.handle('momDrafts:getByMom', async (_event, momInternalId: string) => {
+    return momService.getDraftsByMom(momInternalId)
+  })
+
+  ipcMain.handle('momDrafts:getLatest', async (_event, momInternalId: string) => {
+    return momService.getLatestDraft(momInternalId)
+  })
+
+  ipcMain.handle('momDrafts:saveFile', async (_event, draftId: string, fileBase64: string, filename: string, userId: string) => {
+    const fileBuffer = Buffer.from(fileBase64, 'base64')
+    return momService.saveDraftFile(draftId, fileBuffer, filename, userId)
+  })
+
+  ipcMain.handle('momDrafts:getFilePath', async (_event, draftId: string) => {
+    return momService.getDraftFilePath(draftId)
+  })
+
+  ipcMain.handle('momDrafts:delete', async (_event, id: string, userId: string) => {
+    return momService.deleteDraft(id, userId)
   })
 
   // ===== File Dialog Handlers =====

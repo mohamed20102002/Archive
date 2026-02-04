@@ -5,7 +5,7 @@ import { ReminderForm } from './ReminderForm'
 import { notifyReminderDataChanged } from './ReminderBadge'
 import { useToast } from '../../context/ToastContext'
 import { useAuth } from '../../context/AuthContext'
-import type { Reminder, Issue } from '../../types'
+import type { Reminder, Issue, MomAction } from '../../types'
 
 type FilterType = 'all' | 'pending' | 'overdue' | 'completed'
 type ViewMode = 'card' | 'table'
@@ -21,12 +21,14 @@ interface DisplayItem {
   priority: string
   topic_title?: string
   completed_at?: string | null
-  source: 'reminder' | 'issue'
+  source: 'reminder' | 'issue' | 'mom-action'
+  mom_internal_id?: string
 }
 
 export function ReminderList() {
   const [reminders, setReminders] = useState<Reminder[]>([])
   const [issueReminders, setIssueReminders] = useState<Issue[]>([])
+  const [momActionReminders, setMomActionReminders] = useState<MomAction[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
   const [editingReminder, setEditingReminder] = useState<Reminder | null>(null)
@@ -39,12 +41,14 @@ export function ReminderList() {
 
   const loadReminders = async () => {
     try {
-      const [data, issueData] = await Promise.all([
+      const [data, issueData, momActionData] = await Promise.all([
         window.electronAPI.reminders.getAll(),
-        window.electronAPI.issues.getWithReminders() // All open issues with reminders
+        window.electronAPI.issues.getWithReminders(),
+        window.electronAPI.momActions.getWithDeadlines()
       ])
       setReminders(data as Reminder[])
       setIssueReminders((issueData as Issue[]).filter(i => i.reminder_date))
+      setMomActionReminders(momActionData as MomAction[])
     } catch (err) {
       console.error('Error loading reminders:', err)
       error('Failed to load reminders')
@@ -81,12 +85,25 @@ export function ReminderList() {
       title: i.title,
       description: i.description || null,
       due_date: i.reminder_date!,
-      is_completed: false, // Only open issues are returned
+      is_completed: false,
       is_overdue: new Date(i.reminder_date!) < now,
       priority: i.importance === 'critical' ? 'urgent' : i.importance === 'high' ? 'high' : 'normal',
       topic_title: i.topic_title,
       completed_at: null,
       source: 'issue'
+    })),
+    ...momActionReminders.map((a): DisplayItem => ({
+      id: `mom-action-${a.id}`,
+      title: a.description,
+      description: a.mom_title || null,
+      due_date: a.deadline!,
+      is_completed: false,
+      is_overdue: new Date(a.deadline!) < now,
+      priority: 'normal',
+      topic_title: undefined,
+      completed_at: null,
+      source: 'mom-action',
+      mom_internal_id: a.mom_internal_id
     }))
   ]
 
@@ -189,7 +206,7 @@ export function ReminderList() {
   const overdueCount = allItems.filter(r => !r.is_completed && r.is_overdue).length
 
   return (
-    <div className="-m-6 flex flex-col h-[calc(100vh-4rem)]">
+    <div className="flex flex-col h-full">
       {/* Sticky Header */}
       <div className="sticky top-0 z-10 bg-archive-light px-6 pt-6 pb-4 border-b border-gray-200">
         <div className="flex items-center justify-between">
@@ -287,17 +304,30 @@ export function ReminderList() {
             {filteredReminders.map((item) => {
               const dueInfo = formatDueDate(item.due_date)
               const isIssue = item.source === 'issue'
+              const isMomAction = item.source === 'mom-action'
+              const isClickable = isIssue || isMomAction
+
+              const handleRowClick = () => {
+                if (isIssue) navigate('/issues')
+                else if (isMomAction && item.mom_internal_id) navigate(`/mom?momId=${item.mom_internal_id}`)
+              }
 
               return (
                 <div
                   key={item.id}
-                  onClick={isIssue ? () => navigate('/issues') : undefined}
+                  onClick={isClickable ? handleRowClick : undefined}
                   className={`card-hover flex items-start gap-4 ${
                     item.is_completed ? 'opacity-60' : ''
-                  } ${isIssue ? 'cursor-pointer' : ''}`}
+                  } ${isClickable ? 'cursor-pointer' : ''}`}
                 >
-                  {/* Checkbox / Issue icon */}
-                  {isIssue ? (
+                  {/* Checkbox / Issue icon / MOM Action icon */}
+                  {isMomAction ? (
+                    <div className="flex-shrink-0 w-6 h-6 rounded-full bg-purple-100 flex items-center justify-center">
+                      <svg className="w-3.5 h-3.5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+                      </svg>
+                    </div>
+                  ) : isIssue ? (
                     <div className="flex-shrink-0 w-6 h-6 rounded-full bg-orange-100 flex items-center justify-center">
                       <svg className="w-3.5 h-3.5 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
@@ -330,11 +360,13 @@ export function ReminderList() {
                             {item.title}
                           </h4>
                           <span className={`flex-shrink-0 text-[10px] px-1.5 py-0 rounded font-medium ${
-                            isIssue
-                              ? 'bg-orange-100 text-orange-600'
-                              : 'bg-blue-100 text-blue-600'
+                            isMomAction
+                              ? 'bg-purple-100 text-purple-600'
+                              : isIssue
+                                ? 'bg-orange-100 text-orange-600'
+                                : 'bg-blue-100 text-blue-600'
                           }`}>
-                            {isIssue ? 'Issue' : 'Reminder'}
+                            {isMomAction ? 'MOM Action' : isIssue ? 'Issue' : 'Reminder'}
                           </span>
                         </div>
                         {item.description && (
@@ -343,7 +375,7 @@ export function ReminderList() {
                       </div>
 
                       {/* Actions — only for regular reminders */}
-                      {!isIssue && (
+                      {!isIssue && !isMomAction && (
                         <div className="flex items-center gap-1">
                           <button
                             onClick={() => handleDelete(item.id, item.title)}
@@ -412,14 +444,28 @@ export function ReminderList() {
                 {filteredReminders.map((item) => {
                   const dueInfo = formatDueDate(item.due_date)
                   const isIssue = item.source === 'issue'
+                  const isMomAction = item.source === 'mom-action'
+                  const isClickable = isIssue || isMomAction
+
+                  const handleRowClick = () => {
+                    if (isIssue) navigate('/issues')
+                    else if (isMomAction && item.mom_internal_id) navigate(`/mom?momId=${item.mom_internal_id}`)
+                  }
+
                   return (
                     <tr
                       key={item.id}
-                      onClick={isIssue ? () => navigate('/issues') : undefined}
-                      className={`hover:bg-gray-50 ${item.is_completed ? 'opacity-60' : ''} ${isIssue ? 'cursor-pointer' : ''}`}
+                      onClick={isClickable ? handleRowClick : undefined}
+                      className={`hover:bg-gray-50 ${item.is_completed ? 'opacity-60' : ''} ${isClickable ? 'cursor-pointer' : ''}`}
                     >
                       <td className="px-4 py-3">
-                        {isIssue ? (
+                        {isMomAction ? (
+                          <div className="w-5 h-5 rounded-full bg-purple-100 flex items-center justify-center">
+                            <svg className="w-3 h-3 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+                            </svg>
+                          </div>
+                        ) : isIssue ? (
                           <div className="w-5 h-5 rounded-full bg-orange-100 flex items-center justify-center">
                             <svg className="w-3 h-3 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
@@ -450,11 +496,13 @@ export function ReminderList() {
                       </td>
                       <td className="px-4 py-3">
                         <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
-                          isIssue
-                            ? 'bg-orange-100 text-orange-600'
-                            : 'bg-blue-100 text-blue-600'
+                          isMomAction
+                            ? 'bg-purple-100 text-purple-600'
+                            : isIssue
+                              ? 'bg-orange-100 text-orange-600'
+                              : 'bg-blue-100 text-blue-600'
                         }`}>
-                          {isIssue ? 'Issue' : 'Reminder'}
+                          {isMomAction ? 'MOM Action' : isIssue ? 'Issue' : 'Reminder'}
                         </span>
                       </td>
                       <td className="px-4 py-3">
@@ -481,7 +529,7 @@ export function ReminderList() {
                         <span className="text-sm text-gray-600">{item.topic_title || '-'}</span>
                       </td>
                       <td className="px-4 py-3 text-right">
-                        {!isIssue && (
+                        {!isIssue && !isMomAction && (
                           <button
                             onClick={() => handleDelete(item.id, item.title)}
                             className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded"

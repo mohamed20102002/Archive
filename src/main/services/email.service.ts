@@ -190,7 +190,7 @@ export async function archiveEmail(
       topicId,
       subcategoryId || null,
       emailData.subject,
-      emailData.bodyPreview || null,
+      null,
       id,
       userId,
       now.toISOString(),

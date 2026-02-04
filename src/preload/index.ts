@@ -124,6 +124,8 @@ export interface ElectronAPI {
     getStats: () => Promise<unknown>
     getPending: () => Promise<unknown[]>
     getOverdue: () => Promise<unknown[]>
+    getByLetterId: (letterId: string) => Promise<unknown | null>
+    getLinkedMoms: (letterInternalId: string) => Promise<unknown[]>
   }
   letterDrafts: {
     create: (data: unknown, userId: string) => Promise<{ success: boolean; draft?: unknown; error?: string }>
@@ -173,7 +175,12 @@ export interface ElectronAPI {
     update: (id: string, data: unknown, userId: string) => Promise<{ success: boolean; error?: string }>
     close: (id: string, closureNote: string | null, userId: string) => Promise<{ success: boolean; error?: string }>
     reopen: (id: string, userId: string) => Promise<{ success: boolean; error?: string }>
-    addComment: (issueId: string, comment: string, userId: string) => Promise<{ success: boolean; error?: string }>
+    addComment: (issueId: string, comment: string, userId: string, linkedRecordIds?: string[]) => Promise<{ success: boolean; error?: string }>
+    searchRecordsForLinking: (query: string, topicId?: string) => Promise<{ id: string; title: string; topic_title: string; topic_id: string; type: string; subcategory_title: string | null; created_at: string }[]>
+    getRecordForLinking: (id: string) => Promise<{ id: string; title: string; topic_title: string; topic_id: string; type: string; subcategory_title: string | null; created_at: string } | null>
+    updateComment: (historyId: string, comment: string, userId: string) => Promise<{ success: boolean; error?: string }>
+    addLinkedRecords: (historyId: string, recordIds: string[], userId: string) => Promise<{ success: boolean; error?: string }>
+    getCommentEdits: (historyId: string) => Promise<{ id: string; history_id: string; old_comment: string; edited_by: string; edited_at: string; editor_name?: string }[]>
     getHistory: (issueId: string) => Promise<unknown[]>
     getStats: () => Promise<unknown>
     getDueReminders: () => Promise<unknown[]>
@@ -199,6 +206,92 @@ export interface ElectronAPI {
     deleteFile: (fileId: string, userId: string) => Promise<{ success: boolean; error?: string }>
     getFilePath: (fileId: string) => Promise<string | null>
     getStats: () => Promise<unknown>
+  }
+  attendance: {
+    createCondition: (data: unknown, userId: string) => Promise<{ success: boolean; condition?: unknown; error?: string }>
+    updateCondition: (id: string, data: unknown, userId: string) => Promise<{ success: boolean; error?: string }>
+    deleteCondition: (id: string, userId: string) => Promise<{ success: boolean; error?: string }>
+    getConditions: (includeDeleted?: boolean) => Promise<unknown[]>
+    saveEntry: (data: unknown, userId: string) => Promise<{ success: boolean; entry?: unknown; error?: string }>
+    saveBulkEntries: (data: unknown, userId: string) => Promise<{ success: boolean; count?: number; error?: string }>
+    deleteEntry: (entryId: string, userId: string) => Promise<{ success: boolean; error?: string }>
+    getEntry: (userId: string, entryDate: string) => Promise<unknown | null>
+    getEntriesForYear: (filters: unknown) => Promise<unknown[]>
+    getSummary: (userId: string, year: number) => Promise<unknown>
+    getAllSummaries: (year: number) => Promise<unknown[]>
+    getAvailableYears: () => Promise<number[]>
+    isYearEditable: (year: number) => Promise<boolean>
+    createShift: (data: unknown, userId: string) => Promise<{ success: boolean; shift?: unknown; error?: string }>
+    updateShift: (id: string, data: unknown, userId: string) => Promise<{ success: boolean; error?: string }>
+    deleteShift: (id: string, userId: string) => Promise<{ success: boolean; error?: string }>
+    getShifts: (includeDeleted?: boolean) => Promise<unknown[]>
+    exportUserPdfDialog: (targetUserId: string, year: number, userId: string) => Promise<{ success: boolean; filePath?: string; error?: string }>
+    exportPdfDialog: (year: number, userId: string) => Promise<{ success: boolean; filePath?: string; error?: string }>
+  }
+  momLocations: {
+    create: (data: unknown, userId: string) => Promise<{ success: boolean; location?: unknown; error?: string }>
+    update: (id: string, data: unknown, userId: string) => Promise<{ success: boolean; error?: string }>
+    delete: (id: string, userId: string) => Promise<{ success: boolean; error?: string }>
+    getAll: () => Promise<unknown[]>
+  }
+  moms: {
+    create: (data: unknown, userId: string) => Promise<{ success: boolean; mom?: unknown; error?: string }>
+    getById: (id: string) => Promise<unknown | null>
+    getByMomId: (momId: string) => Promise<unknown | null>
+    getAll: (filters?: unknown) => Promise<unknown[]>
+    update: (id: string, data: unknown, userId: string) => Promise<{ success: boolean; error?: string }>
+    delete: (id: string, userId: string) => Promise<{ success: boolean; error?: string }>
+    close: (id: string, userId: string) => Promise<{ success: boolean; error?: string }>
+    reopen: (id: string, userId: string) => Promise<{ success: boolean; error?: string }>
+    saveFile: (momId: string, fileBase64: string, filename: string, userId: string) => Promise<{ success: boolean; error?: string }>
+    getFilePath: (momId: string) => Promise<string | null>
+    getStats: () => Promise<unknown>
+    linkTopic: (momInternalId: string, topicId: string, userId: string) => Promise<{ success: boolean; error?: string }>
+    unlinkTopic: (momInternalId: string, topicId: string, userId: string) => Promise<{ success: boolean; error?: string }>
+    getLinkedTopics: (momInternalId: string) => Promise<unknown[]>
+    linkRecord: (momInternalId: string, recordId: string, userId: string) => Promise<{ success: boolean; error?: string }>
+    unlinkRecord: (momInternalId: string, recordId: string, userId: string) => Promise<{ success: boolean; error?: string }>
+    getLinkedRecords: (momInternalId: string) => Promise<unknown[]>
+    linkLetter: (momInternalId: string, letterInternalId: string, userId: string) => Promise<{ success: boolean; error?: string }>
+    unlinkLetter: (momInternalId: string, letterInternalId: string, userId: string) => Promise<{ success: boolean; error?: string }>
+    getLinkedLetters: (momInternalId: string) => Promise<unknown[]>
+    getByTopic: (topicId: string) => Promise<unknown[]>
+    getByRecord: (recordId: string) => Promise<unknown[]>
+    getHistory: (momInternalId: string) => Promise<unknown[]>
+  }
+  momActions: {
+    create: (data: unknown, userId: string) => Promise<{ success: boolean; action?: unknown; error?: string }>
+    getById: (id: string) => Promise<unknown | null>
+    getByMom: (momInternalId: string) => Promise<unknown[]>
+    update: (id: string, data: unknown, userId: string) => Promise<{ success: boolean; error?: string }>
+    resolve: (id: string, data: unknown, userId: string) => Promise<{ success: boolean; error?: string }>
+    reopen: (id: string, userId: string) => Promise<{ success: boolean; error?: string }>
+    saveResolutionFile: (actionId: string, fileBase64: string, filename: string, userId: string) => Promise<{ success: boolean; error?: string }>
+    getResolutionFilePath: (actionId: string) => Promise<string | null>
+    getDueReminders: () => Promise<unknown[]>
+    getWithReminders: () => Promise<unknown[]>
+    getWithDeadlines: () => Promise<unknown[]>
+    markReminderNotified: (id: string) => Promise<{ success: boolean; error?: string }>
+  }
+  momDrafts: {
+    create: (data: unknown, userId: string) => Promise<{ success: boolean; draft?: unknown; error?: string }>
+    getById: (id: string) => Promise<unknown | null>
+    getByMom: (momInternalId: string) => Promise<unknown[]>
+    getLatest: (momInternalId: string) => Promise<unknown | null>
+    saveFile: (draftId: string, fileBase64: string, filename: string, userId: string) => Promise<{ success: boolean; error?: string }>
+    getFilePath: (draftId: string) => Promise<string | null>
+    delete: (id: string, userId: string) => Promise<{ success: boolean; error?: string }>
+  }
+  settings: {
+    get: (key: string) => Promise<string | null>
+    getAll: () => Promise<Record<string, string>>
+    update: (key: string, value: string, userId: string) => Promise<{ success: boolean; error?: string }>
+    updateAll: (settings: Record<string, string>, userId: string) => Promise<{ success: boolean; error?: string }>
+  }
+  ai: {
+    getStatus: () => Promise<{ available: boolean; modelLoaded: boolean; modelName: string | null; error?: string }>
+    summarize: (topicId: string, mode?: string) => Promise<{ success: boolean; summary?: string; error?: string }>
+    dispose: () => Promise<void>
   }
   dialog: {
     openFile: (options?: {
@@ -325,7 +418,9 @@ const electronAPI: ElectronAPI = {
     getFilePath: (letterId) => ipcRenderer.invoke('letters:getFilePath', letterId),
     getStats: () => ipcRenderer.invoke('letters:getStats'),
     getPending: () => ipcRenderer.invoke('letters:getPending'),
-    getOverdue: () => ipcRenderer.invoke('letters:getOverdue')
+    getOverdue: () => ipcRenderer.invoke('letters:getOverdue'),
+    getByLetterId: (letterId) => ipcRenderer.invoke('letters:getByLetterId', letterId),
+    getLinkedMoms: (letterInternalId) => ipcRenderer.invoke('letters:getLinkedMoms', letterInternalId)
   },
   letterDrafts: {
     create: (data, userId) => ipcRenderer.invoke('letterDrafts:create', data, userId),
@@ -375,7 +470,12 @@ const electronAPI: ElectronAPI = {
     update: (id, data, userId) => ipcRenderer.invoke('issues:update', id, data, userId),
     close: (id, closureNote, userId) => ipcRenderer.invoke('issues:close', id, closureNote, userId),
     reopen: (id, userId) => ipcRenderer.invoke('issues:reopen', id, userId),
-    addComment: (issueId, comment, userId) => ipcRenderer.invoke('issues:addComment', issueId, comment, userId),
+    addComment: (issueId, comment, userId, linkedRecordIds?) => ipcRenderer.invoke('issues:addComment', issueId, comment, userId, linkedRecordIds),
+    searchRecordsForLinking: (query, topicId) => ipcRenderer.invoke('issues:searchRecordsForLinking', query, topicId),
+    getRecordForLinking: (id) => ipcRenderer.invoke('issues:getRecordForLinking', id),
+    updateComment: (historyId, comment, userId) => ipcRenderer.invoke('issues:updateComment', historyId, comment, userId),
+    addLinkedRecords: (historyId, recordIds, userId) => ipcRenderer.invoke('issues:addLinkedRecords', historyId, recordIds, userId),
+    getCommentEdits: (historyId) => ipcRenderer.invoke('issues:getCommentEdits', historyId),
     getHistory: (issueId) => ipcRenderer.invoke('issues:getHistory', issueId),
     getStats: () => ipcRenderer.invoke('issues:getStats'),
     getDueReminders: () => ipcRenderer.invoke('issues:getDueReminders'),
@@ -401,6 +501,92 @@ const electronAPI: ElectronAPI = {
     deleteFile: (fileId, userId) => ipcRenderer.invoke('secureReferences:deleteFile', fileId, userId),
     getFilePath: (fileId) => ipcRenderer.invoke('secureReferences:getFilePath', fileId),
     getStats: () => ipcRenderer.invoke('secureReferences:getStats')
+  },
+  attendance: {
+    createCondition: (data, userId) => ipcRenderer.invoke('attendance:createCondition', data, userId),
+    updateCondition: (id, data, userId) => ipcRenderer.invoke('attendance:updateCondition', id, data, userId),
+    deleteCondition: (id, userId) => ipcRenderer.invoke('attendance:deleteCondition', id, userId),
+    getConditions: (includeDeleted) => ipcRenderer.invoke('attendance:getConditions', includeDeleted),
+    saveEntry: (data, userId) => ipcRenderer.invoke('attendance:saveEntry', data, userId),
+    saveBulkEntries: (data, userId) => ipcRenderer.invoke('attendance:saveBulkEntries', data, userId),
+    deleteEntry: (entryId, userId) => ipcRenderer.invoke('attendance:deleteEntry', entryId, userId),
+    getEntry: (userId, entryDate) => ipcRenderer.invoke('attendance:getEntry', userId, entryDate),
+    getEntriesForYear: (filters) => ipcRenderer.invoke('attendance:getEntriesForYear', filters),
+    getSummary: (userId, year) => ipcRenderer.invoke('attendance:getSummary', userId, year),
+    getAllSummaries: (year) => ipcRenderer.invoke('attendance:getAllSummaries', year),
+    getAvailableYears: () => ipcRenderer.invoke('attendance:getAvailableYears'),
+    isYearEditable: (year) => ipcRenderer.invoke('attendance:isYearEditable', year),
+    createShift: (data, userId) => ipcRenderer.invoke('attendance:createShift', data, userId),
+    updateShift: (id, data, userId) => ipcRenderer.invoke('attendance:updateShift', id, data, userId),
+    deleteShift: (id, userId) => ipcRenderer.invoke('attendance:deleteShift', id, userId),
+    getShifts: (includeDeleted) => ipcRenderer.invoke('attendance:getShifts', includeDeleted),
+    exportUserPdfDialog: (targetUserId, year, userId) => ipcRenderer.invoke('attendance:exportUserPdfDialog', targetUserId, year, userId),
+    exportPdfDialog: (year, userId) => ipcRenderer.invoke('attendance:exportPdfDialog', year, userId)
+  },
+  momLocations: {
+    create: (data, userId) => ipcRenderer.invoke('momLocations:create', data, userId),
+    update: (id, data, userId) => ipcRenderer.invoke('momLocations:update', id, data, userId),
+    delete: (id, userId) => ipcRenderer.invoke('momLocations:delete', id, userId),
+    getAll: () => ipcRenderer.invoke('momLocations:getAll')
+  },
+  moms: {
+    create: (data, userId) => ipcRenderer.invoke('moms:create', data, userId),
+    getById: (id) => ipcRenderer.invoke('moms:getById', id),
+    getByMomId: (momId) => ipcRenderer.invoke('moms:getByMomId', momId),
+    getAll: (filters) => ipcRenderer.invoke('moms:getAll', filters),
+    update: (id, data, userId) => ipcRenderer.invoke('moms:update', id, data, userId),
+    delete: (id, userId) => ipcRenderer.invoke('moms:delete', id, userId),
+    close: (id, userId) => ipcRenderer.invoke('moms:close', id, userId),
+    reopen: (id, userId) => ipcRenderer.invoke('moms:reopen', id, userId),
+    saveFile: (momId, fileBase64, filename, userId) => ipcRenderer.invoke('moms:saveFile', momId, fileBase64, filename, userId),
+    getFilePath: (momId) => ipcRenderer.invoke('moms:getFilePath', momId),
+    getStats: () => ipcRenderer.invoke('moms:getStats'),
+    linkTopic: (momInternalId, topicId, userId) => ipcRenderer.invoke('moms:linkTopic', momInternalId, topicId, userId),
+    unlinkTopic: (momInternalId, topicId, userId) => ipcRenderer.invoke('moms:unlinkTopic', momInternalId, topicId, userId),
+    getLinkedTopics: (momInternalId) => ipcRenderer.invoke('moms:getLinkedTopics', momInternalId),
+    linkRecord: (momInternalId, recordId, userId) => ipcRenderer.invoke('moms:linkRecord', momInternalId, recordId, userId),
+    unlinkRecord: (momInternalId, recordId, userId) => ipcRenderer.invoke('moms:unlinkRecord', momInternalId, recordId, userId),
+    getLinkedRecords: (momInternalId) => ipcRenderer.invoke('moms:getLinkedRecords', momInternalId),
+    linkLetter: (momInternalId, letterInternalId, userId) => ipcRenderer.invoke('moms:linkLetter', momInternalId, letterInternalId, userId),
+    unlinkLetter: (momInternalId, letterInternalId, userId) => ipcRenderer.invoke('moms:unlinkLetter', momInternalId, letterInternalId, userId),
+    getLinkedLetters: (momInternalId) => ipcRenderer.invoke('moms:getLinkedLetters', momInternalId),
+    getByTopic: (topicId) => ipcRenderer.invoke('moms:getByTopic', topicId),
+    getByRecord: (recordId) => ipcRenderer.invoke('moms:getByRecord', recordId),
+    getHistory: (momInternalId) => ipcRenderer.invoke('moms:getHistory', momInternalId)
+  },
+  momActions: {
+    create: (data, userId) => ipcRenderer.invoke('momActions:create', data, userId),
+    getById: (id) => ipcRenderer.invoke('momActions:getById', id),
+    getByMom: (momInternalId) => ipcRenderer.invoke('momActions:getByMom', momInternalId),
+    update: (id, data, userId) => ipcRenderer.invoke('momActions:update', id, data, userId),
+    resolve: (id, data, userId) => ipcRenderer.invoke('momActions:resolve', id, data, userId),
+    reopen: (id, userId) => ipcRenderer.invoke('momActions:reopen', id, userId),
+    saveResolutionFile: (actionId, fileBase64, filename, userId) => ipcRenderer.invoke('momActions:saveResolutionFile', actionId, fileBase64, filename, userId),
+    getResolutionFilePath: (actionId) => ipcRenderer.invoke('momActions:getResolutionFilePath', actionId),
+    getDueReminders: () => ipcRenderer.invoke('momActions:getDueReminders'),
+    getWithReminders: () => ipcRenderer.invoke('momActions:getWithReminders'),
+    getWithDeadlines: () => ipcRenderer.invoke('momActions:getWithDeadlines'),
+    markReminderNotified: (id) => ipcRenderer.invoke('momActions:markReminderNotified', id)
+  },
+  momDrafts: {
+    create: (data, userId) => ipcRenderer.invoke('momDrafts:create', data, userId),
+    getById: (id) => ipcRenderer.invoke('momDrafts:getById', id),
+    getByMom: (momInternalId) => ipcRenderer.invoke('momDrafts:getByMom', momInternalId),
+    getLatest: (momInternalId) => ipcRenderer.invoke('momDrafts:getLatest', momInternalId),
+    saveFile: (draftId, fileBase64, filename, userId) => ipcRenderer.invoke('momDrafts:saveFile', draftId, fileBase64, filename, userId),
+    getFilePath: (draftId) => ipcRenderer.invoke('momDrafts:getFilePath', draftId),
+    delete: (id, userId) => ipcRenderer.invoke('momDrafts:delete', id, userId)
+  },
+  settings: {
+    get: (key) => ipcRenderer.invoke('settings:get', key),
+    getAll: () => ipcRenderer.invoke('settings:getAll'),
+    update: (key, value, userId) => ipcRenderer.invoke('settings:update', key, value, userId),
+    updateAll: (settings, userId) => ipcRenderer.invoke('settings:updateAll', settings, userId)
+  },
+  ai: {
+    getStatus: () => ipcRenderer.invoke('ai:getStatus'),
+    summarize: (topicId, mode) => ipcRenderer.invoke('ai:summarize', topicId, mode),
+    dispose: () => ipcRenderer.invoke('ai:dispose')
   },
   dialog: {
     openFile: (options) => ipcRenderer.invoke('dialog:openFile', options)

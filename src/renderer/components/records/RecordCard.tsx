@@ -1,9 +1,10 @@
-import React from 'react'
+import React, { useState } from 'react'
 import { format } from 'date-fns'
 import type { Record } from '../../types'
 
 interface RecordCardProps {
   record: Record
+  highlighted?: boolean
   onEdit: () => void
   onDelete: () => void
   onOpenEmail?: (emailId: string) => void
@@ -53,14 +54,24 @@ const typeDotColors: globalThis.Record<string, string> = {
   decision: 'bg-orange-500'
 }
 
-export function RecordCard({ record, onEdit, onDelete, onOpenEmail }: RecordCardProps) {
+export function RecordCard({ record, highlighted, onEdit, onDelete, onOpenEmail }: RecordCardProps) {
+  const [copied, setCopied] = useState(false)
+
+  const handleCopyId = async () => {
+    try {
+      await navigator.clipboard.writeText(record.id)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1500)
+    } catch { /* ignore */ }
+  }
+
   return (
-    <div className="relative pl-10 group">
+    <div className="relative pl-10 group" data-record-id={record.id}>
       {/* Timeline dot */}
       <div className={`absolute left-2.5 top-4 w-3 h-3 rounded-full border-2 border-white shadow ${typeDotColors[record.type] || typeDotColors.note}`} />
 
       {/* Card */}
-      <div className="card-hover">
+      <div className={`card-hover transition-colors duration-700 ${highlighted ? 'ring-2 ring-primary-400 bg-primary-50/50' : ''}`}>
         {/* Header */}
         <div className="flex items-start justify-between mb-2">
           <div className="flex items-center gap-2 flex-wrap">
@@ -140,10 +151,25 @@ export function RecordCard({ record, onEdit, onDelete, onOpenEmail }: RecordCard
         {/* Footer */}
         <div className="mt-3 pt-3 border-t border-gray-100 flex items-center justify-between text-xs text-gray-400">
           <span>
-            By {record.creator_name || 'Unknown'}
+            By {record.creator_name || 'Unknown'} &middot; {format(new Date(record.created_at), 'MMM d, yyyy')}
           </span>
-          <span>
-            {format(new Date(record.created_at), 'MMM d, yyyy')}
+          <span className="flex items-center gap-1">
+            <span className="text-[11px] font-mono text-gray-400">{record.id.slice(0, 8)}</span>
+            <button
+              onClick={handleCopyId}
+              className="relative p-0.5 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors"
+              title="Copy record ID"
+            >
+              {copied ? (
+                <svg className="w-3.5 h-3.5 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+              ) : (
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                </svg>
+              )}
+            </button>
           </span>
         </div>
       </div>

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { parseISO, differenceInDays, format } from 'date-fns'
+import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { IssueTimeline } from './IssueTimeline'
 import { IssueForm } from './IssueForm'
@@ -31,6 +32,7 @@ function getAgingText(createdAt: string): string {
 
 export function IssueDetail({ issue: initialIssue, onClose, onUpdated }: IssueDetailProps) {
   const { user } = useAuth()
+  const navigate = useNavigate()
   const [issue, setIssue] = useState<Issue>(initialIssue)
   const [history, setHistory] = useState<IssueHistory[]>([])
   const [isEditing, setIsEditing] = useState(false)
@@ -38,6 +40,14 @@ export function IssueDetail({ issue: initialIssue, onClose, onUpdated }: IssueDe
   const [closureNote, setClosureNote] = useState('')
   const [comment, setComment] = useState('')
   const [submitting, setSubmitting] = useState(false)
+
+  // Linked records for comments
+  const [linkedRecords, setLinkedRecords] = useState<{ id: string; title: string; topic_title: string; topic_id: string; type: string; subcategory_title: string | null }[]>([])
+  const [recordSearch, setRecordSearch] = useState('')
+  const [recordResults, setRecordResults] = useState<{ id: string; title: string; topic_title: string; topic_id: string; type: string; subcategory_title: string | null; created_at: string }[]>([])
+  const [showRecordPicker, setShowRecordPicker] = useState(false)
+  const [pickerTopics, setPickerTopics] = useState<{ id: string; title: string }[]>([])
+  const [selectedTopicId, setSelectedTopicId] = useState('')
 
   const loadIssue = useCallback(async () => {
     try {
@@ -62,6 +72,46 @@ export function IssueDetail({ issue: initialIssue, onClose, onUpdated }: IssueDe
   useEffect(() => {
     loadHistory()
   }, [loadHistory])
+
+  // Load topics when picker opens
+  useEffect(() => {
+    if (showRecordPicker && pickerTopics.length === 0) {
+      window.electronAPI.topics.getAll().then((topics) => {
+        setPickerTopics((topics as { id: string; title: string }[]).map(t => ({ id: t.id, title: t.title })))
+      }).catch(() => {})
+    }
+  }, [showRecordPicker, pickerTopics.length])
+
+  // Search records for linking (with UUID paste-to-resolve)
+  useEffect(() => {
+    if (!recordSearch.trim()) {
+      setRecordResults([])
+      return
+    }
+    const timer = setTimeout(async () => {
+      try {
+        const trimmed = recordSearch.trim()
+        // Detect if input looks like a UUID
+        const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-/i.test(trimmed) ||
+          (trimmed.length === 36 && /^[0-9a-f-]+$/i.test(trimmed))
+
+        if (isUuid) {
+          const record = await window.electronAPI.issues.getRecordForLinking(trimmed)
+          if (record && !linkedRecords.some(lr => lr.id === record.id)) {
+            setRecordResults([record])
+            return
+          }
+        }
+
+        const results = await window.electronAPI.issues.searchRecordsForLinking(
+          trimmed,
+          selectedTopicId || undefined
+        )
+        setRecordResults(results.filter(r => !linkedRecords.some(lr => lr.id === r.id)))
+      } catch { setRecordResults([]) }
+    }, 300)
+    return () => clearTimeout(timer)
+  }, [recordSearch, linkedRecords, selectedTopicId])
 
   const handleUpdate = async (data: CreateIssueData | UpdateIssueData) => {
     if (!user) return
@@ -130,9 +180,13 @@ export function IssueDetail({ issue: initialIssue, onClose, onUpdated }: IssueDe
     if (!user || !comment.trim()) return
     setSubmitting(true)
     try {
-      const result = await window.electronAPI.issues.addComment(issue.id, comment.trim(), user.id)
+      const recordIds = linkedRecords.map(r => r.id)
+      const result = await window.electronAPI.issues.addComment(issue.id, comment.trim(), user.id, recordIds.length ? recordIds : undefined)
       if (result.success) {
         setComment('')
+        setLinkedRecords([])
+        setRecordSearch('')
+        setShowRecordPicker(false)
         await loadHistory()
       } else {
         alert(result.error || 'Failed to add comment')
@@ -314,14 +368,100 @@ export function IssueDetail({ issue: initialIssue, onClose, onUpdated }: IssueDe
       <div>
         <h4 className="text-sm font-medium text-gray-700 mb-2">Add Comment</h4>
         <div className="flex gap-2">
-          <textarea
-            value={comment}
-            onChange={(e) => setComment(e.target.value)}
-            onKeyDown={handleCommentKeyDown}
-            placeholder="Write a comment... (Ctrl+Enter to submit)"
-            rows={2}
-            className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 resize-none"
-          />
+          <div className="flex-1 space-y-2">
+            <textarea
+              value={comment}
+              onChange={(e) => setComment(e.target.value)}
+              onKeyDown={handleCommentKeyDown}
+              placeholder="Write a comment... (Ctrl+Enter to submit)"
+              rows={2}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 resize-none"
+            />
+
+            {/* Linked records chips */}
+            {linkedRecords.length > 0 && (
+              <div className="flex flex-wrap gap-1.5">
+                {linkedRecords.map(r => (
+                  <span key={r.id} className="inline-flex items-center gap-1 px-2 py-1 bg-blue-50 text-blue-700 rounded-md text-xs">
+                    <span
+                      className="inline-flex items-center gap-1 cursor-pointer hover:underline"
+                      onClick={() => r.topic_id && navigate(`/topics/${r.topic_id}?recordId=${r.id}`)}
+                      title="Go to record"
+                    >
+                      <span className="inline-flex px-1 py-0.5 rounded bg-blue-100 text-blue-600 text-[10px] font-semibold leading-none uppercase">{r.type}</span>
+                      <span className="text-blue-400 font-medium">{r.topic_title}{r.subcategory_title ? ` / ${r.subcategory_title}` : ''}:</span> {r.title}
+                    </span>
+                    <button onClick={() => setLinkedRecords(prev => prev.filter(lr => lr.id !== r.id))} className="ml-0.5 text-blue-400 hover:text-blue-600">
+                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
+
+            {/* Link records toggle */}
+            <div>
+              <button
+                type="button"
+                onClick={() => setShowRecordPicker(!showRecordPicker)}
+                className="text-xs text-primary-600 hover:text-primary-700 flex items-center gap-1"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+                </svg>
+                {showRecordPicker ? 'Hide record picker' : 'Link to records'}
+              </button>
+
+              {showRecordPicker && (
+                <div className="mt-1.5 space-y-1.5">
+                  <select
+                    value={selectedTopicId}
+                    onChange={(e) => { setSelectedTopicId(e.target.value); setRecordSearch(''); setRecordResults([]) }}
+                    className="w-full px-3 py-1.5 border border-gray-300 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white"
+                  >
+                    <option value="">All Topics</option>
+                    {pickerTopics.map(t => (
+                      <option key={t.id} value={t.id}>{t.title}</option>
+                    ))}
+                  </select>
+                  <div className="relative">
+                    <input
+                      type="text"
+                      value={recordSearch}
+                      onChange={(e) => setRecordSearch(e.target.value)}
+                      placeholder="Search records by title..."
+                      className="w-full px-3 py-1.5 border border-gray-300 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-primary-500"
+                    />
+                    {recordResults.length > 0 && (
+                      <div className="absolute z-20 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-52 overflow-auto">
+                        {recordResults.map(r => (
+                          <button
+                            key={r.id}
+                            type="button"
+                            onClick={() => {
+                              setLinkedRecords(prev => [...prev, { id: r.id, title: r.title, topic_title: r.topic_title, topic_id: r.topic_id, type: r.type, subcategory_title: r.subcategory_title }])
+                              setRecordSearch('')
+                              setRecordResults([])
+                            }}
+                            className="w-full text-left px-3 py-2 text-xs hover:bg-gray-50 border-b border-gray-100 last:border-0"
+                          >
+                            <div className="flex items-center gap-1.5">
+                              <span className="inline-flex px-1 py-0.5 rounded bg-gray-100 text-gray-500 text-[10px] font-semibold leading-none uppercase flex-shrink-0">{r.type}</span>
+                              <span className="text-gray-400">{r.topic_title} / {r.subcategory_title || '\u2014'} /</span>
+                              <span className="font-medium text-gray-700 truncate">{r.title}</span>
+                            </div>
+                            <div className="text-[10px] text-gray-400 mt-0.5 ml-[calc(1.5rem+6px)]">
+                              {(() => { try { return format(parseISO(r.created_at), 'd MMM yyyy') } catch { return r.created_at } })()}
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
           <button
             onClick={handleAddComment}
             disabled={!comment.trim() || submitting}
@@ -337,7 +477,7 @@ export function IssueDetail({ issue: initialIssue, onClose, onUpdated }: IssueDe
       {/* Timeline */}
       <div>
         <h4 className="text-sm font-medium text-gray-700 mb-3">History</h4>
-        <IssueTimeline history={history} />
+        <IssueTimeline history={history} onHistoryChanged={loadHistory} />
       </div>
     </div>
   )

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
-import { Letter, LetterDraft, LetterReference, LetterAttachment, LetterStatus, LetterPriority, DraftStatus, ReferenceType } from '../../types'
+import { Letter, LetterDraft, LetterReference, LetterAttachment, LetterStatus, LetterPriority, DraftStatus, ReferenceType, LetterMomLink, Mom } from '../../types'
 import { ProcessFlowGraph } from './ProcessFlowGraph'
 
 interface LetterDetailProps {
@@ -11,10 +12,11 @@ interface LetterDetailProps {
   onRefresh: () => void
 }
 
-type TabMode = 'details' | 'drafts' | 'references' | 'flow'
+type TabMode = 'details' | 'drafts' | 'references' | 'moms' | 'flow'
 
 export function LetterDetail({ letter, onEdit, onDelete, onClose, onRefresh }: LetterDetailProps) {
   const { user } = useAuth()
+  const navigate = useNavigate()
   const [tabMode, setTabMode] = useState<TabMode>('details')
   const [drafts, setDrafts] = useState<LetterDraft[]>([])
   const [attachments, setAttachments] = useState<LetterAttachment[]>([])
@@ -36,6 +38,23 @@ export function LetterDetail({ letter, onEdit, onDelete, onClose, onRefresh }: L
   const [refSearching, setRefSearching] = useState(false)
   const [foundLetter, setFoundLetter] = useState<Letter | null>(null)
 
+  // Copyable ID state
+  const [copied, setCopied] = useState(false)
+
+  // MOM linking state
+  const [linkedMoms, setLinkedMoms] = useState<LetterMomLink[]>([])
+  const [momIdSearch, setMomIdSearch] = useState('')
+  const [foundMom, setFoundMom] = useState<Mom | null>(null)
+  const [momSearchError, setMomSearchError] = useState('')
+
+  const handleCopyId = async () => {
+    try {
+      await navigator.clipboard.writeText(letter.id)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1500)
+    } catch { /* ignore */ }
+  }
+
   useEffect(() => {
     loadDraftsAndReferences()
   }, [letter.id])
@@ -43,10 +62,11 @@ export function LetterDetail({ letter, onEdit, onDelete, onClose, onRefresh }: L
   const loadDraftsAndReferences = async () => {
     setLoading(true)
     try {
-      const [draftsResult, attachmentsResult, refsResult] = await Promise.all([
+      const [draftsResult, attachmentsResult, refsResult, momsResult] = await Promise.all([
         window.electronAPI.letterDrafts.getByLetter(letter.id),
         window.electronAPI.letterAttachments.getByLetter(letter.id),
-        window.electronAPI.letterReferences.getAll(letter.id)
+        window.electronAPI.letterReferences.getAll(letter.id),
+        window.electronAPI.letters.getLinkedMoms(letter.id)
       ])
       setDrafts(Array.isArray(draftsResult) ? draftsResult as LetterDraft[] : [])
       setAttachments(Array.isArray(attachmentsResult) ? attachmentsResult as LetterAttachment[] : [])
@@ -55,6 +75,7 @@ export function LetterDetail({ letter, onEdit, onDelete, onClose, onRefresh }: L
         from: Array.isArray(refs?.from) ? refs.from : [],
         to: Array.isArray(refs?.to) ? refs.to : []
       })
+      setLinkedMoms(Array.isArray(momsResult) ? momsResult as LetterMomLink[] : [])
     } catch (error) {
       console.error('Error loading letter data:', error)
     } finally {
@@ -280,6 +301,64 @@ export function LetterDetail({ letter, onEdit, onDelete, onClose, onRefresh }: L
     }
   }
 
+  // MOM search
+  useEffect(() => {
+    if (!momIdSearch.trim()) {
+      setFoundMom(null)
+      setMomSearchError('')
+      return
+    }
+    const timer = setTimeout(async () => {
+      try {
+        const result = await window.electronAPI.moms.getById(momIdSearch.trim())
+        if (result) {
+          setFoundMom(result as Mom)
+          setMomSearchError('')
+        } else {
+          setFoundMom(null)
+          setMomSearchError('No MOM found with this ID')
+        }
+      } catch {
+        setFoundMom(null)
+        setMomSearchError('Error searching')
+      }
+    }, 500)
+    return () => clearTimeout(timer)
+  }, [momIdSearch])
+
+  const handleLinkMom = async () => {
+    if (!user || !foundMom) return
+    try {
+      const result = await window.electronAPI.moms.linkLetter(foundMom.id, letter.id, user.id)
+      if (result.success) {
+        setMomIdSearch('')
+        setFoundMom(null)
+        setMomSearchError('')
+        loadDraftsAndReferences()
+      } else {
+        setMomSearchError(result.error || 'Failed to link MOM')
+      }
+    } catch (err) {
+      console.error('Error linking MOM:', err)
+    }
+  }
+
+  const handleUnlinkMom = async (momInternalId: string) => {
+    if (!user) return
+    try {
+      const result = await window.electronAPI.moms.unlinkLetter(momInternalId, letter.id, user.id)
+      if (result.success) {
+        loadDraftsAndReferences()
+      } else {
+        alert(result.error || 'Failed to unlink MOM')
+      }
+    } catch (err) {
+      console.error('Error unlinking MOM:', err)
+    }
+  }
+
+  const linkedMomIds = new Set(linkedMoms.map(m => m.mom_internal_id))
+
   const isOverdue = letter.due_date && new Date(letter.due_date) < new Date() && letter.status !== 'replied' && letter.status !== 'closed'
 
   return (
@@ -308,11 +387,31 @@ export function LetterDetail({ letter, onEdit, onDelete, onClose, onRefresh }: L
             )}
           </div>
           <h2 className="text-xl font-bold text-gray-900">{letter.subject}</h2>
-          {(letter.reference_number || letter.incoming_number || letter.outgoing_number) && (
-            <p className="text-sm font-mono text-gray-500 mt-1">
-              Ref: {letter.reference_number || letter.incoming_number || letter.outgoing_number}
-            </p>
-          )}
+          <div className="flex items-center gap-2 mt-1 flex-wrap">
+            <span className="inline-flex items-center gap-1 text-sm font-mono font-medium text-primary-700 bg-primary-50 px-2 py-0.5 rounded">
+              {letter.id.slice(0, 8)}
+              <button
+                onClick={handleCopyId}
+                className="p-0.5 rounded hover:bg-primary-100 transition-colors"
+                title="Copy letter ID"
+              >
+                {copied ? (
+                  <svg className="w-3.5 h-3.5 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                ) : (
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                  </svg>
+                )}
+              </button>
+            </span>
+            {(letter.reference_number || letter.incoming_number || letter.outgoing_number) && (
+              <span className="text-sm font-mono text-gray-500">
+                Ref: {letter.reference_number || letter.incoming_number || letter.outgoing_number}
+              </span>
+            )}
+          </div>
         </div>
         <div className="flex items-center gap-2">
           <button onClick={onEdit} className="btn-secondary text-sm">
@@ -328,7 +427,7 @@ export function LetterDetail({ letter, onEdit, onDelete, onClose, onRefresh }: L
 
       {/* Tabs */}
       <div className="flex gap-4 py-3 border-b">
-        {(['details', 'drafts', 'references', 'flow'] as TabMode[]).map((tab) => (
+        {(['details', 'drafts', 'references', 'moms', 'flow'] as TabMode[]).map((tab) => (
           <button
             key={tab}
             onClick={() => setTabMode(tab)}
@@ -341,6 +440,7 @@ export function LetterDetail({ letter, onEdit, onDelete, onClose, onRefresh }: L
             {tab === 'details' ? 'Details' :
              tab === 'drafts' ? `Drafts (${drafts.length})` :
              tab === 'references' ? `References (${references.from.length + references.to.length})` :
+             tab === 'moms' ? `MOMs (${linkedMoms.length})` :
              'Process Flow'}
           </button>
         ))}
@@ -775,6 +875,93 @@ export function LetterDetail({ letter, onEdit, onDelete, onClose, onRefresh }: L
                       {ref.notes && <p className="text-xs text-gray-500 mt-1">{ref.notes}</p>}
                     </div>
                   ))}
+                </div>
+              )}
+            </div>
+          </div>
+        ) : tabMode === 'moms' ? (
+          /* Linked MOMs Tab */
+          <div className="space-y-4">
+            {/* Linked MOMs list */}
+            {linkedMoms.length > 0 ? (
+              <div className="space-y-2">
+                {linkedMoms.map((link) => (
+                  <div key={link.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg group">
+                    <div
+                      className="flex items-center gap-3 min-w-0 cursor-pointer hover:text-primary-700"
+                      onClick={() => {
+                        onClose()
+                        navigate(`/mom?momId=${link.mom_internal_id}`)
+                      }}
+                    >
+                      {link.mom_display_id && (
+                        <span className="text-xs font-mono font-medium text-gray-700 bg-gray-200 px-2 py-0.5 rounded flex-shrink-0">
+                          {link.mom_display_id}
+                        </span>
+                      )}
+                      <span className={`text-xs px-2 py-0.5 rounded-full flex-shrink-0 ${
+                        link.mom_status === 'open' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'
+                      }`}>
+                        {link.mom_status}
+                      </span>
+                      <span className="text-sm text-gray-900 truncate">{link.mom_title}</span>
+                    </div>
+                    <button
+                      onClick={() => handleUnlinkMom(link.mom_internal_id)}
+                      className="p-1 rounded text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors opacity-0 group-hover:opacity-100 flex-shrink-0"
+                      title="Unlink MOM"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-gray-500">No MOMs linked to this letter.</p>
+            )}
+
+            {/* Search MOM by ID */}
+            <div className="border-t pt-4">
+              <h4 className="text-sm font-medium text-gray-700 mb-2">Link a MOM</h4>
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={momIdSearch}
+                  onChange={(e) => setMomIdSearch(e.target.value)}
+                  placeholder="Paste MOM ID to link..."
+                  className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+                />
+              </div>
+              {momSearchError && (
+                <p className="text-xs text-red-500 mt-1">{momSearchError}</p>
+              )}
+              {foundMom && !linkedMomIds.has(foundMom.id) && (
+                <div className="mt-2 p-3 bg-green-50 border border-green-200 rounded-lg">
+                  <div className="flex items-center justify-between">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 mb-1">
+                        {foundMom.mom_id && (
+                          <span className="text-xs font-mono font-medium text-gray-700 bg-gray-200 px-1.5 py-0.5 rounded">
+                            {foundMom.mom_id}
+                          </span>
+                        )}
+                        <span className={`text-xs px-1.5 py-0.5 rounded-full ${
+                          foundMom.status === 'open' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'
+                        }`}>
+                          {foundMom.status}
+                        </span>
+                      </div>
+                      <p className="text-sm font-medium text-gray-900 truncate">{foundMom.title}</p>
+                    </div>
+                    <button
+                      onClick={handleLinkMom}
+                      className="px-3 py-1.5 text-xs font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 transition-colors flex-shrink-0 ml-2"
+                    >
+                      Link
+                    </button>
+                  </div>
                 </div>
               )}
             </div>

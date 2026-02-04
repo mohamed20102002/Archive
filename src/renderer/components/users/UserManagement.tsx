@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { Modal } from '../common/Modal'
 import { useToast } from '../../context/ToastContext'
 import { useAuth } from '../../context/AuthContext'
-import type { User } from '../../types'
+import type { User, Shift } from '../../types'
 
 interface UserManagementProps {
   isOpen: boolean
@@ -15,12 +15,15 @@ interface UserFormData {
   confirmPassword: string
   displayName: string
   role: 'admin' | 'user'
+  employeeNumber: string
 }
 
 interface EditUserData {
   username: string
   displayName: string
   role: 'admin' | 'user'
+  employeeNumber: string
+  shiftId: string
 }
 
 const initialFormData: UserFormData = {
@@ -28,11 +31,13 @@ const initialFormData: UserFormData = {
   password: '',
   confirmPassword: '',
   displayName: '',
-  role: 'user'
+  role: 'user',
+  employeeNumber: ''
 }
 
 export function UserManagement({ isOpen, onClose }: UserManagementProps) {
   const [users, setUsers] = useState<User[]>([])
+  const [shifts, setShifts] = useState<Shift[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [showAddModal, setShowAddModal] = useState(false)
   const [editingUser, setEditingUser] = useState<User | null>(null)
@@ -42,7 +47,7 @@ export function UserManagement({ isOpen, onClose }: UserManagementProps) {
   const [newPassword, setNewPassword] = useState('')
   const [confirmNewPassword, setConfirmNewPassword] = useState('')
   const [showEditUser, setShowEditUser] = useState<User | null>(null)
-  const [editUserData, setEditUserData] = useState<EditUserData>({ username: '', displayName: '', role: 'user' })
+  const [editUserData, setEditUserData] = useState<EditUserData>({ username: '', displayName: '', role: 'user', employeeNumber: '', shiftId: '' })
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
   const [showNewPassword, setShowNewPassword] = useState(false)
@@ -54,8 +59,12 @@ export function UserManagement({ isOpen, onClose }: UserManagementProps) {
   const loadUsers = async () => {
     setIsLoading(true)
     try {
-      const data = await window.electronAPI.auth.getAllUsers()
+      const [data, allShifts] = await Promise.all([
+        window.electronAPI.auth.getAllUsers(),
+        window.electronAPI.attendance.getShifts()
+      ])
       setUsers(data as User[])
+      setShifts(allShifts as Shift[])
     } catch (err) {
       console.error('Error loading users:', err)
       error('Failed to load users')
@@ -138,7 +147,9 @@ export function UserManagement({ isOpen, onClose }: UserManagementProps) {
     setEditUserData({
       username: user.username,
       displayName: user.display_name,
-      role: user.role
+      role: user.role,
+      employeeNumber: user.employee_number || '',
+      shiftId: user.shift_id || ''
     })
     setShowEditUser(user)
   }
@@ -169,7 +180,9 @@ export function UserManagement({ isOpen, onClose }: UserManagementProps) {
         {
           username: editUserData.username.trim(),
           display_name: editUserData.displayName.trim(),
-          role: editUserData.role
+          role: editUserData.role,
+          employee_number: editUserData.employeeNumber.trim() || null,
+          shift_id: editUserData.shiftId || null
         },
         currentUser.id
       )
@@ -286,6 +299,9 @@ export function UserManagement({ isOpen, onClose }: UserManagementProps) {
                     User
                   </th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Emp #
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Role
                   </th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -317,6 +333,9 @@ export function UserManagement({ isOpen, onClose }: UserManagementProps) {
                           <div className="text-sm text-gray-500">@{user.username}</div>
                         </div>
                       </div>
+                    </td>
+                    <td className="px-4 py-3 text-sm text-gray-600">
+                      {user.employee_number || '-'}
                     </td>
                     <td className="px-4 py-3">
                       <select
@@ -433,6 +452,19 @@ export function UserManagement({ isOpen, onClose }: UserManagementProps) {
                 onChange={(e) => setFormData({ ...formData, displayName: e.target.value })}
                 className="input"
                 placeholder="Enter display name"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Employee Number
+              </label>
+              <input
+                type="text"
+                value={formData.employeeNumber}
+                onChange={(e) => setFormData({ ...formData, employeeNumber: e.target.value })}
+                className="input"
+                placeholder="Enter employee number (optional)"
               />
             </div>
 
@@ -693,6 +725,35 @@ export function UserManagement({ isOpen, onClose }: UserManagementProps) {
               {showEditUser.id === currentUser?.id && (
                 <p className="text-xs text-gray-500 mt-1">You cannot change your own role</p>
               )}
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Employee Number
+              </label>
+              <input
+                type="text"
+                value={editUserData.employeeNumber}
+                onChange={(e) => setEditUserData({ ...editUserData, employeeNumber: e.target.value })}
+                className="input"
+                placeholder="Enter employee number"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Shift
+              </label>
+              <select
+                value={editUserData.shiftId}
+                onChange={(e) => setEditUserData({ ...editUserData, shiftId: e.target.value })}
+                className="input"
+              >
+                <option value="">No shift assigned</option>
+                {shifts.map(s => (
+                  <option key={s.id} value={s.id}>{s.name}</option>
+                ))}
+              </select>
             </div>
 
             <div className="bg-gray-50 rounded-lg p-3 space-y-2">

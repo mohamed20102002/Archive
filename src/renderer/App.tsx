@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { useAuth } from './context/AuthContext'
+import { useSettings } from './context/SettingsContext'
 import { MainLayout } from './components/layout/MainLayout'
 import { LoginForm } from './components/auth/LoginForm'
 import { FirstRunSetup } from './components/auth/FirstRunSetup'
@@ -12,6 +13,16 @@ import { ShiftHandover } from './components/handover/ShiftHandover'
 import { AuditLog } from './components/audit/AuditLog'
 import { OpenIssues } from './components/issues/OpenIssues'
 import { SecureResources } from './components/secure-resources/SecureResources'
+import { AttendancePage } from './components/attendance/AttendancePage'
+import { Settings } from './components/settings/Settings'
+import { MOMList } from './components/mom/MOMList'
+
+function DefaultRedirect() {
+  const { settings, loading } = useSettings()
+
+  if (loading) return null
+  return <Navigate to={settings.default_view || '/topics'} replace />
+}
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isLoading } = useAuth()
@@ -101,17 +112,20 @@ export function App() {
             </ProtectedRoute>
           }
         >
-          <Route index element={<Navigate to="/topics" replace />} />
-          <Route path="topics" element={<TopicList />} />
+          <Route index element={<DefaultRedirect />} />
+          {/* Keep-alive routes: rendered in MainLayout, toggled by CSS */}
+          <Route path="topics" element={null} />
           <Route path="topics/:topicId" element={<Timeline />} />
-          <Route path="letters" element={<LetterList />} />
-          {/* /outlook route is handled directly in MainLayout to keep it mounted */}
+          <Route path="letters" element={null} />
           <Route path="outlook" element={null} />
-          <Route path="reminders" element={<ReminderList />} />
-          <Route path="issues" element={<OpenIssues />} />
-          <Route path="handover" element={<ShiftHandover />} />
-          <Route path="secure-resources" element={<SecureResources />} />
-          <Route path="audit" element={<AuditLog />} />
+          <Route path="reminders" element={null} />
+          <Route path="issues" element={null} />
+          <Route path="mom" element={null} />
+          <Route path="handover" element={null} />
+          <Route path="attendance" element={null} />
+          <Route path="secure-resources" element={null} />
+          <Route path="audit" element={null} />
+          <Route path="settings" element={null} />
         </Route>
 
         {/* Catch all */}

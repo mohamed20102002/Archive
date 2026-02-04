@@ -5,6 +5,8 @@ export interface User {
   display_name: string
   role: 'admin' | 'user'
   is_active: boolean
+  employee_number: string | null
+  shift_id: string | null
   created_at: string
   updated_at: string
   last_login_at: string | null
@@ -251,6 +253,7 @@ export type LetterPriority = 'low' | 'normal' | 'high' | 'urgent'
 
 export interface Letter {
   id: string
+  letter_id?: string | null
   letter_type: LetterType
   response_type: ResponseType | null
   status: LetterStatus
@@ -293,6 +296,7 @@ export interface Letter {
 }
 
 export interface CreateLetterData {
+  letter_id?: string
   letter_type: LetterType
   response_type?: ResponseType
   status?: LetterStatus
@@ -316,6 +320,7 @@ export interface CreateLetterData {
 }
 
 export interface UpdateLetterData {
+  letter_id?: string
   letter_type?: LetterType
   response_type?: ResponseType
   status?: LetterStatus
@@ -506,6 +511,17 @@ export interface IssueHistory {
   created_by: string
   created_at: string
   creator_name?: string
+  linked_records?: { record_id: string; record_title: string; topic_title: string; topic_id: string }[]
+  edit_count?: number
+}
+
+export interface CommentEdit {
+  id: string
+  history_id: string
+  old_comment: string
+  edited_by: string
+  edited_at: string
+  editor_name?: string
 }
 
 export interface CreateIssueData {
@@ -586,6 +602,36 @@ export type AuditAction =
   | 'SECURE_REFERENCE_DELETE'
   | 'SECURE_REFERENCE_FILE_ADD'
   | 'SECURE_REFERENCE_FILE_DELETE'
+  | 'ATTENDANCE_CONDITION_CREATE'
+  | 'ATTENDANCE_CONDITION_UPDATE'
+  | 'ATTENDANCE_CONDITION_DELETE'
+  | 'ATTENDANCE_ENTRY_SAVE'
+  | 'ATTENDANCE_ENTRY_DELETE'
+  | 'ATTENDANCE_PDF_EXPORT'
+  | 'SHIFT_CREATE'
+  | 'SHIFT_UPDATE'
+  | 'SHIFT_DELETE'
+  | 'SETTINGS_UPDATE'
+  | 'MOM_CREATE'
+  | 'MOM_UPDATE'
+  | 'MOM_DELETE'
+  | 'MOM_CLOSE'
+  | 'MOM_REOPEN'
+  | 'MOM_FILE_UPLOAD'
+  | 'MOM_ACTION_CREATE'
+  | 'MOM_ACTION_UPDATE'
+  | 'MOM_ACTION_RESOLVE'
+  | 'MOM_ACTION_REOPEN'
+  | 'MOM_DRAFT_CREATE'
+  | 'MOM_DRAFT_DELETE'
+  | 'MOM_DRAFT_FILE_UPLOAD'
+  | 'MOM_TOPIC_LINK'
+  | 'MOM_TOPIC_UNLINK'
+  | 'MOM_RECORD_LINK'
+  | 'MOM_RECORD_UNLINK'
+  | 'MOM_LOCATION_CREATE'
+  | 'MOM_LOCATION_UPDATE'
+  | 'MOM_LOCATION_DELETE'
   | 'SYSTEM_STARTUP'
   | 'SYSTEM_SHUTDOWN'
 
@@ -618,6 +664,15 @@ export interface AuditStats {
   entriesByAction: Record<string, number>
   entriesByUser: Record<string, number>
   recentActivity: AuditEntry[]
+}
+
+// App Settings types
+export interface AppSettings {
+  department_name: string
+  theme: 'light' | 'dark'
+  default_view: string
+  default_view_mode: 'card' | 'table'
+  date_format: string
 }
 
 // Tag types
@@ -797,6 +852,338 @@ export interface SecureResourceStats {
   totalReferences: number
   credentialsByCategory: Record<string, number>
   referencesByCategory: Record<string, number>
+}
+
+// AI types
+export type AiSummaryMode = 'brief' | 'actions' | 'status' | 'full'
+
+export interface AiStatus {
+  available: boolean
+  modelLoaded: boolean
+  modelName: string | null
+  error?: string
+}
+
+export interface AiSummaryResult {
+  success: boolean
+  summary?: string
+  error?: string
+}
+
+// Shift types
+export interface Shift {
+  id: string
+  name: string
+  sort_order: number
+  created_by: string
+  created_at: string
+  updated_at: string
+  deleted_at: string | null
+}
+
+export interface CreateShiftData {
+  name: string
+  sort_order?: number
+}
+
+export interface UpdateShiftData {
+  name?: string
+  sort_order?: number
+}
+
+// Attendance types
+export interface AttendanceCondition {
+  id: string
+  name: string
+  color: string
+  sort_order: number
+  display_number: number
+  created_by: string
+  created_at: string
+  updated_at: string
+  deleted_at: string | null
+}
+
+export interface CreateAttendanceConditionData {
+  name: string
+  color: string
+  sort_order?: number
+  display_number?: number
+}
+
+export interface UpdateAttendanceConditionData {
+  name?: string
+  color?: string
+  sort_order?: number
+  display_number?: number
+}
+
+export interface AttendanceEntry {
+  id: string
+  user_id: string
+  entry_date: string
+  year: number
+  month: number
+  day: number
+  shift_id: string | null
+  shift_name: string | null
+  note: string | null
+  created_by: string
+  created_at: string
+  updated_at: string
+  conditions: AttendanceCondition[]
+  user_display_name?: string
+}
+
+export interface SaveAttendanceEntryData {
+  user_id: string
+  entry_date: string
+  shift_id: string
+  condition_ids: string[]
+  note?: string
+}
+
+export interface AttendanceFilters {
+  user_id?: string
+  year: number
+  month?: number
+  shift_id?: string
+  condition_id?: string
+}
+
+export interface AttendanceSummary {
+  user_id: string
+  user_display_name: string
+  year: number
+  condition_totals: Record<string, number>
+  total_entries: number
+  shift_totals: Record<string, number>
+}
+
+// MOM types
+export type MomStatus = 'open' | 'closed'
+export type MomActionStatus = 'open' | 'resolved'
+export type MomHistoryAction =
+  | 'created'
+  | 'field_edit'
+  | 'action_created'
+  | 'action_updated'
+  | 'action_resolved'
+  | 'action_reopened'
+  | 'action_reminder_change'
+  | 'draft_added'
+  | 'status_change'
+  | 'topic_linked'
+  | 'topic_unlinked'
+  | 'record_linked'
+  | 'record_unlinked'
+  | 'letter_linked'
+  | 'letter_unlinked'
+  | 'file_uploaded'
+
+export interface MomLocation {
+  id: string
+  name: string
+  description: string | null
+  sort_order: number
+  created_by: string
+  created_at: string
+  updated_at: string
+  deleted_at: string | null
+}
+
+export interface Mom {
+  id: string
+  mom_id: string | null
+  title: string
+  subject: string | null
+  meeting_date: string | null
+  location_id: string | null
+  status: MomStatus
+  storage_path: string | null
+  original_filename: string | null
+  file_type: string | null
+  file_size: number | null
+  checksum: string | null
+  created_by: string
+  created_at: string
+  updated_at: string
+  deleted_at: string | null
+  // Joined fields
+  location_name?: string
+  creator_name?: string
+  topic_count?: number
+  record_count?: number
+  action_total?: number
+  action_resolved?: number
+  action_overdue?: number
+}
+
+export interface MomAction {
+  id: string
+  mom_internal_id: string
+  description: string
+  responsible_party: string | null
+  deadline: string | null
+  reminder_date: string | null
+  reminder_notified: boolean
+  status: MomActionStatus
+  resolution_note: string | null
+  resolution_file_path: string | null
+  resolution_filename: string | null
+  resolution_file_size: number | null
+  resolved_by: string | null
+  resolved_at: string | null
+  created_by: string
+  created_at: string
+  updated_at: string
+  // Joined fields
+  creator_name?: string
+  resolver_name?: string
+  mom_display_id?: string
+  mom_title?: string
+}
+
+export interface MomDraft {
+  id: string
+  mom_internal_id: string
+  version: number
+  title: string
+  description: string | null
+  storage_path: string | null
+  original_filename: string | null
+  file_type: string | null
+  file_size: number | null
+  checksum: string | null
+  created_by: string
+  created_at: string
+  updated_at: string
+  deleted_at: string | null
+  creator_name?: string
+}
+
+export interface MomHistory {
+  id: string
+  mom_internal_id: string
+  action: MomHistoryAction
+  field_name: string | null
+  old_value: string | null
+  new_value: string | null
+  details: string | null
+  created_by: string
+  created_at: string
+  creator_name?: string
+}
+
+export interface MomTopicLink {
+  id: string
+  mom_internal_id: string
+  topic_id: string
+  created_by: string
+  created_at: string
+  topic_title?: string
+}
+
+export interface MomRecordLink {
+  id: string
+  mom_internal_id: string
+  record_id: string
+  created_by: string
+  created_at: string
+  record_title?: string
+  topic_title?: string
+  topic_id?: string
+}
+
+export interface MomStats {
+  total: number
+  open: number
+  closed: number
+  overdueActions: number
+}
+
+export interface MomFilters {
+  query?: string
+  status?: MomStatus
+  location_id?: string
+  topic_id?: string
+  date_from?: string
+  date_to?: string
+}
+
+export interface MomLetterLink {
+  id: string
+  mom_internal_id: string
+  letter_id: string
+  letter_display_id: string | null
+  letter_subject: string
+  letter_type: string
+  letter_reference_number: string | null
+  created_at: string
+}
+
+export interface LetterMomLink {
+  id: string
+  letter_id: string
+  mom_internal_id: string
+  mom_display_id: string | null
+  mom_title: string
+  mom_status: string
+  created_at: string
+}
+
+export interface CreateMomData {
+  mom_id?: string
+  title: string
+  subject?: string
+  meeting_date?: string
+  location_id?: string
+  topic_ids?: string[]
+  record_ids?: string[]
+}
+
+export interface UpdateMomData {
+  title?: string
+  subject?: string
+  meeting_date?: string
+  location_id?: string
+}
+
+export interface CreateMomLocationData {
+  name: string
+  description?: string
+  sort_order?: number
+}
+
+export interface UpdateMomLocationData {
+  name?: string
+  description?: string
+  sort_order?: number
+}
+
+export interface CreateMomActionData {
+  mom_internal_id: string
+  description: string
+  responsible_party?: string
+  deadline?: string
+  reminder_date?: string
+}
+
+export interface UpdateMomActionData {
+  description?: string
+  responsible_party?: string
+  deadline?: string
+  reminder_date?: string
+}
+
+export interface ResolveMomActionData {
+  resolution_note: string
+}
+
+export interface CreateMomDraftData {
+  mom_internal_id: string
+  title: string
+  description?: string
 }
 
 // UI State types

@@ -8,3 +8,4 @@ nul
 *.db-wal
 *.db-shm
 .keyfile
+models/

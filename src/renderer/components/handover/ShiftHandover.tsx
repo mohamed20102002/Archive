@@ -134,7 +134,7 @@ export function ShiftHandover() {
   const includedCount = records.length - excludedIds.size
 
   return (
-    <div className="-m-6 flex flex-col h-[calc(100vh-4rem)]">
+    <div className="flex flex-col h-full">
       {/* Sticky Header */}
       <div className="sticky top-0 z-10 bg-archive-light px-6 pt-6 pb-4 border-b border-gray-200">
         <div className="flex items-center justify-between">

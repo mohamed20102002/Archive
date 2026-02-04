@@ -1,9 +1,10 @@
-import React, { useState, useEffect } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import React, { useState, useEffect, useCallback, useRef } from 'react'
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import { format, isToday, isYesterday, isThisWeek, parseISO } from 'date-fns'
 import { RecordCard } from './RecordCard'
 import { RecordForm } from './RecordForm'
 import { SubcategoryManager } from './SubcategoryManager'
+import { TopicSummary } from '../topics/TopicSummary'
 import { useTopic } from '../../hooks/useTopics'
 import { useToast } from '../../context/ToastContext'
 import { useAuth } from '../../context/AuthContext'
@@ -39,9 +40,43 @@ function groupRecordsByDate(records: Record[]): Map<string, Record[]> {
   return groups
 }
 
+function CopyIdCell({ id }: { id: string }) {
+  const [copied, setCopied] = useState(false)
+
+  const handleCopy = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(id)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1500)
+    } catch { /* ignore */ }
+  }, [id])
+
+  return (
+    <span className="inline-flex items-center gap-1">
+      <span className="text-[11px] font-mono text-gray-400">{id.slice(0, 8)}</span>
+      <button
+        onClick={handleCopy}
+        className="p-0.5 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors"
+        title="Copy record ID"
+      >
+        {copied ? (
+          <svg className="w-3.5 h-3.5 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+          </svg>
+        ) : (
+          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+          </svg>
+        )}
+      </button>
+    </span>
+  )
+}
+
 export function Timeline() {
   const { topicId } = useParams<{ topicId: string }>()
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
   const { topic, isLoading: topicLoading } = useTopic(topicId)
   const { user } = useAuth()
   const { success, error } = useToast()
@@ -56,6 +91,8 @@ export function Timeline() {
   const [searchQuery, setSearchQuery] = useState('')
   const [showSubcategoryManager, setShowSubcategoryManager] = useState(false)
   const [viewMode, setViewMode] = useState<ViewMode>('timeline')
+  const [highlightedRecordId, setHighlightedRecordId] = useState<string | null>(null)
+  const scrollContainerRef = useRef<HTMLDivElement>(null)
 
   const loadSubcategories = async () => {
     if (!topicId) return
@@ -97,6 +134,28 @@ export function Timeline() {
   useEffect(() => {
     loadRecords()
   }, [topicId, filterSubcategory])
+
+  // Scroll to and highlight a specific record when navigated with ?recordId=
+  useEffect(() => {
+    const recordId = searchParams.get('recordId')
+    if (!recordId || isLoading || records.length === 0) return
+
+    setHighlightedRecordId(recordId)
+    // Clear the query param so refreshing doesn't re-highlight
+    setSearchParams({}, { replace: true })
+
+    // Wait for render, then scroll into view
+    requestAnimationFrame(() => {
+      const el = scrollContainerRef.current?.querySelector(`[data-record-id="${recordId}"]`)
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      }
+    })
+
+    // Clear highlight after a few seconds
+    const timer = setTimeout(() => setHighlightedRecordId(null), 4000)
+    return () => clearTimeout(timer)
+  }, [isLoading, records, searchParams])
 
   const filteredRecords = records.filter(record => {
     if (filterType !== 'all' && record.type !== filterType) {
@@ -234,15 +293,18 @@ export function Timeline() {
             )}
           </div>
 
-          <button
-            onClick={() => setShowForm(true)}
-            className="btn-primary flex items-center gap-2"
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-            </svg>
-            Add Record
-          </button>
+          <div className="flex items-center gap-2">
+            {topicId && <TopicSummary topicId={topicId} />}
+            <button
+              onClick={() => setShowForm(true)}
+              className="btn-primary flex items-center gap-2"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+              Add Record
+            </button>
+          </div>
         </div>
 
         {/* Subcategory Tabs */}
@@ -361,7 +423,7 @@ export function Timeline() {
       </div>
 
       {/* Scrollable Timeline Content */}
-      <div className="flex-1 overflow-auto px-6 py-6">
+      <div ref={scrollContainerRef} className="flex-1 overflow-auto px-6 py-6">
       {filteredRecords.length === 0 ? (
         <div className="text-center py-12">
           <svg className="w-16 h-16 text-gray-300 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -399,6 +461,7 @@ export function Timeline() {
                     <RecordCard
                       key={record.id}
                       record={record}
+                      highlighted={highlightedRecordId === record.id}
                       onEdit={() => setEditingRecord(record)}
                       onDelete={() => handleDelete(record)}
                       onOpenEmail={handleOpenEmail}
@@ -414,6 +477,7 @@ export function Timeline() {
           <table className="w-full">
             <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">ID</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Title</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Content</th>
@@ -434,7 +498,10 @@ export function Timeline() {
                 }
                 const typeInfo = typeIcons[record.type] || typeIcons.note
                 return (
-                  <tr key={record.id} className="hover:bg-gray-50">
+                  <tr key={record.id} data-record-id={record.id} className={`hover:bg-gray-50 transition-colors duration-700 ${highlightedRecordId === record.id ? 'bg-primary-50 ring-2 ring-primary-300 ring-inset' : ''}`}>
+                    <td className="px-4 py-3">
+                      <CopyIdCell id={record.id} />
+                    </td>
                     <td className="px-4 py-3">
                       <span className={`text-xs px-2 py-1 rounded-full ${typeInfo.color}`}>
                         {typeInfo.icon} {record.type}

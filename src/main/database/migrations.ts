@@ -451,6 +451,617 @@ const migrations: Migration[] = [
         CREATE INDEX IF NOT EXISTS idx_secure_reference_files_deleted ON secure_reference_files(deleted_at);
       `)
     }
+  },
+  {
+    version: 9,
+    name: 'add_app_settings',
+    up: (db: ReturnType<typeof getDatabase>) => {
+      // Create app_settings key-value table
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS app_settings (
+          key TEXT PRIMARY KEY,
+          value TEXT NOT NULL,
+          updated_by TEXT,
+          updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+          FOREIGN KEY (updated_by) REFERENCES users(id)
+        )
+      `)
+
+      // Seed default settings
+      const defaults = [
+        { key: 'department_name', value: '' },
+        { key: 'theme', value: 'light' },
+        { key: 'default_view', value: '/topics' },
+        { key: 'date_format', value: 'DD/MM/YYYY' }
+      ]
+
+      const insert = db.prepare(
+        'INSERT OR IGNORE INTO app_settings (key, value) VALUES (?, ?)'
+      )
+
+      for (const setting of defaults) {
+        insert.run(setting.key, setting.value)
+      }
+    }
+  },
+  {
+    version: 10,
+    name: 'add_view_mode_and_issue_history_records',
+    up: (db: ReturnType<typeof getDatabase>) => {
+      // Add default_view_mode setting
+      db.prepare(
+        'INSERT OR IGNORE INTO app_settings (key, value) VALUES (?, ?)'
+      ).run('default_view_mode', 'card')
+
+      // Junction table: link issue history entries to records
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS issue_history_records (
+          history_id TEXT NOT NULL,
+          record_id TEXT NOT NULL,
+          PRIMARY KEY (history_id, record_id),
+          FOREIGN KEY (history_id) REFERENCES issue_history(id) ON DELETE CASCADE,
+          FOREIGN KEY (record_id) REFERENCES records(id) ON DELETE CASCADE
+        )
+      `)
+
+      db.exec(`
+        CREATE INDEX IF NOT EXISTS idx_issue_history_records_history ON issue_history_records(history_id);
+        CREATE INDEX IF NOT EXISTS idx_issue_history_records_record ON issue_history_records(record_id);
+      `)
+    }
+  },
+  {
+    version: 11,
+    name: 'add_comment_edits_table',
+    up: (db: ReturnType<typeof getDatabase>) => {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS comment_edits (
+          id TEXT PRIMARY KEY,
+          history_id TEXT NOT NULL,
+          old_comment TEXT NOT NULL,
+          edited_by TEXT NOT NULL,
+          edited_at TEXT NOT NULL,
+          FOREIGN KEY (history_id) REFERENCES issue_history(id) ON DELETE CASCADE,
+          FOREIGN KEY (edited_by) REFERENCES users(id)
+        )
+      `)
+
+      db.exec(`
+        CREATE INDEX IF NOT EXISTS idx_comment_edits_history ON comment_edits(history_id)
+      `)
+    }
+  },
+  {
+    version: 12,
+    name: 'add_attendance_module',
+    up: (db: ReturnType<typeof getDatabase>) => {
+      // Configurable attendance conditions
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS attendance_conditions (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          color TEXT NOT NULL DEFAULT '#6B7280',
+          sort_order INTEGER NOT NULL DEFAULT 0,
+          created_by TEXT NOT NULL,
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+          deleted_at TEXT,
+          FOREIGN KEY (created_by) REFERENCES users(id)
+        )
+      `)
+
+      // One row per person per day
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS attendance_entries (
+          id TEXT PRIMARY KEY,
+          user_id TEXT NOT NULL,
+          entry_date TEXT NOT NULL,
+          year INTEGER NOT NULL,
+          month INTEGER NOT NULL,
+          day INTEGER NOT NULL,
+          shift TEXT DEFAULT 'first',
+          note TEXT,
+          created_by TEXT NOT NULL,
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+          FOREIGN KEY (user_id) REFERENCES users(id),
+          FOREIGN KEY (created_by) REFERENCES users(id),
+          UNIQUE(user_id, entry_date)
+        )
+      `)
+
+      // Junction: multiple conditions per entry
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS attendance_entry_conditions (
+          entry_id TEXT NOT NULL,
+          condition_id TEXT NOT NULL,
+          PRIMARY KEY (entry_id, condition_id),
+          FOREIGN KEY (entry_id) REFERENCES attendance_entries(id) ON DELETE CASCADE,
+          FOREIGN KEY (condition_id) REFERENCES attendance_conditions(id) ON DELETE CASCADE
+        )
+      `)
+
+      // Indexes
+      db.exec(`
+        CREATE INDEX IF NOT EXISTS idx_attendance_conditions_deleted ON attendance_conditions(deleted_at);
+        CREATE INDEX IF NOT EXISTS idx_attendance_conditions_sort ON attendance_conditions(sort_order);
+        CREATE INDEX IF NOT EXISTS idx_attendance_entries_user ON attendance_entries(user_id);
+        CREATE INDEX IF NOT EXISTS idx_attendance_entries_date ON attendance_entries(entry_date);
+        CREATE INDEX IF NOT EXISTS idx_attendance_entries_year ON attendance_entries(year);
+        CREATE INDEX IF NOT EXISTS idx_attendance_entries_user_year ON attendance_entries(user_id, year);
+        CREATE INDEX IF NOT EXISTS idx_attendance_entries_shift ON attendance_entries(shift);
+        CREATE INDEX IF NOT EXISTS idx_attendance_entry_conditions_entry ON attendance_entry_conditions(entry_id);
+        CREATE INDEX IF NOT EXISTS idx_attendance_entry_conditions_condition ON attendance_entry_conditions(condition_id);
+      `)
+
+      // Seed weekend days setting
+      db.prepare(
+        'INSERT OR IGNORE INTO app_settings (key, value) VALUES (?, ?)'
+      ).run('weekend_days', '[5,6]')
+    }
+  },
+  {
+    version: 13,
+    name: 'attendance_shifts_and_enhancements',
+    up: (db: ReturnType<typeof getDatabase>) => {
+      // 1. Create shifts table
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS shifts (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          sort_order INTEGER NOT NULL DEFAULT 0,
+          created_by TEXT NOT NULL,
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+          deleted_at TEXT,
+          FOREIGN KEY (created_by) REFERENCES users(id)
+        )
+      `)
+      db.exec(`
+        CREATE INDEX IF NOT EXISTS idx_shifts_deleted ON shifts(deleted_at);
+        CREATE INDEX IF NOT EXISTS idx_shifts_sort ON shifts(sort_order);
+      `)
+
+      // 2. ALTER users: add employee_number and shift_id
+      const userInfo = db.prepare("PRAGMA table_info(users)").all() as { name: string }[]
+      if (!userInfo.some(c => c.name === 'employee_number')) {
+        db.exec(`ALTER TABLE users ADD COLUMN employee_number TEXT`)
+      }
+      if (!userInfo.some(c => c.name === 'shift_id')) {
+        db.exec(`ALTER TABLE users ADD COLUMN shift_id TEXT REFERENCES shifts(id)`)
+      }
+
+      // 3. ALTER attendance_conditions: add display_number
+      const condInfo = db.prepare("PRAGMA table_info(attendance_conditions)").all() as { name: string }[]
+      if (!condInfo.some(c => c.name === 'display_number')) {
+        db.exec(`ALTER TABLE attendance_conditions ADD COLUMN display_number INTEGER NOT NULL DEFAULT 0`)
+      }
+
+      // 4. ALTER attendance_entries: add shift_id
+      const entryInfo = db.prepare("PRAGMA table_info(attendance_entries)").all() as { name: string }[]
+      if (!entryInfo.some(c => c.name === 'shift_id')) {
+        db.exec(`ALTER TABLE attendance_entries ADD COLUMN shift_id TEXT REFERENCES shifts(id)`)
+      }
+
+      // 5. Backfill display_number on existing conditions
+      db.exec(`
+        UPDATE attendance_conditions SET display_number = sort_order + 1 WHERE display_number = 0
+      `)
+
+      // 6. Create two default shifts
+      const crypto = require('crypto')
+      const firstShiftId = crypto.randomUUID()
+      const secondShiftId = crypto.randomUUID()
+
+      // Get any admin user for created_by
+      const adminUser = db.prepare(
+        "SELECT id FROM users WHERE role = 'admin' LIMIT 1"
+      ).get() as { id: string } | undefined
+      const creatorId = adminUser?.id || 'system'
+
+      db.prepare(`
+        INSERT INTO shifts (id, name, sort_order, created_by) VALUES (?, ?, ?, ?)
+      `).run(firstShiftId, 'First Shift', 0, creatorId)
+
+      db.prepare(`
+        INSERT INTO shifts (id, name, sort_order, created_by) VALUES (?, ?, ?, ?)
+      `).run(secondShiftId, 'Second Shift', 1, creatorId)
+
+      // 7. Map existing entries: shift='first' -> firstShiftId, shift='second' -> secondShiftId
+      db.prepare(`
+        UPDATE attendance_entries SET shift_id = ? WHERE shift = 'first' OR shift IS NULL
+      `).run(firstShiftId)
+
+      db.prepare(`
+        UPDATE attendance_entries SET shift_id = ? WHERE shift = 'second'
+      `).run(secondShiftId)
+
+      // 8. Assign all existing users to the first default shift
+      db.prepare(`
+        UPDATE users SET shift_id = ? WHERE shift_id IS NULL
+      `).run(firstShiftId)
+
+      // 9. Cleanup: remove weekend_days setting
+      db.exec(`DELETE FROM app_settings WHERE key = 'weekend_days'`)
+    }
+  },
+  {
+    version: 14,
+    name: 'add_mom_module',
+    up: (db: ReturnType<typeof getDatabase>) => {
+      // 1. mom_locations - Predefined meeting locations
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS mom_locations (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          description TEXT,
+          sort_order INTEGER NOT NULL DEFAULT 0,
+          created_by TEXT NOT NULL,
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+          deleted_at TEXT,
+          FOREIGN KEY (created_by) REFERENCES users(id)
+        )
+      `)
+
+      // 2. moms - Main MOM entity
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS moms (
+          id TEXT PRIMARY KEY,
+          mom_id TEXT UNIQUE NOT NULL,
+          title TEXT NOT NULL,
+          subject TEXT,
+          meeting_date TEXT,
+          location_id TEXT,
+          status TEXT NOT NULL DEFAULT 'open',
+          storage_path TEXT,
+          original_filename TEXT,
+          file_type TEXT,
+          file_size INTEGER,
+          checksum TEXT,
+          created_by TEXT NOT NULL,
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+          deleted_at TEXT,
+          FOREIGN KEY (location_id) REFERENCES mom_locations(id),
+          FOREIGN KEY (created_by) REFERENCES users(id)
+        )
+      `)
+
+      // 3. mom_actions - Actions within a MOM
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS mom_actions (
+          id TEXT PRIMARY KEY,
+          mom_internal_id TEXT NOT NULL,
+          description TEXT NOT NULL,
+          responsible_party TEXT,
+          deadline TEXT,
+          reminder_date TEXT,
+          reminder_notified INTEGER DEFAULT 0,
+          status TEXT NOT NULL DEFAULT 'open',
+          resolution_note TEXT,
+          resolution_file_path TEXT,
+          resolution_filename TEXT,
+          resolution_file_size INTEGER,
+          resolved_by TEXT,
+          resolved_at TEXT,
+          created_by TEXT NOT NULL,
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+          FOREIGN KEY (mom_internal_id) REFERENCES moms(id),
+          FOREIGN KEY (resolved_by) REFERENCES users(id),
+          FOREIGN KEY (created_by) REFERENCES users(id)
+        )
+      `)
+
+      // 4. mom_topic_links - Junction: MOM <-> Topics
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS mom_topic_links (
+          id TEXT PRIMARY KEY,
+          mom_internal_id TEXT NOT NULL,
+          topic_id TEXT NOT NULL,
+          created_by TEXT NOT NULL,
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          FOREIGN KEY (mom_internal_id) REFERENCES moms(id),
+          FOREIGN KEY (topic_id) REFERENCES topics(id),
+          FOREIGN KEY (created_by) REFERENCES users(id),
+          UNIQUE(mom_internal_id, topic_id)
+        )
+      `)
+
+      // 5. mom_record_links - Junction: MOM <-> Records
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS mom_record_links (
+          id TEXT PRIMARY KEY,
+          mom_internal_id TEXT NOT NULL,
+          record_id TEXT NOT NULL,
+          created_by TEXT NOT NULL,
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          FOREIGN KEY (mom_internal_id) REFERENCES moms(id),
+          FOREIGN KEY (record_id) REFERENCES records(id),
+          FOREIGN KEY (created_by) REFERENCES users(id),
+          UNIQUE(mom_internal_id, record_id)
+        )
+      `)
+
+      // 6. mom_drafts - Draft versions
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS mom_drafts (
+          id TEXT PRIMARY KEY,
+          mom_internal_id TEXT NOT NULL,
+          version INTEGER NOT NULL,
+          title TEXT NOT NULL,
+          description TEXT,
+          storage_path TEXT,
+          original_filename TEXT,
+          file_type TEXT,
+          file_size INTEGER,
+          checksum TEXT,
+          created_by TEXT NOT NULL,
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+          deleted_at TEXT,
+          FOREIGN KEY (mom_internal_id) REFERENCES moms(id),
+          FOREIGN KEY (created_by) REFERENCES users(id),
+          UNIQUE(mom_internal_id, version)
+        )
+      `)
+
+      // 7. mom_history - Immutable append-only log
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS mom_history (
+          id TEXT PRIMARY KEY,
+          mom_internal_id TEXT NOT NULL,
+          action TEXT NOT NULL,
+          field_name TEXT,
+          old_value TEXT,
+          new_value TEXT,
+          details TEXT,
+          created_by TEXT NOT NULL,
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          FOREIGN KEY (mom_internal_id) REFERENCES moms(id),
+          FOREIGN KEY (created_by) REFERENCES users(id)
+        )
+      `)
+
+      // 8. Indexes
+      db.exec(`
+        CREATE INDEX IF NOT EXISTS idx_moms_mom_id ON moms(mom_id);
+        CREATE INDEX IF NOT EXISTS idx_moms_status ON moms(status);
+        CREATE INDEX IF NOT EXISTS idx_moms_meeting_date ON moms(meeting_date);
+        CREATE INDEX IF NOT EXISTS idx_moms_location_id ON moms(location_id);
+        CREATE INDEX IF NOT EXISTS idx_moms_created_by ON moms(created_by);
+        CREATE INDEX IF NOT EXISTS idx_moms_deleted_at ON moms(deleted_at);
+
+        CREATE INDEX IF NOT EXISTS idx_mom_actions_mom ON mom_actions(mom_internal_id);
+        CREATE INDEX IF NOT EXISTS idx_mom_actions_status ON mom_actions(status);
+        CREATE INDEX IF NOT EXISTS idx_mom_actions_deadline ON mom_actions(deadline);
+        CREATE INDEX IF NOT EXISTS idx_mom_actions_reminder ON mom_actions(reminder_date);
+        CREATE INDEX IF NOT EXISTS idx_mom_topic_links_mom ON mom_topic_links(mom_internal_id);
+        CREATE INDEX IF NOT EXISTS idx_mom_topic_links_topic ON mom_topic_links(topic_id);
+
+        CREATE INDEX IF NOT EXISTS idx_mom_record_links_mom ON mom_record_links(mom_internal_id);
+        CREATE INDEX IF NOT EXISTS idx_mom_record_links_record ON mom_record_links(record_id);
+
+        CREATE INDEX IF NOT EXISTS idx_mom_drafts_mom ON mom_drafts(mom_internal_id);
+        CREATE INDEX IF NOT EXISTS idx_mom_drafts_version ON mom_drafts(mom_internal_id, version);
+        CREATE INDEX IF NOT EXISTS idx_mom_drafts_deleted ON mom_drafts(deleted_at);
+
+        CREATE INDEX IF NOT EXISTS idx_mom_history_mom ON mom_history(mom_internal_id);
+        CREATE INDEX IF NOT EXISTS idx_mom_history_action ON mom_history(action);
+        CREATE INDEX IF NOT EXISTS idx_mom_history_created ON mom_history(created_at);
+
+        CREATE INDEX IF NOT EXISTS idx_mom_locations_deleted ON mom_locations(deleted_at);
+        CREATE INDEX IF NOT EXISTS idx_mom_locations_sort ON mom_locations(sort_order);
+      `)
+
+      // 9. FTS5 for moms
+      db.exec(`
+        CREATE VIRTUAL TABLE IF NOT EXISTS moms_fts USING fts5(
+          mom_id,
+          title,
+          subject,
+          content='moms',
+          content_rowid='rowid'
+        )
+      `)
+
+      // 10. FTS sync triggers
+      db.exec(`
+        CREATE TRIGGER IF NOT EXISTS moms_ai AFTER INSERT ON moms BEGIN
+          INSERT INTO moms_fts(rowid, mom_id, title, subject)
+          VALUES (NEW.rowid, NEW.mom_id, NEW.title, NEW.subject);
+        END
+      `)
+
+      db.exec(`
+        CREATE TRIGGER IF NOT EXISTS moms_ad AFTER DELETE ON moms BEGIN
+          INSERT INTO moms_fts(moms_fts, rowid, mom_id, title, subject)
+          VALUES('delete', OLD.rowid, OLD.mom_id, OLD.title, OLD.subject);
+        END
+      `)
+
+      db.exec(`
+        CREATE TRIGGER IF NOT EXISTS moms_au AFTER UPDATE ON moms BEGIN
+          INSERT INTO moms_fts(moms_fts, rowid, mom_id, title, subject)
+          VALUES('delete', OLD.rowid, OLD.mom_id, OLD.title, OLD.subject);
+          INSERT INTO moms_fts(rowid, mom_id, title, subject)
+          VALUES (NEW.rowid, NEW.mom_id, NEW.title, NEW.subject);
+        END
+      `)
+    }
+  },
+  {
+    version: 15,
+    name: 'add_mom_letter_linking',
+    up: (db: ReturnType<typeof getDatabase>) => {
+      // 1. Add letter_id column to letters table
+      const letterInfo = db.prepare("PRAGMA table_info(letters)").all() as { name: string }[]
+      if (!letterInfo.some(c => c.name === 'letter_id')) {
+        db.exec(`ALTER TABLE letters ADD COLUMN letter_id TEXT`)
+      }
+      db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_letters_letter_id ON letters(letter_id)`)
+
+      // 2. Make mom_id nullable via table rebuild
+      // SQLite doesn't support ALTER COLUMN, so rebuild the table
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS moms_new (
+          id TEXT PRIMARY KEY,
+          mom_id TEXT UNIQUE,
+          title TEXT NOT NULL,
+          subject TEXT,
+          meeting_date TEXT,
+          location_id TEXT,
+          status TEXT NOT NULL DEFAULT 'open',
+          storage_path TEXT,
+          original_filename TEXT,
+          file_type TEXT,
+          file_size INTEGER,
+          checksum TEXT,
+          created_by TEXT NOT NULL,
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+          deleted_at TEXT,
+          FOREIGN KEY (location_id) REFERENCES mom_locations(id),
+          FOREIGN KEY (created_by) REFERENCES users(id)
+        )
+      `)
+
+      db.exec(`
+        INSERT INTO moms_new SELECT * FROM moms
+      `)
+
+      // Drop old FTS triggers before dropping table
+      db.exec(`DROP TRIGGER IF EXISTS moms_ai`)
+      db.exec(`DROP TRIGGER IF EXISTS moms_ad`)
+      db.exec(`DROP TRIGGER IF EXISTS moms_au`)
+
+      // Drop old FTS table
+      db.exec(`DROP TABLE IF EXISTS moms_fts`)
+
+      db.exec(`DROP TABLE IF EXISTS moms`)
+      db.exec(`ALTER TABLE moms_new RENAME TO moms`)
+
+      // Recreate indexes
+      db.exec(`
+        CREATE INDEX IF NOT EXISTS idx_moms_mom_id ON moms(mom_id);
+        CREATE INDEX IF NOT EXISTS idx_moms_status ON moms(status);
+        CREATE INDEX IF NOT EXISTS idx_moms_meeting_date ON moms(meeting_date);
+        CREATE INDEX IF NOT EXISTS idx_moms_location_id ON moms(location_id);
+        CREATE INDEX IF NOT EXISTS idx_moms_created_by ON moms(created_by);
+        CREATE INDEX IF NOT EXISTS idx_moms_deleted_at ON moms(deleted_at);
+      `)
+
+      // Recreate FTS table
+      db.exec(`
+        CREATE VIRTUAL TABLE IF NOT EXISTS moms_fts USING fts5(
+          mom_id,
+          title,
+          subject,
+          content='moms',
+          content_rowid='rowid'
+        )
+      `)
+
+      // Rebuild FTS index from existing data
+      db.exec(`
+        INSERT INTO moms_fts(rowid, mom_id, title, subject)
+        SELECT rowid, mom_id, title, subject FROM moms
+      `)
+
+      // Recreate FTS sync triggers
+      db.exec(`
+        CREATE TRIGGER IF NOT EXISTS moms_ai AFTER INSERT ON moms BEGIN
+          INSERT INTO moms_fts(rowid, mom_id, title, subject)
+          VALUES (NEW.rowid, NEW.mom_id, NEW.title, NEW.subject);
+        END
+      `)
+
+      db.exec(`
+        CREATE TRIGGER IF NOT EXISTS moms_ad AFTER DELETE ON moms BEGIN
+          INSERT INTO moms_fts(moms_fts, rowid, mom_id, title, subject)
+          VALUES('delete', OLD.rowid, OLD.mom_id, OLD.title, OLD.subject);
+        END
+      `)
+
+      db.exec(`
+        CREATE TRIGGER IF NOT EXISTS moms_au AFTER UPDATE ON moms BEGIN
+          INSERT INTO moms_fts(moms_fts, rowid, mom_id, title, subject)
+          VALUES('delete', OLD.rowid, OLD.mom_id, OLD.title, OLD.subject);
+          INSERT INTO moms_fts(rowid, mom_id, title, subject)
+          VALUES (NEW.rowid, NEW.mom_id, NEW.title, NEW.subject);
+        END
+      `)
+
+      // 3. Create mom_letter_links junction table
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS mom_letter_links (
+          id TEXT PRIMARY KEY,
+          mom_internal_id TEXT NOT NULL,
+          letter_id TEXT NOT NULL,
+          created_by TEXT NOT NULL,
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          FOREIGN KEY (mom_internal_id) REFERENCES moms(id),
+          FOREIGN KEY (letter_id) REFERENCES letters(id),
+          FOREIGN KEY (created_by) REFERENCES users(id),
+          UNIQUE(mom_internal_id, letter_id)
+        )
+      `)
+
+      db.exec(`
+        CREATE INDEX IF NOT EXISTS idx_mom_letter_links_mom ON mom_letter_links(mom_internal_id);
+        CREATE INDEX IF NOT EXISTS idx_mom_letter_links_letter ON mom_letter_links(letter_id);
+      `)
+
+      // 4. Update letters_fts triggers to include letter_id
+      db.exec(`DROP TRIGGER IF EXISTS letters_ai`)
+      db.exec(`DROP TRIGGER IF EXISTS letters_ad`)
+      db.exec(`DROP TRIGGER IF EXISTS letters_au`)
+      db.exec(`DROP TABLE IF EXISTS letters_fts`)
+
+      db.exec(`
+        CREATE VIRTUAL TABLE IF NOT EXISTS letters_fts USING fts5(
+          subject,
+          summary,
+          content,
+          reference_number,
+          incoming_number,
+          outgoing_number,
+          letter_id,
+          content='letters',
+          content_rowid='rowid'
+        )
+      `)
+
+      // Rebuild FTS from existing data
+      db.exec(`
+        INSERT INTO letters_fts(rowid, subject, summary, content, reference_number, incoming_number, outgoing_number, letter_id)
+        SELECT rowid, subject, summary, content, reference_number, incoming_number, outgoing_number, letter_id FROM letters
+      `)
+
+      db.exec(`
+        CREATE TRIGGER IF NOT EXISTS letters_ai AFTER INSERT ON letters BEGIN
+          INSERT INTO letters_fts(rowid, subject, summary, content, reference_number, incoming_number, outgoing_number, letter_id)
+          VALUES (NEW.rowid, NEW.subject, NEW.summary, NEW.content, NEW.reference_number, NEW.incoming_number, NEW.outgoing_number, NEW.letter_id);
+        END
+      `)
+
+      db.exec(`
+        CREATE TRIGGER IF NOT EXISTS letters_ad AFTER DELETE ON letters BEGIN
+          INSERT INTO letters_fts(letters_fts, rowid, subject, summary, content, reference_number, incoming_number, outgoing_number, letter_id)
+          VALUES('delete', OLD.rowid, OLD.subject, OLD.summary, OLD.content, OLD.reference_number, OLD.incoming_number, OLD.outgoing_number, OLD.letter_id);
+        END
+      `)
+
+      db.exec(`
+        CREATE TRIGGER IF NOT EXISTS letters_au AFTER UPDATE ON letters BEGIN
+          INSERT INTO letters_fts(letters_fts, rowid, subject, summary, content, reference_number, incoming_number, outgoing_number, letter_id)
+          VALUES('delete', OLD.rowid, OLD.subject, OLD.summary, OLD.content, OLD.reference_number, OLD.incoming_number, OLD.outgoing_number, OLD.letter_id);
+          INSERT INTO letters_fts(rowid, subject, summary, content, reference_number, incoming_number, outgoing_number, letter_id)
+          VALUES (NEW.rowid, NEW.subject, NEW.summary, NEW.content, NEW.reference_number, NEW.incoming_number, NEW.outgoing_number, NEW.letter_id);
+        END
+      `)
+    }
   }
 ]
 
@@ -489,6 +1100,12 @@ export function runMigrations(): {
 
   const pendingMigrations = migrations.filter(m => m.version > currentVersion)
 
+  if (pendingMigrations.length > 0) {
+    // Disable foreign key enforcement during migrations (required for table rebuilds).
+    // PRAGMA foreign_keys cannot be changed inside a transaction, so we set it here.
+    db.pragma('foreign_keys = OFF')
+  }
+
   for (const migration of pendingMigrations) {
     console.log(`Running migration ${migration.version}: ${migration.name}`)
 
@@ -506,7 +1123,18 @@ export function runMigrations(): {
       console.log(`Migration ${migration.name} applied successfully`)
     } catch (error) {
       console.error(`Migration ${migration.name} failed:`, error)
+      db.pragma('foreign_keys = ON')
       throw error
+    }
+  }
+
+  if (pendingMigrations.length > 0) {
+    db.pragma('foreign_keys = ON')
+
+    // Verify FK integrity after migrations
+    const fkErrors = db.pragma('foreign_key_check') as any[]
+    if (fkErrors.length > 0) {
+      console.warn('Foreign key violations found after migrations:', fkErrors)
     }
   }
 

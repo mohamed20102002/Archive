@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useRef } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { Letter, LetterType, LetterStatus, LetterPriority, Topic, Authority, LetterReference, ReferenceType } from '../../types'
 import { LetterCard } from './LetterCard'
@@ -18,6 +19,9 @@ type TabMode = 'all' | 'pending' | 'overdue' | 'authorities'
 
 export function LetterList() {
   const { user } = useAuth()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const scrollContainerRef = useRef<HTMLDivElement>(null)
+  const [highlightedLetterId, setHighlightedLetterId] = useState<string | null>(null)
   const [letters, setLetters] = useState<Letter[]>([])
   const [topics, setTopics] = useState<Topic[]>([])
   const [authorities, setAuthorities] = useState<Authority[]>([])
@@ -103,6 +107,26 @@ export function LetterList() {
     }, 300)
     return () => clearTimeout(debounce)
   }, [searchQuery, filterType, filterStatus, filterPriority, filterAuthority, filterTopic])
+
+  // Handle ?letterId= param for cross-link navigation
+  useEffect(() => {
+    const letterId = searchParams.get('letterId')
+    if (!letterId || loading || letters.length === 0) return
+
+    setHighlightedLetterId(letterId)
+    setSearchParams({}, { replace: true })
+
+    // Scroll to highlighted card
+    requestAnimationFrame(() => {
+      const el = scrollContainerRef.current?.querySelector(`[data-letter-id="${letterId}"]`)
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      }
+    })
+
+    const timer = setTimeout(() => setHighlightedLetterId(null), 4000)
+    return () => clearTimeout(timer)
+  }, [loading, letters, searchParams])
 
   const handleCreateLetter = async (data: any, references: PendingReference[]) => {
     if (!user) return
@@ -454,7 +478,7 @@ export function LetterList() {
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-auto p-6">
+      <div ref={scrollContainerRef} className="flex-1 overflow-auto p-6">
         {loading ? (
           <div className="flex items-center justify-center h-64">
             <div className="animate-spin w-8 h-8 border-4 border-primary-600 border-t-transparent rounded-full" />
@@ -483,6 +507,7 @@ export function LetterList() {
                 key={letter.id}
                 letter={letter}
                 onClick={() => setSelectedLetter(letter)}
+                highlighted={highlightedLetterId === letter.id}
               />
             ))}
           </div>
@@ -506,8 +531,9 @@ export function LetterList() {
                 {letters.map((letter) => (
                   <tr
                     key={letter.id}
+                    data-letter-id={letter.id}
                     onClick={() => setSelectedLetter(letter)}
-                    className="hover:bg-gray-50 cursor-pointer"
+                    className={`hover:bg-gray-50 cursor-pointer transition-colors duration-700 ${highlightedLetterId === letter.id ? 'bg-primary-50 ring-2 ring-primary-300 ring-inset' : ''}`}
                   >
                     <td className="px-4 py-3 whitespace-nowrap">
                       <div className="flex items-center gap-2">

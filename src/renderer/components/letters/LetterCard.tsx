@@ -1,12 +1,24 @@
-import React from 'react'
+import React, { useState } from 'react'
 import { Letter, LetterType, LetterStatus, LetterPriority } from '../../types'
 
 interface LetterCardProps {
   letter: Letter
   onClick: () => void
+  highlighted?: boolean
 }
 
-export function LetterCard({ letter, onClick }: LetterCardProps) {
+export function LetterCard({ letter, onClick, highlighted }: LetterCardProps) {
+  const [copied, setCopied] = useState(false)
+
+  const handleCopyId = async (e: React.MouseEvent) => {
+    e.stopPropagation()
+    try {
+      await navigator.clipboard.writeText(letter.id)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1500)
+    } catch { /* ignore */ }
+  }
+
   const getStatusColor = (status: LetterStatus) => {
     switch (status) {
       case 'pending': return 'bg-yellow-100 text-yellow-800 border-yellow-200'
@@ -66,8 +78,9 @@ export function LetterCard({ letter, onClick }: LetterCardProps) {
 
   return (
     <div
+      data-letter-id={letter.id}
       onClick={onClick}
-      className={`bg-white rounded-lg border ${isOverdue ? 'border-red-300 bg-red-50' : 'border-gray-200'} p-4 hover:shadow-md transition-shadow cursor-pointer`}
+      className={`bg-white rounded-lg border ${isOverdue ? 'border-red-300 bg-red-50' : 'border-gray-200'} p-4 hover:shadow-md transition-all duration-700 cursor-pointer ${highlighted ? 'ring-2 ring-primary-400 bg-primary-50/50' : ''}`}
     >
       {/* Header */}
       <div className="flex items-start justify-between mb-3">
@@ -83,12 +96,19 @@ export function LetterCard({ letter, onClick }: LetterCardProps) {
         </div>
       </div>
 
-      {/* Reference Number */}
-      {(letter.reference_number || letter.incoming_number || letter.outgoing_number) && (
-        <div className="mb-2">
-          <span className="text-xs font-mono text-gray-500 bg-gray-100 px-2 py-0.5 rounded">
-            {letter.reference_number || letter.incoming_number || letter.outgoing_number}
-          </span>
+      {/* Letter ID & Reference Number */}
+      {(letter.letter_id || letter.reference_number || letter.incoming_number || letter.outgoing_number) && (
+        <div className="flex items-center gap-2 mb-2 flex-wrap">
+          {letter.letter_id && (
+            <span className="text-xs font-mono font-medium text-primary-700 bg-primary-50 px-2 py-0.5 rounded">
+              {letter.letter_id}
+            </span>
+          )}
+          {(letter.reference_number || letter.incoming_number || letter.outgoing_number) && (
+            <span className="text-xs font-mono text-gray-500 bg-gray-100 px-2 py-0.5 rounded">
+              {letter.reference_number || letter.incoming_number || letter.outgoing_number}
+            </span>
+          )}
         </div>
       )}
 
@@ -142,23 +162,43 @@ export function LetterCard({ letter, onClick }: LetterCardProps) {
       </div>
 
       {/* Footer - Counts */}
-      <div className="flex items-center gap-4 mt-3 pt-3 border-t border-gray-100 text-xs text-gray-500">
-        {letter.attachment_count !== undefined && letter.attachment_count > 0 && (
-          <div className="flex items-center gap-1">
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
-            </svg>
-            <span>{letter.attachment_count} attachment{letter.attachment_count !== 1 ? 's' : ''}</span>
-          </div>
-        )}
-        {letter.draft_count !== undefined && letter.draft_count > 0 && (
-          <div className="flex items-center gap-1">
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-            </svg>
-            <span>{letter.draft_count} draft{letter.draft_count !== 1 ? 's' : ''}</span>
-          </div>
-        )}
+      <div className="flex items-center justify-between mt-3 pt-3 border-t border-gray-100 text-xs text-gray-500">
+        <div className="flex items-center gap-4">
+          {letter.attachment_count !== undefined && letter.attachment_count > 0 && (
+            <div className="flex items-center gap-1">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
+              </svg>
+              <span>{letter.attachment_count} attachment{letter.attachment_count !== 1 ? 's' : ''}</span>
+            </div>
+          )}
+          {letter.draft_count !== undefined && letter.draft_count > 0 && (
+            <div className="flex items-center gap-1">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+              </svg>
+              <span>{letter.draft_count} draft{letter.draft_count !== 1 ? 's' : ''}</span>
+            </div>
+          )}
+        </div>
+        <span className="flex items-center gap-1">
+          <span className="text-[11px] font-mono text-gray-400">{letter.id.slice(0, 8)}</span>
+          <button
+            onClick={handleCopyId}
+            className="relative p-0.5 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors"
+            title="Copy letter ID"
+          >
+            {copied ? (
+              <svg className="w-3.5 h-3.5 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+              </svg>
+            ) : (
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+              </svg>
+            )}
+          </button>
+        </span>
       </div>
     </div>
   )

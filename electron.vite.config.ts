@@ -4,7 +4,9 @@ import { resolve } from 'path'
 
 export default defineConfig({
   main: {
-    plugins: [externalizeDepsPlugin()],
+    plugins: [externalizeDepsPlugin({
+      include: ['node-llama-cpp']
+    })],
     build: {
       outDir: 'dist/main',
       rollupOptions: {

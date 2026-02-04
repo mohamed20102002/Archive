@@ -13,6 +13,8 @@ export interface User {
   display_name: string
   role: 'admin' | 'user'
   is_active: boolean
+  employee_number: string | null
+  shift_id: string | null
   created_at: string
   updated_at: string
   last_login_at: string | null
@@ -76,6 +78,8 @@ export async function createUser(
       display_name: displayName,
       role,
       is_active: true,
+      employee_number: null,
+      shift_id: null,
       created_at: now,
       updated_at: now,
       last_login_at: null
@@ -148,6 +152,8 @@ export async function login(username: string, password: string): Promise<AuthRes
     display_name: user.display_name,
     role: user.role as 'admin' | 'user',
     is_active: true,
+    employee_number: (user as any).employee_number || null,
+    shift_id: (user as any).shift_id || null,
     created_at: user.created_at,
     updated_at: user.updated_at,
     last_login_at: now
@@ -193,7 +199,7 @@ export function verifyToken(token: string): { valid: boolean; payload?: TokenPay
 export function getUserById(id: string): User | null {
   const db = getDatabase()
   const user = db.prepare(`
-    SELECT id, username, display_name, role, is_active, created_at, updated_at, last_login_at
+    SELECT id, username, display_name, role, is_active, employee_number, shift_id, created_at, updated_at, last_login_at
     FROM users WHERE id = ?
   `).get(id) as User | undefined
 
@@ -208,7 +214,7 @@ export function getUsername(userId: string): string | null {
 export function getAllUsers(): User[] {
   const db = getDatabase()
   return db.prepare(`
-    SELECT id, username, display_name, role, is_active, created_at, updated_at, last_login_at
+    SELECT id, username, display_name, role, is_active, employee_number, shift_id, created_at, updated_at, last_login_at
     FROM users
     ORDER BY created_at ASC
   `).all() as User[]
@@ -221,6 +227,8 @@ export async function updateUser(
     display_name?: string
     role?: 'admin' | 'user'
     is_active?: boolean
+    employee_number?: string | null
+    shift_id?: string | null
   },
   updatedBy: string
 ): Promise<{ success: boolean; error?: string }> {
@@ -257,6 +265,16 @@ export async function updateUser(
   if (updates.is_active !== undefined) {
     fields.push('is_active = ?')
     values.push(updates.is_active ? 1 : 0)
+  }
+
+  if (updates.employee_number !== undefined) {
+    fields.push('employee_number = ?')
+    values.push(updates.employee_number)
+  }
+
+  if (updates.shift_id !== undefined) {
+    fields.push('shift_id = ?')
+    values.push(updates.shift_id)
   }
 
   if (fields.length === 0) {

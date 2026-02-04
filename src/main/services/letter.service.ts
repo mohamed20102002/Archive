@@ -13,6 +13,7 @@ export type Priority = 'low' | 'normal' | 'high' | 'urgent'
 
 export interface Letter {
   id: string
+  letter_id: string | null
   letter_type: LetterType
   response_type: ResponseType | null
   status: LetterStatus
@@ -56,6 +57,7 @@ export interface Letter {
 }
 
 export interface CreateLetterData {
+  letter_id?: string
   letter_type: LetterType
   response_type?: ResponseType
   status?: LetterStatus
@@ -76,6 +78,7 @@ export interface CreateLetterData {
 }
 
 export interface UpdateLetterData {
+  letter_id?: string
   letter_type?: LetterType
   response_type?: ResponseType
   status?: LetterStatus
@@ -200,6 +203,14 @@ export function createLetter(
     }
   }
 
+  // Validate letter_id uniqueness if provided
+  if (data.letter_id?.trim()) {
+    const existingLetterId = db.prepare('SELECT id FROM letters WHERE letter_id = ?').get(data.letter_id.trim())
+    if (existingLetterId) {
+      return { success: false, error: `Letter ID "${data.letter_id.trim()}" already exists` }
+    }
+  }
+
   const id = generateId()
   const now = new Date()
   const storagePath = `${formatDate(now)}/${id}`
@@ -210,15 +221,16 @@ export function createLetter(
 
     db.prepare(`
       INSERT INTO letters (
-        id, letter_type, response_type, status, priority,
+        id, letter_id, letter_type, response_type, status, priority,
         incoming_number, outgoing_number, reference_number,
         subject, summary, content,
         authority_id, topic_id, subcategory_id, parent_letter_id,
         storage_path, letter_date, received_date, due_date,
         created_by, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       id,
+      data.letter_id?.trim() || null,
       data.letter_type,
       data.response_type || null,
       data.status || 'pending',
@@ -574,11 +586,19 @@ export function updateLetter(
     }
   }
 
+  // Validate letter_id uniqueness if being changed
+  if (data.letter_id !== undefined && data.letter_id?.trim()) {
+    const existingLetterId = db.prepare('SELECT id FROM letters WHERE letter_id = ? AND id != ?').get(data.letter_id.trim(), id)
+    if (existingLetterId) {
+      return { success: false, error: `Letter ID "${data.letter_id.trim()}" already exists` }
+    }
+  }
+
   const updates: string[] = []
   const values: any[] = []
 
   const fields: (keyof UpdateLetterData)[] = [
-    'letter_type', 'response_type', 'status', 'priority',
+    'letter_id', 'letter_type', 'response_type', 'status', 'priority',
     'incoming_number', 'outgoing_number', 'reference_number',
     'subject', 'summary', 'content',
     'authority_id', 'topic_id', 'subcategory_id', 'parent_letter_id',
@@ -865,4 +885,67 @@ export function getOverdueLetters(): Letter[] {
   `).all() as (Letter & { is_overdue: number })[]
 
   return letters.map(l => ({ ...l, is_overdue: true }))
+}
+
+// Get letter by display letter_id
+export function getLetterByLetterId(letterId: string): Letter | null {
+  const db = getDatabase()
+
+  const letter = db.prepare(`
+    SELECT l.*,
+           a.name as authority_name,
+           a.short_name as authority_short_name,
+           t.title as topic_title,
+           s.title as subcategory_title,
+           pl.subject as parent_letter_subject,
+           u.display_name as creator_name,
+           (SELECT COUNT(*) FROM letter_attachments WHERE letter_id = l.id AND deleted_at IS NULL) as attachment_count,
+           (SELECT COUNT(*) FROM letter_drafts WHERE letter_id = l.id AND deleted_at IS NULL) as draft_count,
+           CASE WHEN l.due_date IS NOT NULL AND l.due_date < date('now') AND l.status NOT IN ('replied', 'closed', 'archived') THEN 1 ELSE 0 END as is_overdue
+    FROM letters l
+    LEFT JOIN authorities a ON l.authority_id = a.id
+    LEFT JOIN topics t ON l.topic_id = t.id
+    LEFT JOIN subcategories s ON l.subcategory_id = s.id
+    LEFT JOIN letters pl ON l.parent_letter_id = pl.id
+    LEFT JOIN users u ON l.created_by = u.id
+    WHERE l.letter_id = ? AND l.deleted_at IS NULL
+  `).get(letterId) as (Letter & { is_overdue: number }) | undefined
+
+  if (!letter) return null
+
+  return {
+    ...letter,
+    is_overdue: letter.is_overdue === 1
+  }
+}
+
+// Get MOMs linked to a letter
+export function getLinkedMoms(letterInternalId: string): {
+  id: string
+  letter_id: string
+  mom_internal_id: string
+  mom_display_id: string | null
+  mom_title: string
+  mom_status: string
+  created_at: string
+}[] {
+  const db = getDatabase()
+
+  return db.prepare(`
+    SELECT mll.id, mll.letter_id, mll.mom_internal_id,
+           m.mom_id as mom_display_id, m.title as mom_title, m.status as mom_status,
+           mll.created_at
+    FROM mom_letter_links mll
+    JOIN moms m ON mll.mom_internal_id = m.id
+    WHERE mll.letter_id = ? AND m.deleted_at IS NULL
+    ORDER BY mll.created_at DESC
+  `).all(letterInternalId) as {
+    id: string
+    letter_id: string
+    mom_internal_id: string
+    mom_display_id: string | null
+    mom_title: string
+    mom_status: string
+    created_at: string
+  }[]
 }

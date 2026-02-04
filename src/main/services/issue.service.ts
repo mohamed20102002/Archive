@@ -38,6 +38,8 @@ export interface IssueHistory {
   created_by: string
   created_at: string
   creator_name?: string
+  linked_records?: { record_id: string; record_title: string; topic_title: string; topic_id: string }[]
+  edit_count?: number
 }
 
 export interface CreateIssueData {
@@ -66,7 +68,7 @@ export interface IssueFilters {
   min_age_days?: number
 }
 
-// Helper: add a history entry
+// Helper: add a history entry, returns the history id
 function addHistory(
   issueId: string,
   action: string,
@@ -75,7 +77,7 @@ function addHistory(
   oldValue?: string | null,
   newValue?: string | null,
   comment?: string | null
-): void {
+): string {
   const db = getDatabase()
   const id = generateId()
   const now = new Date().toISOString()
@@ -84,6 +86,20 @@ function addHistory(
     INSERT INTO issue_history (id, issue_id, action, field_name, old_value, new_value, comment, created_by, created_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(id, issueId, action, fieldName || null, oldValue || null, newValue || null, comment || null, userId, now)
+
+  return id
+}
+
+// Helper: link history entry to records
+function linkHistoryRecords(historyId: string, recordIds: string[]): void {
+  if (!recordIds.length) return
+  const db = getDatabase()
+  const insert = db.prepare(
+    'INSERT OR IGNORE INTO issue_history_records (history_id, record_id) VALUES (?, ?)'
+  )
+  for (const recordId of recordIds) {
+    insert.run(historyId, recordId)
+  }
 }
 
 // Create issue
@@ -460,7 +476,8 @@ export function reopenIssue(
 export function addComment(
   issueId: string,
   comment: string,
-  userId: string
+  userId: string,
+  linkedRecordIds?: string[]
 ): { success: boolean; error?: string } {
   if (!comment?.trim()) {
     return { success: false, error: 'Comment cannot be empty' }
@@ -472,7 +489,11 @@ export function addComment(
   }
 
   try {
-    addHistory(issueId, 'comment', userId, null, null, null, comment.trim())
+    const historyId = addHistory(issueId, 'comment', userId, null, null, null, comment.trim())
+
+    if (linkedRecordIds?.length) {
+      linkHistoryRecords(historyId, linkedRecordIds)
+    }
 
     // Update the updated_at timestamp
     const db = getDatabase()
@@ -484,7 +505,7 @@ export function addComment(
       getUsername(userId),
       'issue',
       issueId,
-      { title: existing.title, comment: comment.trim() }
+      { title: existing.title, comment: comment.trim(), linked_records: linkedRecordIds || [] }
     )
 
     return { success: true }
@@ -494,21 +515,208 @@ export function addComment(
   }
 }
 
-// Get issue history
+// Update an existing comment's text
+export function updateComment(
+  historyId: string,
+  newComment: string,
+  userId: string
+): { success: boolean; error?: string } {
+  const db = getDatabase()
+
+  if (!newComment?.trim()) {
+    return { success: false, error: 'Comment cannot be empty' }
+  }
+
+  const entry = db.prepare(
+    "SELECT * FROM issue_history WHERE id = ? AND action IN ('comment', 'closure_note')"
+  ).get(historyId) as IssueHistory | undefined
+
+  if (!entry) {
+    return { success: false, error: 'Comment not found' }
+  }
+
+  try {
+    const now = new Date().toISOString()
+
+    // Save the old comment text as an edit snapshot
+    db.prepare(`
+      INSERT INTO comment_edits (id, history_id, old_comment, edited_by, edited_at)
+      VALUES (?, ?, ?, ?, ?)
+    `).run(generateId(), historyId, entry.comment, userId, now)
+
+    db.prepare(
+      'UPDATE issue_history SET comment = ? WHERE id = ?'
+    ).run(newComment.trim(), historyId)
+
+    db.prepare('UPDATE issues SET updated_at = ? WHERE id = ?').run(
+      now, entry.issue_id
+    )
+
+    logAudit(
+      'ISSUE_COMMENT_EDIT',
+      userId,
+      getUsername(userId),
+      'issue_history',
+      historyId,
+      { issue_id: entry.issue_id }
+    )
+
+    return { success: true }
+  } catch (error) {
+    console.error('Error updating comment:', error)
+    return { success: false, error: 'Failed to update comment' }
+  }
+}
+
+// Get edit history for a comment
+export function getCommentEdits(historyId: string): {
+  id: string
+  history_id: string
+  old_comment: string
+  edited_by: string
+  edited_at: string
+  editor_name?: string
+}[] {
+  const db = getDatabase()
+
+  return db.prepare(`
+    SELECT ce.*, u.display_name as editor_name
+    FROM comment_edits ce
+    LEFT JOIN users u ON ce.edited_by = u.id
+    WHERE ce.history_id = ?
+    ORDER BY ce.edited_at DESC
+  `).all(historyId) as {
+    id: string
+    history_id: string
+    old_comment: string
+    edited_by: string
+    edited_at: string
+    editor_name?: string
+  }[]
+}
+
+// Add linked records to an existing history entry
+export function addLinkedRecordsToComment(
+  historyId: string,
+  recordIds: string[],
+  userId: string
+): { success: boolean; error?: string } {
+  if (!recordIds?.length) {
+    return { success: false, error: 'No records provided' }
+  }
+
+  const db = getDatabase()
+
+  const entry = db.prepare(
+    'SELECT * FROM issue_history WHERE id = ?'
+  ).get(historyId) as IssueHistory | undefined
+
+  if (!entry) {
+    return { success: false, error: 'History entry not found' }
+  }
+
+  try {
+    linkHistoryRecords(historyId, recordIds)
+
+    db.prepare('UPDATE issues SET updated_at = ? WHERE id = ?').run(
+      new Date().toISOString(), entry.issue_id
+    )
+
+    logAudit(
+      'ISSUE_LINK_RECORDS',
+      userId,
+      getUsername(userId),
+      'issue_history',
+      historyId,
+      { issue_id: entry.issue_id, added_records: recordIds }
+    )
+
+    return { success: true }
+  } catch (error) {
+    console.error('Error adding linked records:', error)
+    return { success: false, error: 'Failed to add linked records' }
+  }
+}
+
+// Get issue history with linked records
 export function getIssueHistory(issueId: string): IssueHistory[] {
   const db = getDatabase()
 
   const history = db.prepare(`
     SELECT
       h.*,
-      u.display_name as creator_name
+      u.display_name as creator_name,
+      (SELECT COUNT(*) FROM comment_edits ce WHERE ce.history_id = h.id) as edit_count
     FROM issue_history h
     LEFT JOIN users u ON h.created_by = u.id
     WHERE h.issue_id = ?
     ORDER BY h.created_at ASC
   `).all(issueId) as IssueHistory[]
 
+  // Fetch linked records for each history entry
+  const linkStmt = db.prepare(`
+    SELECT ihr.record_id, r.title as record_title, t.title as topic_title, r.topic_id
+    FROM issue_history_records ihr
+    JOIN records r ON ihr.record_id = r.id
+    LEFT JOIN topics t ON r.topic_id = t.id
+    WHERE ihr.history_id = ?
+  `)
+
+  for (const entry of history) {
+    const links = linkStmt.all(entry.id) as { record_id: string; record_title: string; topic_title: string; topic_id: string }[]
+    if (links.length > 0) {
+      entry.linked_records = links
+    }
+  }
+
   return history
+}
+
+// Fetch a single record by ID for linking (e.g. paste-to-resolve)
+export function getRecordForLinking(
+  id: string
+): { id: string; title: string; topic_title: string; topic_id: string; type: string; subcategory_title: string | null; created_at: string } | null {
+  const db = getDatabase()
+
+  if (!id?.trim()) return null
+
+  const row = db.prepare(`
+    SELECT r.id, r.title, t.title as topic_title, r.topic_id, r.type, s.title as subcategory_title, r.created_at
+    FROM records r
+    LEFT JOIN topics t ON r.topic_id = t.id
+    LEFT JOIN subcategories s ON r.subcategory_id = s.id
+    WHERE r.id = ? AND r.deleted_at IS NULL
+  `).get(id.trim()) as { id: string; title: string; topic_title: string; topic_id: string; type: string; subcategory_title: string | null; created_at: string } | undefined
+
+  return row || null
+}
+
+// Search records across all topics (or within a specific topic) for linking
+export function searchRecordsForLinking(
+  query: string,
+  topicId?: string
+): { id: string; title: string; topic_title: string; topic_id: string; type: string; subcategory_title: string | null; created_at: string }[] {
+  const db = getDatabase()
+
+  if (!query.trim()) return []
+
+  const conditions = ['r.deleted_at IS NULL', 'r.title LIKE ?']
+  const params: unknown[] = [`%${query.trim()}%`]
+
+  if (topicId) {
+    conditions.push('r.topic_id = ?')
+    params.push(topicId)
+  }
+
+  return db.prepare(`
+    SELECT r.id, r.title, t.title as topic_title, r.topic_id, r.type, s.title as subcategory_title, r.created_at
+    FROM records r
+    LEFT JOIN topics t ON r.topic_id = t.id
+    LEFT JOIN subcategories s ON r.subcategory_id = s.id
+    WHERE ${conditions.join(' AND ')}
+    ORDER BY r.updated_at DESC
+    LIMIT 20
+  `).all(...params) as { id: string; title: string; topic_title: string; topic_id: string; type: string; subcategory_title: string | null; created_at: string }[]
 }
 
 // Get issue stats
