@@ -1,10 +1,11 @@
 import React from 'react'
 import { AttendanceCell } from './AttendanceCell'
-import { AttendanceEntry } from '../../types'
+import { AttendanceEntry, AttendanceCondition } from '../../types'
 
 interface AttendanceCalendarProps {
   year: number
   entries: AttendanceEntry[]
+  conditions: AttendanceCondition[]
   isEditable: boolean
   onCellClick: (date: string) => void
 }
@@ -25,6 +26,7 @@ function formatDate(year: number, month: number, day: number): string {
 export function AttendanceCalendar({
   year,
   entries,
+  conditions,
   isEditable,
   onCellClick
 }: AttendanceCalendarProps) {
@@ -81,6 +83,7 @@ export function AttendanceCalendar({
                       exists={exists}
                       isToday={isToday}
                       entry={entry}
+                      conditions={conditions}
                       isEditable={isEditable && exists}
                       onClick={() => onCellClick(formatDate(year, month, day))}
                     />

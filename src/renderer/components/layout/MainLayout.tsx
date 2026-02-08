@@ -12,18 +12,20 @@ import { ShiftHandover } from '../handover/ShiftHandover'
 import { AttendancePage } from '../attendance/AttendancePage'
 import { SecureResources } from '../secure-resources/SecureResources'
 import { AuditLog } from '../audit/AuditLog'
+import { BackupRestore } from '../backup/BackupRestore'
 import { Settings } from '../settings/Settings'
 
 const keepAliveRoutes: { path: string; Component: React.ComponentType }[] = [
   { path: '/topics', Component: TopicList },
-  { path: '/letters', Component: LetterList },
-  { path: '/mom', Component: MOMList },
   { path: '/issues', Component: OpenIssues },
   { path: '/reminders', Component: ReminderList },
+  { path: '/mom', Component: MOMList },
+  { path: '/letters', Component: LetterList },
   { path: '/handover', Component: ShiftHandover },
-  { path: '/attendance', Component: AttendancePage },
   { path: '/secure-resources', Component: SecureResources },
+  { path: '/attendance', Component: AttendancePage },
   { path: '/audit', Component: AuditLog },
+  { path: '/backup', Component: BackupRestore },
   { path: '/settings', Component: Settings },
 ]
 

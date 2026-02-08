@@ -2,6 +2,7 @@ import { getDatabase, getAuditDatabase, getDataPath } from '../database/connecti
 import { logAudit } from '../database/audit'
 import { generateId } from '../utils/crypto'
 import { getUsername } from './auth.service'
+import { getSetting } from './settings.service'
 import { Document, Packer, Table, TableRow, TableCell, Paragraph, TextRun, WidthType, AlignmentType, HeadingLevel, ExternalHyperlink } from 'docx'
 import { getEmailsPath } from '../database/connection'
 import * as fs from 'fs'
@@ -45,36 +46,48 @@ export interface WeekInfo {
   displayText: string
 }
 
-// Get the Monday-based week number for a given date
+// Get the configured week start day (0 = Sunday, 1 = Monday, etc.)
+function getConfiguredStartDay(): number {
+  const setting = getSetting('handover_start_day')
+  return setting !== null ? Number(setting) : 1 // Default to Monday
+}
+
+// Get the week number for a given date based on configured start day
 function getShiftNumber(date: Date): number {
+  const startDay = getConfiguredStartDay()
   const startOfYear = new Date(date.getFullYear(), 0, 1)
-  let mondayCount = 0
+  let weekCount = 0
   const current = new Date(startOfYear)
 
   while (current <= date) {
-    if (current.getDay() === 1) mondayCount++ // Monday = 1
+    if (current.getDay() === startDay) weekCount++
     current.setDate(current.getDate() + 1)
   }
-  return mondayCount
+  return weekCount
 }
 
-// Get the Monday of the week containing the given date
-function getMonday(date: Date): Date {
+// Get the start day of the week containing the given date (based on configured start day)
+function getWeekStart(date: Date): Date {
+  const startDay = getConfiguredStartDay()
   const d = new Date(date)
-  const day = d.getDay()
-  const diff = d.getDate() - day + (day === 0 ? -6 : 1) // Adjust for Sunday
-  d.setDate(diff)
+  const currentDay = d.getDay()
+
+  // Calculate days to go back to reach the start day
+  let daysToGoBack = currentDay - startDay
+  if (daysToGoBack < 0) daysToGoBack += 7
+
+  d.setDate(d.getDate() - daysToGoBack)
   d.setHours(0, 0, 0, 0)
   return d
 }
 
-// Get the Sunday of the week containing the given date
-function getSunday(date: Date): Date {
-  const monday = getMonday(date)
-  const sunday = new Date(monday)
-  sunday.setDate(monday.getDate() + 6)
-  sunday.setHours(23, 59, 59, 999)
-  return sunday
+// Get the end day of the week containing the given date (day before the next week start)
+function getWeekEnd(date: Date): Date {
+  const weekStart = getWeekStart(date)
+  const weekEnd = new Date(weekStart)
+  weekEnd.setDate(weekStart.getDate() + 6)
+  weekEnd.setHours(23, 59, 59, 999)
+  return weekEnd
 }
 
 // Format date for display
@@ -87,17 +100,17 @@ export function getWeekInfo(offsetWeeks: number = 0): WeekInfo {
   const now = new Date()
   now.setDate(now.getDate() + (offsetWeeks * 7))
 
-  const monday = getMonday(now)
-  const sunday = getSunday(now)
-  const weekNumber = getShiftNumber(monday)
-  const year = monday.getFullYear()
+  const weekStart = getWeekStart(now)
+  const weekEnd = getWeekEnd(now)
+  const weekNumber = getShiftNumber(weekStart)
+  const year = weekStart.getFullYear()
 
   return {
     weekNumber,
     year,
-    startDate: monday.toISOString(),
-    endDate: sunday.toISOString(),
-    displayText: `Week ${weekNumber}: ${formatDate(monday)} - ${formatDate(sunday)}, ${year}`
+    startDate: weekStart.toISOString(),
+    endDate: weekEnd.toISOString(),
+    displayText: `Week ${weekNumber}: ${formatDate(weekStart)} - ${formatDate(weekEnd)}, ${year}`
   }
 }
 

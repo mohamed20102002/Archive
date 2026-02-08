@@ -13,6 +13,7 @@ type ViewMode = 'card' | 'table'
 // Unified item for displaying both reminders and issue reminders
 interface DisplayItem {
   id: string
+  originalId: string // The actual ID (without prefix) for navigation
   title: string
   description: string | null
   due_date: string
@@ -20,9 +21,11 @@ interface DisplayItem {
   is_overdue: boolean
   priority: string
   topic_title?: string
+  record_title?: string
   completed_at?: string | null
   source: 'reminder' | 'issue' | 'mom-action'
   mom_internal_id?: string
+  topic_id?: string | null
 }
 
 export function ReminderList() {
@@ -70,6 +73,7 @@ export function ReminderList() {
   const allItems: DisplayItem[] = [
     ...reminders.map((r): DisplayItem => ({
       id: r.id,
+      originalId: r.id,
       title: r.title,
       description: r.description || null,
       due_date: r.due_date,
@@ -77,11 +81,14 @@ export function ReminderList() {
       is_overdue: !!r.is_overdue,
       priority: r.priority || 'normal',
       topic_title: r.topic_title,
+      record_title: r.record_title,
       completed_at: r.completed_at,
-      source: 'reminder'
+      source: 'reminder',
+      topic_id: r.topic_id
     })),
     ...issueReminders.map((i): DisplayItem => ({
       id: `issue-${i.id}`,
+      originalId: i.id,
       title: i.title,
       description: i.description || null,
       due_date: i.reminder_date!,
@@ -94,6 +101,7 @@ export function ReminderList() {
     })),
     ...momActionReminders.map((a): DisplayItem => ({
       id: `mom-action-${a.id}`,
+      originalId: a.mom_internal_id,
       title: a.description,
       description: a.mom_title || null,
       due_date: a.deadline!,
@@ -308,7 +316,7 @@ export function ReminderList() {
               const isClickable = isIssue || isMomAction
 
               const handleRowClick = () => {
-                if (isIssue) navigate('/issues')
+                if (isIssue) navigate(`/issues?issueId=${item.originalId}`)
                 else if (isMomAction && item.mom_internal_id) navigate(`/mom?momId=${item.mom_internal_id}`)
               }
 
@@ -412,11 +420,29 @@ export function ReminderList() {
 
                       {/* Topic */}
                       {item.topic_title && (
-                        <span className="text-xs text-gray-400 flex items-center gap-1">
+                        <span
+                          className="text-xs text-gray-400 flex items-center gap-1 hover:text-primary-600 cursor-pointer"
+                          onClick={(e) => {
+                            if (item.topic_id) {
+                              e.stopPropagation()
+                              navigate(`/topics/${item.topic_id}`)
+                            }
+                          }}
+                        >
                           <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
                           </svg>
                           {item.topic_title}
+                        </span>
+                      )}
+
+                      {/* Record */}
+                      {item.record_title && (
+                        <span className="text-xs text-gray-400 flex items-center gap-1">
+                          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                          </svg>
+                          {item.record_title}
                         </span>
                       )}
                     </div>
@@ -448,7 +474,7 @@ export function ReminderList() {
                   const isClickable = isIssue || isMomAction
 
                   const handleRowClick = () => {
-                    if (isIssue) navigate('/issues')
+                    if (isIssue) navigate(`/issues?issueId=${item.originalId}`)
                     else if (isMomAction && item.mom_internal_id) navigate(`/mom?momId=${item.mom_internal_id}`)
                   }
 
@@ -526,7 +552,25 @@ export function ReminderList() {
                         )}
                       </td>
                       <td className="px-4 py-3">
-                        <span className="text-sm text-gray-600">{item.topic_title || '-'}</span>
+                        <div className="flex flex-col gap-0.5">
+                          {item.topic_title && (
+                            <span
+                              className="text-sm text-gray-600 hover:text-primary-600 cursor-pointer"
+                              onClick={(e) => {
+                                if (item.topic_id) {
+                                  e.stopPropagation()
+                                  navigate(`/topics/${item.topic_id}`)
+                                }
+                              }}
+                            >
+                              {item.topic_title}
+                            </span>
+                          )}
+                          {item.record_title && (
+                            <span className="text-xs text-gray-400">{item.record_title}</span>
+                          )}
+                          {!item.topic_title && !item.record_title && '-'}
+                        </div>
                       </td>
                       <td className="px-4 py-3 text-right">
                         {!isIssue && !isMomAction && (

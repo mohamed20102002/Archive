@@ -21,6 +21,7 @@ export function OutlookBrowser() {
   const [selectedFolder, setSelectedFolder] = useState<OutlookFolder | null>(null)
   const [selectedEmail, setSelectedEmail] = useState<OutlookEmail | null>(null)
   const [isLoadingEmails, setIsLoadingEmails] = useState(false)
+  const [isLoadingEmailDetails, setIsLoadingEmailDetails] = useState(false)
   const [archivedEmailIds, setArchivedEmailIds] = useState<Set<string>>(new Set())
   const [isRestoring, setIsRestoring] = useState(false)
 
@@ -178,12 +179,18 @@ export function OutlookBrowser() {
   }
 
   const handleSelectEmail = async (email: OutlookEmail) => {
+    setIsLoadingEmailDetails(true)
+    // Set basic email info immediately for better UX
+    setSelectedEmail(email)
+
     try {
       const details = await window.electronAPI.outlook.getEmailDetails(email.entryId, email.storeId)
       setSelectedEmail(details as OutlookEmail)
     } catch (err: any) {
       console.error('Error loading email details:', err)
       error('Failed to load email details', err.message)
+    } finally {
+      setIsLoadingEmailDetails(false)
     }
   }
 
@@ -293,6 +300,7 @@ export function OutlookBrowser() {
             email={selectedEmail}
             selectedFolder={selectedFolder}
             isArchived={selectedEmail ? archivedEmailIds.has(selectedEmail.entryId) : false}
+            isLoadingDetails={isLoadingEmailDetails}
             onArchiveSuccess={loadArchivedEmailIds}
           />
         </div>

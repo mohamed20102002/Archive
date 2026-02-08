@@ -6,6 +6,7 @@ import { LetterCard } from './LetterCard'
 import { LetterForm } from './LetterForm'
 import { LetterDetail } from './LetterDetail'
 import { AuthorityManager } from './AuthorityManager'
+import { ContactManager } from './ContactManager'
 import { Modal } from '../common/Modal'
 
 interface PendingReference {
@@ -15,7 +16,7 @@ interface PendingReference {
 }
 
 type ViewMode = 'card' | 'table'
-type TabMode = 'all' | 'pending' | 'overdue' | 'authorities'
+type TabMode = 'all' | 'pending' | 'overdue' | 'authorities' | 'contacts'
 
 export function LetterList() {
   const { user } = useAuth()
@@ -89,8 +90,13 @@ export function LetterList() {
         authority_id: filterAuthority || undefined,
         topic_id: filterTopic || undefined
       })
-      // Ensure results is always an array
-      setLetters(Array.isArray(results) ? results as Letter[] : [])
+      // Search returns { letters, total } - extract letters array
+      if (results && typeof results === 'object' && 'letters' in results) {
+        setLetters(Array.isArray(results.letters) ? results.letters as Letter[] : [])
+      } else {
+        // Fallback for direct array result
+        setLetters(Array.isArray(results) ? results as Letter[] : [])
+      }
     } catch (error) {
       console.error('Error searching letters:', error)
       setLetters([])
@@ -308,7 +314,7 @@ export function LetterList() {
 
             {/* Tabs */}
             <div className="flex gap-2 mt-4">
-              {(['all', 'pending', 'overdue', 'authorities'] as TabMode[]).map((tab) => (
+              {(['all', 'pending', 'overdue', 'authorities', 'contacts'] as TabMode[]).map((tab) => (
                 <button
                   key={tab}
                   onClick={() => setTabMode(tab)}
@@ -320,13 +326,52 @@ export function LetterList() {
                 >
                   {tab === 'all' ? 'All Letters' :
                    tab === 'pending' ? 'Pending' :
-                   tab === 'overdue' ? 'Overdue' : 'Authorities'}
+                   tab === 'overdue' ? 'Overdue' :
+                   tab === 'authorities' ? 'Authorities' : 'Contacts'}
                 </button>
               ))}
             </div>
           </div>
         </div>
         <AuthorityManager />
+      </div>
+    )
+  }
+
+  if (tabMode === 'contacts') {
+    return (
+      <div className="flex-1 flex flex-col">
+        <div className="sticky top-0 z-10 bg-archive-light border-b border-gray-200">
+          <div className="px-6 py-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-2xl font-bold text-gray-900">Letters</h2>
+                <p className="text-gray-500 mt-1">Manage official correspondence and contacts</p>
+              </div>
+            </div>
+
+            {/* Tabs */}
+            <div className="flex gap-2 mt-4">
+              {(['all', 'pending', 'overdue', 'authorities', 'contacts'] as TabMode[]).map((tab) => (
+                <button
+                  key={tab}
+                  onClick={() => setTabMode(tab)}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                    tabMode === tab
+                      ? 'bg-primary-600 text-white'
+                      : 'bg-white text-gray-600 hover:bg-gray-100'
+                  }`}
+                >
+                  {tab === 'all' ? 'All Letters' :
+                   tab === 'pending' ? 'Pending' :
+                   tab === 'overdue' ? 'Overdue' :
+                   tab === 'authorities' ? 'Authorities' : 'Contacts'}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+        <ContactManager />
       </div>
     )
   }
@@ -381,7 +426,7 @@ export function LetterList() {
 
           {/* Tabs */}
           <div className="flex gap-2 mt-4">
-            {(['all', 'pending', 'overdue', 'authorities'] as TabMode[]).map((tab) => (
+            {(['all', 'pending', 'overdue', 'authorities', 'contacts'] as TabMode[]).map((tab) => (
               <button
                 key={tab}
                 onClick={() => setTabMode(tab)}
@@ -393,7 +438,8 @@ export function LetterList() {
               >
                 {tab === 'all' ? 'All Letters' :
                  tab === 'pending' ? 'Pending' :
-                 tab === 'overdue' ? 'Overdue' : 'Authorities'}
+                 tab === 'overdue' ? 'Overdue' :
+                 tab === 'authorities' ? 'Authorities' : 'Contacts'}
               </button>
             ))}
           </div>
@@ -449,7 +495,7 @@ export function LetterList() {
                 <select
                   value={filterAuthority}
                   onChange={(e) => setFilterAuthority(e.target.value)}
-                  className="input w-48"
+                  className="input min-w-64 max-w-md"
                 >
                   <option value="">All Authorities</option>
                   {authorities.map((auth) => (

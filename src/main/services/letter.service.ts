@@ -25,6 +25,7 @@ export interface Letter {
   summary: string | null
   content: string | null
   authority_id: string | null
+  contact_id: string | null
   topic_id: string
   subcategory_id: string | null
   parent_letter_id: string | null
@@ -36,6 +37,7 @@ export interface Letter {
   outlook_entry_id: string | null
   outlook_store_id: string | null
   email_id: string | null
+  is_notification: boolean
   letter_date: string | null
   received_date: string | null
   due_date: string | null
@@ -47,6 +49,9 @@ export interface Letter {
   // Joined fields
   authority_name?: string
   authority_short_name?: string
+  authority_is_internal?: boolean
+  contact_name?: string
+  contact_title?: string
   topic_title?: string
   subcategory_title?: string
   parent_letter_subject?: string
@@ -69,9 +74,11 @@ export interface CreateLetterData {
   summary?: string
   content?: string
   authority_id?: string
+  contact_id?: string
   topic_id: string
   subcategory_id?: string
   parent_letter_id?: string
+  is_notification?: boolean
   letter_date?: string
   received_date?: string
   due_date?: string
@@ -90,9 +97,11 @@ export interface UpdateLetterData {
   summary?: string
   content?: string
   authority_id?: string
+  contact_id?: string
   topic_id?: string
   subcategory_id?: string
   parent_letter_id?: string
+  is_notification?: boolean
   letter_date?: string
   received_date?: string
   due_date?: string
@@ -195,6 +204,14 @@ export function createLetter(
     }
   }
 
+  // Validate contact if provided
+  if (data.contact_id) {
+    const contact = db.prepare('SELECT id FROM contacts WHERE id = ? AND deleted_at IS NULL').get(data.contact_id)
+    if (!contact) {
+      return { success: false, error: 'Invalid contact' }
+    }
+  }
+
   // Validate parent letter if provided
   if (data.parent_letter_id) {
     const parent = db.prepare('SELECT id FROM letters WHERE id = ? AND deleted_at IS NULL').get(data.parent_letter_id)
@@ -224,10 +241,10 @@ export function createLetter(
         id, letter_id, letter_type, response_type, status, priority,
         incoming_number, outgoing_number, reference_number,
         subject, summary, content,
-        authority_id, topic_id, subcategory_id, parent_letter_id,
-        storage_path, letter_date, received_date, due_date,
+        authority_id, contact_id, topic_id, subcategory_id, parent_letter_id,
+        storage_path, is_notification, letter_date, received_date, due_date,
         created_by, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       id,
       data.letter_id?.trim() || null,
@@ -242,10 +259,12 @@ export function createLetter(
       data.summary?.trim() || null,
       data.content?.trim() || null,
       data.authority_id || null,
+      data.contact_id || null,
       data.topic_id,
       data.subcategory_id || null,
       data.parent_letter_id || null,
       storagePath,
+      data.is_notification ? 1 : 0,
       data.letter_date || null,
       data.received_date || null,
       data.due_date || null,
@@ -281,6 +300,9 @@ export function getLetterById(id: string): Letter | null {
     SELECT l.*,
            a.name as authority_name,
            a.short_name as authority_short_name,
+           a.is_internal as authority_is_internal,
+           c.name as contact_name,
+           c.title as contact_title,
            t.title as topic_title,
            s.title as subcategory_title,
            pl.subject as parent_letter_subject,
@@ -290,18 +312,20 @@ export function getLetterById(id: string): Letter | null {
            CASE WHEN l.due_date IS NOT NULL AND l.due_date < date('now') AND l.status NOT IN ('replied', 'closed', 'archived') THEN 1 ELSE 0 END as is_overdue
     FROM letters l
     LEFT JOIN authorities a ON l.authority_id = a.id
+    LEFT JOIN contacts c ON l.contact_id = c.id
     LEFT JOIN topics t ON l.topic_id = t.id
     LEFT JOIN subcategories s ON l.subcategory_id = s.id
     LEFT JOIN letters pl ON l.parent_letter_id = pl.id
     LEFT JOIN users u ON l.created_by = u.id
     WHERE l.id = ? AND l.deleted_at IS NULL
-  `).get(id) as (Letter & { is_overdue: number }) | undefined
+  `).get(id) as (Letter & { is_overdue: number; authority_is_internal: number }) | undefined
 
   if (!letter) return null
 
   return {
     ...letter,
-    is_overdue: letter.is_overdue === 1
+    is_overdue: letter.is_overdue === 1,
+    authority_is_internal: letter.authority_is_internal === 1
   }
 }
 
@@ -313,6 +337,9 @@ export function getAllLetters(): Letter[] {
     SELECT l.*,
            a.name as authority_name,
            a.short_name as authority_short_name,
+           a.is_internal as authority_is_internal,
+           c.name as contact_name,
+           c.title as contact_title,
            t.title as topic_title,
            s.title as subcategory_title,
            u.display_name as creator_name,
@@ -321,14 +348,15 @@ export function getAllLetters(): Letter[] {
            CASE WHEN l.due_date IS NOT NULL AND l.due_date < date('now') AND l.status NOT IN ('replied', 'closed', 'archived') THEN 1 ELSE 0 END as is_overdue
     FROM letters l
     LEFT JOIN authorities a ON l.authority_id = a.id
+    LEFT JOIN contacts c ON l.contact_id = c.id
     LEFT JOIN topics t ON l.topic_id = t.id
     LEFT JOIN subcategories s ON l.subcategory_id = s.id
     LEFT JOIN users u ON l.created_by = u.id
     WHERE l.deleted_at IS NULL
-    ORDER BY l.received_date DESC, l.created_at DESC
-  `).all() as (Letter & { is_overdue: number })[]
+    ORDER BY l.created_at DESC
+  `).all() as (Letter & { is_overdue: number; authority_is_internal: number })[]
 
-  return letters.map(l => ({ ...l, is_overdue: l.is_overdue === 1 }))
+  return letters.map(l => ({ ...l, is_overdue: l.is_overdue === 1, authority_is_internal: l.authority_is_internal === 1 }))
 }
 
 // Get letters by topic
@@ -339,6 +367,9 @@ export function getLettersByTopic(topicId: string, subcategoryId?: string | null
     SELECT l.*,
            a.name as authority_name,
            a.short_name as authority_short_name,
+           a.is_internal as authority_is_internal,
+           c.name as contact_name,
+           c.title as contact_title,
            t.title as topic_title,
            s.title as subcategory_title,
            u.display_name as creator_name,
@@ -347,6 +378,7 @@ export function getLettersByTopic(topicId: string, subcategoryId?: string | null
            CASE WHEN l.due_date IS NOT NULL AND l.due_date < date('now') AND l.status NOT IN ('replied', 'closed', 'archived') THEN 1 ELSE 0 END as is_overdue
     FROM letters l
     LEFT JOIN authorities a ON l.authority_id = a.id
+    LEFT JOIN contacts c ON l.contact_id = c.id
     LEFT JOIN topics t ON l.topic_id = t.id
     LEFT JOIN subcategories s ON l.subcategory_id = s.id
     LEFT JOIN users u ON l.created_by = u.id
@@ -362,11 +394,11 @@ export function getLettersByTopic(topicId: string, subcategoryId?: string | null
     params.push(subcategoryId)
   }
 
-  query += ' ORDER BY l.received_date DESC, l.created_at DESC'
+  query += ' ORDER BY l.created_at DESC'
 
-  const letters = db.prepare(query).all(...params) as (Letter & { is_overdue: number })[]
+  const letters = db.prepare(query).all(...params) as (Letter & { is_overdue: number; authority_is_internal: number })[]
 
-  return letters.map(l => ({ ...l, is_overdue: l.is_overdue === 1 }))
+  return letters.map(l => ({ ...l, is_overdue: l.is_overdue === 1, authority_is_internal: l.authority_is_internal === 1 }))
 }
 
 // Get letters by authority
@@ -377,6 +409,9 @@ export function getLettersByAuthority(authorityId: string): Letter[] {
     SELECT l.*,
            a.name as authority_name,
            a.short_name as authority_short_name,
+           a.is_internal as authority_is_internal,
+           c.name as contact_name,
+           c.title as contact_title,
            t.title as topic_title,
            s.title as subcategory_title,
            u.display_name as creator_name,
@@ -385,14 +420,15 @@ export function getLettersByAuthority(authorityId: string): Letter[] {
            CASE WHEN l.due_date IS NOT NULL AND l.due_date < date('now') AND l.status NOT IN ('replied', 'closed', 'archived') THEN 1 ELSE 0 END as is_overdue
     FROM letters l
     LEFT JOIN authorities a ON l.authority_id = a.id
+    LEFT JOIN contacts c ON l.contact_id = c.id
     LEFT JOIN topics t ON l.topic_id = t.id
     LEFT JOIN subcategories s ON l.subcategory_id = s.id
     LEFT JOIN users u ON l.created_by = u.id
     WHERE l.authority_id = ? AND l.deleted_at IS NULL
-    ORDER BY l.received_date DESC, l.created_at DESC
-  `).all(authorityId) as (Letter & { is_overdue: number })[]
+    ORDER BY l.created_at DESC
+  `).all(authorityId) as (Letter & { is_overdue: number; authority_is_internal: number })[]
 
-  return letters.map(l => ({ ...l, is_overdue: l.is_overdue === 1 }))
+  return letters.map(l => ({ ...l, is_overdue: l.is_overdue === 1, authority_is_internal: l.authority_is_internal === 1 }))
 }
 
 // Search letters
@@ -401,10 +437,24 @@ export function searchLetters(params: LetterSearchParams): { letters: Letter[]; 
   const conditions: string[] = ['l.deleted_at IS NULL']
   const values: any[] = []
 
-  // Full-text search
+  // Search across multiple fields using LIKE
   if (params.query?.trim()) {
-    conditions.push(`l.id IN (SELECT rowid FROM letters_fts WHERE letters_fts MATCH ?)`)
-    values.push(params.query.trim())
+    const searchTerm = `%${params.query.trim()}%`
+    conditions.push(`(
+      l.subject LIKE ? OR
+      l.summary LIKE ? OR
+      l.incoming_number LIKE ? OR
+      l.outgoing_number LIKE ? OR
+      l.reference_number LIKE ? OR
+      l.letter_date LIKE ? OR
+      l.received_date LIKE ? OR
+      a.name LIKE ? OR
+      a.short_name LIKE ? OR
+      t.title LIKE ? OR
+      c.name LIKE ?
+    )`)
+    // Add the search term for each LIKE condition
+    values.push(searchTerm, searchTerm, searchTerm, searchTerm, searchTerm, searchTerm, searchTerm, searchTerm, searchTerm, searchTerm, searchTerm)
   }
 
   // Topic filter
@@ -504,10 +554,13 @@ export function searchLetters(params: LetterSearchParams): { letters: Letter[]; 
 
   const whereClause = conditions.join(' AND ')
 
-  // Get total count
+  // Get total count (with JOINs needed for search conditions)
   const countResult = db.prepare(`
     SELECT COUNT(*) as total
     FROM letters l
+    LEFT JOIN authorities a ON l.authority_id = a.id
+    LEFT JOIN contacts c ON l.contact_id = c.id
+    LEFT JOIN topics t ON l.topic_id = t.id
     WHERE ${whereClause}
   `).get(...values) as { total: number }
 
@@ -522,6 +575,9 @@ export function searchLetters(params: LetterSearchParams): { letters: Letter[]; 
     SELECT l.*,
            a.name as authority_name,
            a.short_name as authority_short_name,
+           a.is_internal as authority_is_internal,
+           c.name as contact_name,
+           c.title as contact_title,
            t.title as topic_title,
            s.title as subcategory_title,
            u.display_name as creator_name,
@@ -530,6 +586,7 @@ export function searchLetters(params: LetterSearchParams): { letters: Letter[]; 
            CASE WHEN l.due_date IS NOT NULL AND l.due_date < date('now') AND l.status NOT IN ('replied', 'closed', 'archived') THEN 1 ELSE 0 END as is_overdue
     FROM letters l
     LEFT JOIN authorities a ON l.authority_id = a.id
+    LEFT JOIN contacts c ON l.contact_id = c.id
     LEFT JOIN topics t ON l.topic_id = t.id
     LEFT JOIN subcategories s ON l.subcategory_id = s.id
     LEFT JOIN users u ON l.created_by = u.id
@@ -548,10 +605,10 @@ export function searchLetters(params: LetterSearchParams): { letters: Letter[]; 
     queryValues.push(params.offset)
   }
 
-  const letters = db.prepare(query).all(...queryValues) as (Letter & { is_overdue: number })[]
+  const letters = db.prepare(query).all(...queryValues) as (Letter & { is_overdue: number; authority_is_internal: number })[]
 
   return {
-    letters: letters.map(l => ({ ...l, is_overdue: l.is_overdue === 1 })),
+    letters: letters.map(l => ({ ...l, is_overdue: l.is_overdue === 1, authority_is_internal: l.authority_is_internal === 1 })),
     total: countResult.total
   }
 }
@@ -586,6 +643,14 @@ export function updateLetter(
     }
   }
 
+  // Validate contact if being changed
+  if (data.contact_id && data.contact_id !== existing.contact_id) {
+    const contact = db.prepare('SELECT id FROM contacts WHERE id = ? AND deleted_at IS NULL').get(data.contact_id)
+    if (!contact) {
+      return { success: false, error: 'Invalid contact' }
+    }
+  }
+
   // Validate letter_id uniqueness if being changed
   if (data.letter_id !== undefined && data.letter_id?.trim()) {
     const existingLetterId = db.prepare('SELECT id FROM letters WHERE letter_id = ? AND id != ?').get(data.letter_id.trim(), id)
@@ -601,15 +666,20 @@ export function updateLetter(
     'letter_id', 'letter_type', 'response_type', 'status', 'priority',
     'incoming_number', 'outgoing_number', 'reference_number',
     'subject', 'summary', 'content',
-    'authority_id', 'topic_id', 'subcategory_id', 'parent_letter_id',
-    'letter_date', 'received_date', 'due_date', 'responded_date'
+    'authority_id', 'contact_id', 'topic_id', 'subcategory_id', 'parent_letter_id',
+    'is_notification', 'letter_date', 'received_date', 'due_date', 'responded_date'
   ]
 
   for (const field of fields) {
     if (data[field] !== undefined) {
       updates.push(`${field} = ?`)
       const value = data[field]
-      values.push(typeof value === 'string' ? value.trim() || null : value)
+      // Handle boolean to integer conversion for is_notification
+      if (field === 'is_notification') {
+        values.push(value ? 1 : 0)
+      } else {
+        values.push(typeof value === 'string' ? value.trim() || null : value)
+      }
     }
   }
 
@@ -830,7 +900,7 @@ export function getLetterFilePath(letterId: string): string | null {
   return path.join(getLettersBasePath(), letter.storage_path, 'original', letter.original_filename)
 }
 
-// Get pending letters (requires reply, not yet replied)
+// Get pending letters (status = pending)
 export function getPendingLetters(): Letter[] {
   const db = getDatabase()
 
@@ -838,24 +908,27 @@ export function getPendingLetters(): Letter[] {
     SELECT l.*,
            a.name as authority_name,
            a.short_name as authority_short_name,
+           a.is_internal as authority_is_internal,
+           c.name as contact_name,
+           c.title as contact_title,
            t.title as topic_title,
            s.title as subcategory_title,
            u.display_name as creator_name,
            (SELECT COUNT(*) FROM letter_attachments WHERE letter_id = l.id AND deleted_at IS NULL) as attachment_count,
            (SELECT COUNT(*) FROM letter_drafts WHERE letter_id = l.id AND deleted_at IS NULL) as draft_count,
-           CASE WHEN l.due_date IS NOT NULL AND l.due_date < date('now') AND l.status NOT IN ('replied', 'closed', 'archived') THEN 1 ELSE 0 END as is_overdue
+           0 as is_overdue
     FROM letters l
     LEFT JOIN authorities a ON l.authority_id = a.id
+    LEFT JOIN contacts c ON l.contact_id = c.id
     LEFT JOIN topics t ON l.topic_id = t.id
     LEFT JOIN subcategories s ON l.subcategory_id = s.id
     LEFT JOIN users u ON l.created_by = u.id
     WHERE l.deleted_at IS NULL
-      AND l.status IN ('pending', 'in_progress')
-      AND (l.response_type = 'requires_reply' OR l.response_type = 'for_action')
-    ORDER BY l.due_date ASC NULLS LAST, l.received_date DESC
-  `).all() as (Letter & { is_overdue: number })[]
+      AND l.status = 'pending'
+    ORDER BY l.created_at DESC
+  `).all() as (Letter & { is_overdue: number; authority_is_internal: number })[]
 
-  return letters.map(l => ({ ...l, is_overdue: l.is_overdue === 1 }))
+  return letters.map(l => ({ ...l, is_overdue: false, authority_is_internal: l.authority_is_internal === 1 }))
 }
 
 // Get overdue letters
@@ -866,6 +939,9 @@ export function getOverdueLetters(): Letter[] {
     SELECT l.*,
            a.name as authority_name,
            a.short_name as authority_short_name,
+           a.is_internal as authority_is_internal,
+           c.name as contact_name,
+           c.title as contact_title,
            t.title as topic_title,
            s.title as subcategory_title,
            u.display_name as creator_name,
@@ -874,6 +950,7 @@ export function getOverdueLetters(): Letter[] {
            1 as is_overdue
     FROM letters l
     LEFT JOIN authorities a ON l.authority_id = a.id
+    LEFT JOIN contacts c ON l.contact_id = c.id
     LEFT JOIN topics t ON l.topic_id = t.id
     LEFT JOIN subcategories s ON l.subcategory_id = s.id
     LEFT JOIN users u ON l.created_by = u.id
@@ -882,9 +959,9 @@ export function getOverdueLetters(): Letter[] {
       AND l.due_date < date('now')
       AND l.status NOT IN ('replied', 'closed', 'archived')
     ORDER BY l.due_date ASC
-  `).all() as (Letter & { is_overdue: number })[]
+  `).all() as (Letter & { is_overdue: number; authority_is_internal: number })[]
 
-  return letters.map(l => ({ ...l, is_overdue: true }))
+  return letters.map(l => ({ ...l, is_overdue: true, authority_is_internal: l.authority_is_internal === 1 }))
 }
 
 // Get letter by display letter_id
@@ -895,6 +972,9 @@ export function getLetterByLetterId(letterId: string): Letter | null {
     SELECT l.*,
            a.name as authority_name,
            a.short_name as authority_short_name,
+           a.is_internal as authority_is_internal,
+           c.name as contact_name,
+           c.title as contact_title,
            t.title as topic_title,
            s.title as subcategory_title,
            pl.subject as parent_letter_subject,
@@ -904,18 +984,20 @@ export function getLetterByLetterId(letterId: string): Letter | null {
            CASE WHEN l.due_date IS NOT NULL AND l.due_date < date('now') AND l.status NOT IN ('replied', 'closed', 'archived') THEN 1 ELSE 0 END as is_overdue
     FROM letters l
     LEFT JOIN authorities a ON l.authority_id = a.id
+    LEFT JOIN contacts c ON l.contact_id = c.id
     LEFT JOIN topics t ON l.topic_id = t.id
     LEFT JOIN subcategories s ON l.subcategory_id = s.id
     LEFT JOIN letters pl ON l.parent_letter_id = pl.id
     LEFT JOIN users u ON l.created_by = u.id
     WHERE l.letter_id = ? AND l.deleted_at IS NULL
-  `).get(letterId) as (Letter & { is_overdue: number }) | undefined
+  `).get(letterId) as (Letter & { is_overdue: number; authority_is_internal: number }) | undefined
 
   if (!letter) return null
 
   return {
     ...letter,
-    is_overdue: letter.is_overdue === 1
+    is_overdue: letter.is_overdue === 1,
+    authority_is_internal: letter.authority_is_internal === 1
   }
 }
 

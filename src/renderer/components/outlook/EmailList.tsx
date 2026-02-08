@@ -94,9 +94,11 @@ export function EmailList({ emails, selectedEmail, isLoading, archivedEmailIds, 
                 {email.subject}
               </h4>
 
-              <p className="text-xs text-gray-500 truncate">
-                {email.bodyPreview || '(No preview available)'}
-              </p>
+              {email.bodyPreview && (
+                <p className="text-xs text-gray-500 truncate">
+                  {email.bodyPreview}
+                </p>
+              )}
 
               {/* Indicators */}
               <div className="flex items-center gap-2 mt-2">

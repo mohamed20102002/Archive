@@ -31,6 +31,7 @@ export interface AttendanceCondition {
   color: string
   sort_order: number
   display_number: number
+  is_ignored: boolean
   created_by: string
   created_at: string
   updated_at: string
@@ -42,6 +43,7 @@ export interface CreateConditionData {
   color: string
   sort_order?: number
   display_number?: number
+  is_ignored?: boolean
 }
 
 export interface UpdateConditionData {
@@ -49,6 +51,7 @@ export interface UpdateConditionData {
   color?: string
   sort_order?: number
   display_number?: number
+  is_ignored?: boolean
 }
 
 export interface AttendanceEntry {
@@ -62,6 +65,7 @@ export interface AttendanceEntry {
   shift_name: string | null
   note: string | null
   created_by: string
+  created_by_name?: string
   created_at: string
   updated_at: string
   conditions: AttendanceCondition[]
@@ -225,9 +229,9 @@ export function createCondition(
     })()
 
     db.prepare(`
-      INSERT INTO attendance_conditions (id, name, color, sort_order, display_number, created_by)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `).run(id, data.name, data.color, sortOrder, displayNumber, userId)
+      INSERT INTO attendance_conditions (id, name, color, sort_order, display_number, is_ignored, created_by)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(id, data.name, data.color, sortOrder, displayNumber, data.is_ignored ? 1 : 0, userId)
 
     const condition = db.prepare(
       'SELECT * FROM attendance_conditions WHERE id = ?'
@@ -261,6 +265,7 @@ export function updateCondition(
     if (data.color !== undefined) { sets.push('color = ?'); params.push(data.color) }
     if (data.sort_order !== undefined) { sets.push('sort_order = ?'); params.push(data.sort_order) }
     if (data.display_number !== undefined) { sets.push('display_number = ?'); params.push(data.display_number) }
+    if (data.is_ignored !== undefined) { sets.push('is_ignored = ?'); params.push(data.is_ignored ? 1 : 0) }
 
     if (sets.length === 0) return { success: true }
 
@@ -303,9 +308,10 @@ export function deleteCondition(
 export function getAllConditions(includeDeleted = false): AttendanceCondition[] {
   const db = getDatabase()
   const where = includeDeleted ? '' : 'WHERE deleted_at IS NULL'
-  return db.prepare(
+  const rows = db.prepare(
     `SELECT * FROM attendance_conditions ${where} ORDER BY sort_order ASC, name ASC`
-  ).all() as AttendanceCondition[]
+  ).all() as (Omit<AttendanceCondition, 'is_ignored'> & { is_ignored: number })[]
+  return rows.map(r => ({ ...r, is_ignored: !!r.is_ignored }))
 }
 
 export function getConditionById(id: string): AttendanceCondition | null {
@@ -508,12 +514,13 @@ export function deleteEntry(
 export function getEntry(userId: string, entryDate: string): AttendanceEntry | null {
   const db = getDatabase()
   const entry = db.prepare(`
-    SELECT ae.*, u.display_name as user_display_name, s.name as shift_name
+    SELECT ae.*, u.display_name as user_display_name, s.name as shift_name, creator.display_name as created_by_name
     FROM attendance_entries ae
     LEFT JOIN users u ON u.id = ae.user_id
     LEFT JOIN shifts s ON s.id = ae.shift_id
+    LEFT JOIN users creator ON creator.id = ae.created_by
     WHERE ae.user_id = ? AND ae.entry_date = ?
-  `).get(userId, entryDate) as (AttendanceEntry & { user_display_name: string }) | undefined
+  `).get(userId, entryDate) as (AttendanceEntry & { user_display_name: string; created_by_name: string }) | undefined
 
   if (!entry) return null
 
@@ -548,10 +555,11 @@ export function getEntriesForYear(filters: AttendanceFilters): AttendanceEntry[]
   }
 
   let query = `
-    SELECT ae.*, u.display_name as user_display_name, s.name as shift_name
+    SELECT ae.*, u.display_name as user_display_name, s.name as shift_name, creator.display_name as created_by_name
     FROM attendance_entries ae
     LEFT JOIN users u ON u.id = ae.user_id
     LEFT JOIN shifts s ON s.id = ae.shift_id
+    LEFT JOIN users creator ON creator.id = ae.created_by
     WHERE ${conditions.join(' AND ')}
     ORDER BY ae.entry_date ASC
   `
@@ -559,10 +567,11 @@ export function getEntriesForYear(filters: AttendanceFilters): AttendanceEntry[]
   // If filtering by condition, join through junction table
   if (filters.condition_id) {
     query = `
-      SELECT DISTINCT ae.*, u.display_name as user_display_name, s.name as shift_name
+      SELECT DISTINCT ae.*, u.display_name as user_display_name, s.name as shift_name, creator.display_name as created_by_name
       FROM attendance_entries ae
       LEFT JOIN users u ON u.id = ae.user_id
       LEFT JOIN shifts s ON s.id = ae.shift_id
+      LEFT JOIN users creator ON creator.id = ae.created_by
       INNER JOIN attendance_entry_conditions aec ON aec.entry_id = ae.id
       WHERE ${conditions.join(' AND ')} AND aec.condition_id = ?
       ORDER BY ae.entry_date ASC

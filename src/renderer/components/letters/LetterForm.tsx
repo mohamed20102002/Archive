@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { Letter, Topic, Authority, LetterType, ResponseType, LetterStatus, LetterPriority, Subcategory, ReferenceType, LetterReference } from '../../types'
+import { Letter, Topic, Authority, Contact, LetterType, ResponseType, LetterStatus, LetterPriority, Subcategory, ReferenceType, LetterReference } from '../../types'
 
 interface PendingReference {
   targetLetter: Letter
@@ -17,29 +17,43 @@ interface LetterFormProps {
 }
 
 export function LetterForm({ letter, topics, authorities, existingReferences = [], onSubmit, onCancel }: LetterFormProps) {
-  const [letterType, setLetterType] = useState<LetterType>(letter?.letter_type || 'incoming')
-  const [responseType, setResponseType] = useState<ResponseType | ''>(letter?.response_type || '')
-  const [status, setStatus] = useState<LetterStatus>(letter?.status || 'pending')
-  const [priority, setPriority] = useState<LetterPriority>(letter?.priority || 'normal')
-  const [subject, setSubject] = useState(letter?.subject || '')
-  const [summary, setSummary] = useState(letter?.summary || '')
-  const [incomingNumber, setIncomingNumber] = useState(letter?.incoming_number || '')
+  // Authority selection first (determines internal/external)
+  const [authorityId, setAuthorityId] = useState(letter?.authority_id || '')
+  const [selectedAuthority, setSelectedAuthority] = useState<Authority | null>(null)
 
-  // File attachments state (multiple files)
-  const [selectedFiles, setSelectedFiles] = useState<{ filename: string; buffer: string; size: number }[]>([])
-  const [existingAttachmentCount, setExistingAttachmentCount] = useState<number>(letter?.attachment_count || 0)
+  // Letter type and notification
+  const [letterType, setLetterType] = useState<LetterType>(letter?.letter_type || 'incoming')
+  const [isNotification, setIsNotification] = useState(letter?.is_notification || false)
+
+  // Importance status (renamed from priority)
+  const [priority, setPriority] = useState<LetterPriority>(letter?.priority || 'normal')
+
+  // Numbers - depends on internal/external
+  const [incomingNumber, setIncomingNumber] = useState(letter?.incoming_number || '')
   const [outgoingNumber, setOutgoingNumber] = useState(letter?.outgoing_number || '')
   const [referenceNumber, setReferenceNumber] = useState(letter?.reference_number || '')
-  const [authorityId, setAuthorityId] = useState(letter?.authority_id || '')
+
+  // Other fields
+  const [subject, setSubject] = useState(letter?.subject || '')
+  const [summary, setSummary] = useState(letter?.summary || '')
   const [topicId, setTopicId] = useState(letter?.topic_id || '')
   const [subcategoryId, setSubcategoryId] = useState(letter?.subcategory_id || '')
   const [letterDate, setLetterDate] = useState(letter?.letter_date?.split('T')[0] || '')
   const [receivedDate, setReceivedDate] = useState(letter?.received_date?.split('T')[0] || '')
-  const [dueDate, setDueDate] = useState(letter?.due_date?.split('T')[0] || '')
-  const [subcategories, setSubcategories] = useState<Subcategory[]>([])
-  const [errors, setErrors] = useState<Record<string, string>>({})
+  const [status, setStatus] = useState<LetterStatus>(letter?.status || 'pending')
 
-  // Reference management state
+  // Contact (Att) for external
+  const [contacts, setContacts] = useState<Contact[]>([])
+  const [contactId, setContactId] = useState(letter?.contact_id || '')
+
+  // Subcategories
+  const [subcategories, setSubcategories] = useState<Subcategory[]>([])
+
+  // File attachments
+  const [selectedFiles, setSelectedFiles] = useState<{ filename: string; buffer: string; size: number }[]>([])
+  const [existingAttachmentCount] = useState<number>(letter?.attachment_count || 0)
+
+  // References
   const [pendingReferences, setPendingReferences] = useState<PendingReference[]>([])
   const [searchRefNumber, setSearchRefNumber] = useState('')
   const [searchRefType, setSearchRefType] = useState<ReferenceType>('reply_to')
@@ -47,6 +61,47 @@ export function LetterForm({ letter, topics, authorities, existingReferences = [
   const [searchResult, setSearchResult] = useState<Letter | null>(null)
   const [searchError, setSearchError] = useState('')
   const [searching, setSearching] = useState(false)
+
+  const [errors, setErrors] = useState<Record<string, string>>({})
+
+  // Computed: is the selected authority internal or external?
+  const isInternal = selectedAuthority?.is_internal ?? true
+  const isExternal = selectedAuthority ? !selectedAuthority.is_internal : false
+
+  // Track selected authority
+  useEffect(() => {
+    if (authorityId) {
+      const auth = authorities.find(a => a.id === authorityId)
+      setSelectedAuthority(auth || null)
+    } else {
+      setSelectedAuthority(null)
+      setContactId('')
+      setContacts([])
+    }
+  }, [authorityId, authorities])
+
+  // Load contacts when authority is external
+  useEffect(() => {
+    async function loadContacts() {
+      if (selectedAuthority && !selectedAuthority.is_internal) {
+        try {
+          const result = await window.electronAPI.contacts.getByAuthority(selectedAuthority.id)
+          if ((result as Contact[]).length > 0) {
+            setContacts(result as Contact[])
+          } else {
+            const allContacts = await window.electronAPI.contacts.getAll()
+            setContacts(allContacts as Contact[])
+          }
+        } catch (error) {
+          console.error('Error loading contacts:', error)
+        }
+      } else {
+        setContacts([])
+        setContactId('')
+      }
+    }
+    loadContacts()
+  }, [selectedAuthority])
 
   // Load subcategories when topic changes
   useEffect(() => {
@@ -81,12 +136,9 @@ export function LetterForm({ letter, topics, authorities, existingReferences = [
       const result = await window.electronAPI.letterReferences.findByRefNumber(searchRefNumber.trim())
       if (result) {
         const foundLetter = result as Letter
-        // Check if it's the same letter being edited
         if (letter && foundLetter.id === letter.id) {
           setSearchError('Cannot reference the same letter')
-        }
-        // Check if already added
-        else if (pendingReferences.some(ref => ref.targetLetter.id === foundLetter.id)) {
+        } else if (pendingReferences.some(ref => ref.targetLetter.id === foundLetter.id)) {
           setSearchError('This letter is already in your references')
         } else {
           setSearchResult(foundLetter)
@@ -102,10 +154,8 @@ export function LetterForm({ letter, topics, authorities, existingReferences = [
     }
   }
 
-  // Add a reference to the pending list
   const handleAddReference = () => {
     if (!searchResult) return
-
     setPendingReferences([
       ...pendingReferences,
       {
@@ -114,8 +164,6 @@ export function LetterForm({ letter, topics, authorities, existingReferences = [
         notes: searchRefNotes.trim()
       }
     ])
-
-    // Reset search form
     setSearchRefNumber('')
     setSearchRefType('reply_to')
     setSearchRefNotes('')
@@ -123,7 +171,6 @@ export function LetterForm({ letter, topics, authorities, existingReferences = [
     setSearchError('')
   }
 
-  // Remove a pending reference
   const handleRemoveReference = (index: number) => {
     setPendingReferences(pendingReferences.filter((_, i) => i !== index))
   }
@@ -139,7 +186,6 @@ export function LetterForm({ letter, topics, authorities, existingReferences = [
     }
   }
 
-  // Handle file selection (multiple files)
   const handleSelectFiles = async () => {
     try {
       const result = await window.electronAPI.dialog.openFile({
@@ -176,83 +222,116 @@ export function LetterForm({ letter, topics, authorities, existingReferences = [
 
   const validate = () => {
     const newErrors: Record<string, string> = {}
-
     if (!subject.trim()) {
       newErrors.subject = 'Subject is required'
     }
     if (!topicId) {
       newErrors.topicId = 'Topic is required'
     }
-
+    if (!authorityId) {
+      newErrors.authorityId = 'Organization is required'
+    }
     setErrors(newErrors)
     return Object.keys(newErrors).length === 0
   }
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-
     if (!validate()) return
 
     onSubmit({
       letter_type: letterType,
-      response_type: responseType || undefined,
       status,
       priority,
       subject: subject.trim(),
       summary: summary.trim() || undefined,
-      incoming_number: incomingNumber.trim() || undefined,
-      outgoing_number: outgoingNumber.trim() || undefined,
-      reference_number: referenceNumber.trim() || undefined,
+      // Internal: use incoming/outgoing numbers; External: use reference number
+      incoming_number: isInternal && letterType === 'incoming' ? incomingNumber.trim() || undefined : undefined,
+      outgoing_number: isInternal && letterType === 'outgoing' ? outgoingNumber.trim() || undefined : undefined,
+      reference_number: isExternal ? referenceNumber.trim() || undefined : undefined,
       authority_id: authorityId || undefined,
+      contact_id: isExternal ? contactId || undefined : undefined,
       topic_id: topicId,
       subcategory_id: subcategoryId || undefined,
+      is_notification: letterType === 'internal' ? isNotification : false,
       letter_date: letterDate || undefined,
-      received_date: receivedDate || undefined,
-      due_date: dueDate || undefined,
-      // File attachments data (multiple)
+      received_date: letterType === 'incoming' ? receivedDate || undefined : undefined,
       files: selectedFiles.length > 0 ? selectedFiles : undefined
     }, pendingReferences)
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-6">
-      {/* Letter Type */}
-      <div className="grid grid-cols-3 gap-4">
+    <form onSubmit={handleSubmit} className="space-y-5">
+      {/* Section 1: Organization Selection (determines internal/external) */}
+      <div className="bg-gray-50 rounded-lg p-4">
+        <label className="block text-sm font-medium text-gray-700 mb-2">
+          Organization / Party <span className="text-red-500">*</span>
+        </label>
+        <select
+          value={authorityId}
+          onChange={(e) => setAuthorityId(e.target.value)}
+          className={`input w-full ${errors.authorityId ? 'border-red-500' : ''}`}
+        >
+          <option value="">Select organization...</option>
+          <optgroup label="Internal Parties">
+            {authorities.filter(a => a.is_internal).map((auth) => (
+              <option key={auth.id} value={auth.id}>
+                {auth.name} {auth.short_name ? `(${auth.short_name})` : ''}
+              </option>
+            ))}
+          </optgroup>
+          <optgroup label="External Parties">
+            {authorities.filter(a => !a.is_internal).map((auth) => (
+              <option key={auth.id} value={auth.id}>
+                {auth.name} {auth.short_name ? `(${auth.short_name})` : ''}
+              </option>
+            ))}
+          </optgroup>
+        </select>
+        {errors.authorityId && <p className="text-red-500 text-sm mt-1">{errors.authorityId}</p>}
+        {selectedAuthority && (
+          <p className={`text-xs mt-2 font-medium ${isInternal ? 'text-blue-600' : 'text-amber-600'}`}>
+            {isInternal ? 'Internal Party (Government / Department)' : 'External Party (Outside Organization)'}
+          </p>
+        )}
+      </div>
+
+      {/* Section 2: Letter Type & Importance */}
+      <div className="grid grid-cols-2 gap-4">
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">
             Letter Type <span className="text-red-500">*</span>
           </label>
           <select
             value={letterType}
-            onChange={(e) => setLetterType(e.target.value as LetterType)}
+            onChange={(e) => {
+              setLetterType(e.target.value as LetterType)
+              if (e.target.value !== 'internal') {
+                setIsNotification(false)
+              }
+            }}
             className="input w-full"
           >
-            <option value="incoming">Incoming</option>
-            <option value="outgoing">Outgoing</option>
-            <option value="internal">Internal</option>
+            <option value="incoming">Incoming (Received by us)</option>
+            <option value="outgoing">Outgoing (Sent by us)</option>
+            <option value="internal">Internal Notification</option>
           </select>
+          {letterType === 'internal' && (
+            <label className="flex items-center gap-2 mt-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={isNotification}
+                onChange={(e) => setIsNotification(e.target.checked)}
+                className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+              />
+              <span className="text-sm text-gray-600">Mark as Internal Notification</span>
+            </label>
+          )}
         </div>
 
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">
-            Response Type
-          </label>
-          <select
-            value={responseType}
-            onChange={(e) => setResponseType(e.target.value as ResponseType | '')}
-            className="input w-full"
-          >
-            <option value="">Not specified</option>
-            <option value="requires_reply">Requires Reply</option>
-            <option value="informational">Informational</option>
-            <option value="for_action">For Action</option>
-            <option value="for_review">For Review</option>
-          </select>
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            Priority
+            Importance Status <span className="text-red-500">*</span>
           </label>
           <select
             value={priority}
@@ -260,58 +339,104 @@ export function LetterForm({ letter, topics, authorities, existingReferences = [
             className="input w-full"
           >
             <option value="low">Low</option>
-            <option value="normal">Normal</option>
-            <option value="high">High</option>
+            <option value="normal">Medium</option>
+            <option value="high">Important</option>
             <option value="urgent">Urgent</option>
           </select>
         </div>
       </div>
 
-      {/* Reference Numbers */}
-      <div className="grid grid-cols-3 gap-4">
-        {letterType === 'incoming' && (
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Incoming Number
-            </label>
-            <input
-              type="text"
-              value={incomingNumber}
-              onChange={(e) => setIncomingNumber(e.target.value)}
-              className="input w-full"
-              placeholder="e.g., IN-2025-001"
-            />
-          </div>
-        )}
-        {letterType === 'outgoing' && (
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Outgoing Number
-            </label>
-            <input
-              type="text"
-              value={outgoingNumber}
-              onChange={(e) => setOutgoingNumber(e.target.value)}
-              className="input w-full"
-              placeholder="e.g., OUT-2025-001"
-            />
-          </div>
-        )}
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            Reference Number
-          </label>
-          <input
-            type="text"
-            value={referenceNumber}
-            onChange={(e) => setReferenceNumber(e.target.value)}
-            className="input w-full"
-            placeholder="External reference"
-          />
+      {/* Section 3: Number Fields - Based on Internal/External */}
+      {selectedAuthority && (
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+          {isInternal ? (
+            // Internal: Show Incoming or Outgoing Number
+            <div>
+              <label className="block text-sm font-medium text-blue-800 mb-2">
+                {letterType === 'incoming' ? 'Incoming Number' : letterType === 'outgoing' ? 'Outgoing Number' : 'Internal Number'}
+              </label>
+              {letterType === 'incoming' && (
+                <input
+                  type="text"
+                  value={incomingNumber}
+                  onChange={(e) => setIncomingNumber(e.target.value)}
+                  className="input w-full"
+                  placeholder="e.g., 122, 498, 146"
+                />
+              )}
+              {letterType === 'outgoing' && (
+                <input
+                  type="text"
+                  value={outgoingNumber}
+                  onChange={(e) => setOutgoingNumber(e.target.value)}
+                  className="input w-full"
+                  placeholder="e.g., 188, 7346, 172"
+                />
+              )}
+              {letterType === 'internal' && (
+                <input
+                  type="text"
+                  value={incomingNumber}
+                  onChange={(e) => setIncomingNumber(e.target.value)}
+                  className="input w-full"
+                  placeholder="Internal reference number"
+                />
+              )}
+              <p className="text-xs text-blue-600 mt-1">
+                Internal letters use numeric numbering system
+              </p>
+            </div>
+          ) : (
+            // External: Show Reference Code
+            <div>
+              <label className="block text-sm font-medium text-amber-800 mb-2">
+                Reference Code
+              </label>
+              <input
+                type="text"
+                value={referenceNumber}
+                onChange={(e) => setReferenceNumber(e.target.value)}
+                className="input w-full"
+                placeholder="e.g., O/ASE/04012026/6339"
+              />
+              <p className="text-xs text-amber-600 mt-1">
+                External letters use unique reference codes
+              </p>
+            </div>
+          )}
         </div>
-      </div>
+      )}
 
-      {/* Subject */}
+      {/* Section 4: Att (Contact Person) - Only for External */}
+      {isExternal && (
+        <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+          <div className="flex items-center gap-2 mb-2">
+            <svg className="w-5 h-5 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+            </svg>
+            <label className="text-sm font-medium text-amber-800">
+              Att (Attention - Contact Person)
+            </label>
+          </div>
+          <select
+            value={contactId}
+            onChange={(e) => setContactId(e.target.value)}
+            className="input w-full"
+          >
+            <option value="">Select contact person...</option>
+            {contacts.map((contact) => (
+              <option key={contact.id} value={contact.id}>
+                {contact.name} {contact.title ? `- ${contact.title}` : ''}
+              </option>
+            ))}
+          </select>
+          <p className="text-xs text-amber-600 mt-1">
+            The person this letter is addressed to
+          </p>
+        </div>
+      )}
+
+      {/* Section 5: Subject */}
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-1">
           Subject <span className="text-red-500">*</span>
@@ -326,99 +451,36 @@ export function LetterForm({ letter, topics, authorities, existingReferences = [
         {errors.subject && <p className="text-red-500 text-sm mt-1">{errors.subject}</p>}
       </div>
 
-      {/* Summary */}
-      <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">
-          Summary
-        </label>
-        <textarea
-          value={summary}
-          onChange={(e) => setSummary(e.target.value)}
-          className="input w-full"
-          rows={3}
-          placeholder="Brief summary of the letter content"
-        />
-      </div>
-
-      {/* File Attachments (Multiple) */}
-      <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">
-          Attachments
-          {existingAttachmentCount > 0 && (
-            <span className="text-gray-500 font-normal ml-2">
-              ({existingAttachmentCount} existing file{existingAttachmentCount > 1 ? 's' : ''})
-            </span>
-          )}
-        </label>
-        <div className="border-2 border-dashed border-gray-300 rounded-lg p-4">
-          {/* Selected files list */}
-          {selectedFiles.length > 0 && (
-            <div className="space-y-2 mb-4">
-              {selectedFiles.map((file, index) => (
-                <div key={index} className="flex items-center justify-between bg-blue-50 rounded-lg px-4 py-2">
-                  <div className="flex items-center gap-3">
-                    <svg className="w-6 h-6 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                    </svg>
-                    <div>
-                      <p className="text-sm font-medium text-gray-900">{file.filename}</p>
-                      <p className="text-xs text-gray-500">{formatFileSize(file.size)}</p>
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => handleRemoveFile(index)}
-                    className="text-red-500 hover:text-red-700 p-1"
-                    title="Remove file"
-                  >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {/* Add files button */}
-          <div className="text-center">
-            <svg className="w-10 h-10 mx-auto text-gray-400 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 13h6m-3-3v6m5 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-            </svg>
-            <p className="text-sm text-gray-600 mb-2">
-              {selectedFiles.length > 0 ? 'Add more files' : 'Attach documents (PDF, Word, etc.)'}
-            </p>
-            <button
-              type="button"
-              onClick={handleSelectFiles}
-              className="btn-secondary text-sm"
-            >
-              {selectedFiles.length > 0 ? 'Add Files' : 'Select Files'}
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* Authority and Topic */}
+      {/* Section 5b: Dates */}
       <div className="grid grid-cols-2 gap-4">
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">
-            Authority / Organization
+            Letter Date
           </label>
-          <select
-            value={authorityId}
-            onChange={(e) => setAuthorityId(e.target.value)}
+          <input
+            type="date"
+            value={letterDate}
+            onChange={(e) => setLetterDate(e.target.value)}
             className="input w-full"
-          >
-            <option value="">Select authority...</option>
-            {authorities.map((auth) => (
-              <option key={auth.id} value={auth.id}>
-                {auth.name} {auth.short_name ? `(${auth.short_name})` : ''}
-              </option>
-            ))}
-          </select>
+          />
         </div>
+        {letterType === 'incoming' && (
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Received Date
+            </label>
+            <input
+              type="date"
+              value={receivedDate}
+              onChange={(e) => setReceivedDate(e.target.value)}
+              className="input w-full"
+            />
+          </div>
+        )}
+      </div>
 
+      {/* Section 6: Topic & Subcategory */}
+      <div className="grid grid-cols-2 gap-4">
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">
             Topic <span className="text-red-500">*</span>
@@ -435,104 +497,90 @@ export function LetterForm({ letter, topics, authorities, existingReferences = [
           </select>
           {errors.topicId && <p className="text-red-500 text-sm mt-1">{errors.topicId}</p>}
         </div>
-      </div>
-
-      {/* Subcategory */}
-      {subcategories.length > 0 && (
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            Subcategory
-          </label>
-          <select
-            value={subcategoryId}
-            onChange={(e) => setSubcategoryId(e.target.value)}
-            className="input w-full"
-          >
-            <option value="">No subcategory</option>
-            {subcategories.map((sub) => (
-              <option key={sub.id} value={sub.id}>{sub.title}</option>
-            ))}
-          </select>
-        </div>
-      )}
-
-      {/* Dates */}
-      <div className="grid grid-cols-3 gap-4">
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            Letter Date
-          </label>
-          <input
-            type="date"
-            value={letterDate}
-            onChange={(e) => setLetterDate(e.target.value)}
-            className="input w-full"
-          />
-        </div>
-
-        {letterType === 'incoming' && (
+        {subcategories.length > 0 && (
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              Received Date
+              Subcategory
             </label>
-            <input
-              type="date"
-              value={receivedDate}
-              onChange={(e) => setReceivedDate(e.target.value)}
+            <select
+              value={subcategoryId}
+              onChange={(e) => setSubcategoryId(e.target.value)}
               className="input w-full"
-            />
+            >
+              <option value="">No subcategory</option>
+              {subcategories.map((sub) => (
+                <option key={sub.id} value={sub.id}>{sub.title}</option>
+              ))}
+            </select>
           </div>
         )}
+      </div>
 
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            Due Date
-          </label>
-          <input
-            type="date"
-            value={dueDate}
-            onChange={(e) => setDueDate(e.target.value)}
-            className="input w-full"
-          />
+      {/* Section 7: Summary */}
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1">
+          Summary
+        </label>
+        <textarea
+          value={summary}
+          onChange={(e) => setSummary(e.target.value)}
+          className="input w-full"
+          rows={2}
+          placeholder="Brief summary of the letter content"
+        />
+      </div>
+
+      {/* Section 8: Attachments */}
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1">
+          Attachments
+          {existingAttachmentCount > 0 && (
+            <span className="text-gray-500 font-normal ml-2">
+              ({existingAttachmentCount} existing)
+            </span>
+          )}
+        </label>
+        <div className="border-2 border-dashed border-gray-300 rounded-lg p-3">
+          {selectedFiles.length > 0 && (
+            <div className="space-y-2 mb-3">
+              {selectedFiles.map((file, index) => (
+                <div key={index} className="flex items-center justify-between bg-blue-50 rounded px-3 py-2">
+                  <div className="flex items-center gap-2">
+                    <svg className="w-5 h-5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                    <span className="text-sm text-gray-900">{file.filename}</span>
+                    <span className="text-xs text-gray-500">({formatFileSize(file.size)})</span>
+                  </div>
+                  <button type="button" onClick={() => handleRemoveFile(index)} className="text-red-500 hover:text-red-700">
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+          <div className="text-center">
+            <button type="button" onClick={handleSelectFiles} className="btn-secondary text-sm">
+              {selectedFiles.length > 0 ? 'Add More Files' : 'Select Files'}
+            </button>
+          </div>
         </div>
       </div>
 
-      {/* Status (only for edit) */}
-      {letter && (
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            Status
-          </label>
-          <select
-            value={status}
-            onChange={(e) => setStatus(e.target.value as LetterStatus)}
-            className="input w-full"
-          >
-            <option value="pending">Pending</option>
-            <option value="in_progress">In Progress</option>
-            <option value="replied">Replied</option>
-            <option value="closed">Closed</option>
-            <option value="archived">Archived</option>
-          </select>
-        </div>
-      )}
-
-      {/* Related Letters / References */}
-      <div className="border-t pt-6">
+      {/* Section 9: References */}
+      <div className="border-t pt-4">
         <h3 className="text-sm font-medium text-gray-900 mb-3">
-          Related Letters
-          <span className="text-gray-500 font-normal ml-2">
-            (Link this letter to other letters)
-          </span>
+          References (Related Letters)
         </h3>
 
-        {/* Existing References (read-only display for edit mode) */}
         {existingReferences.length > 0 && (
-          <div className="mb-4">
+          <div className="mb-3">
             <p className="text-xs text-gray-500 mb-2">Existing references:</p>
-            <div className="space-y-2">
+            <div className="space-y-1">
               {existingReferences.map((ref) => (
-                <div key={ref.id} className="bg-gray-100 rounded-lg px-3 py-2 flex items-center gap-2 text-sm">
+                <div key={ref.id} className="bg-gray-100 rounded px-3 py-2 flex items-center gap-2 text-sm">
                   <span className="text-xs font-medium text-gray-500 uppercase px-2 py-0.5 bg-gray-200 rounded">
                     {getReferenceTypeLabel(ref.reference_type)}
                   </span>
@@ -546,19 +594,18 @@ export function LetterForm({ letter, topics, authorities, existingReferences = [
           </div>
         )}
 
-        {/* Search and Add Reference */}
-        <div className="bg-gray-50 rounded-lg p-4 space-y-3">
+        <div className="bg-gray-50 rounded-lg p-3 space-y-3">
           <div className="flex gap-2">
             <input
               type="text"
-              placeholder="Enter reference number to search..."
+              placeholder="Search by incoming/outgoing number or reference code..."
               value={searchRefNumber}
               onChange={(e) => {
                 setSearchRefNumber(e.target.value)
                 setSearchResult(null)
                 setSearchError('')
               }}
-              className="input flex-1"
+              className="input flex-1 text-sm"
             />
             <button
               type="button"
@@ -570,95 +617,42 @@ export function LetterForm({ letter, topics, authorities, existingReferences = [
             </button>
           </div>
 
-          {searchError && (
-            <p className="text-red-600 text-sm">{searchError}</p>
-          )}
+          {searchError && <p className="text-red-600 text-sm">{searchError}</p>}
 
           {searchResult && (
-            <div className="bg-white border border-green-200 rounded-lg p-3 space-y-3">
-              <div>
-                <p className="text-sm font-medium text-green-700">Letter found:</p>
-                <p className="text-sm text-gray-900">{searchResult.subject}</p>
-                <p className="text-xs text-gray-500">
-                  <span className="font-mono">
-                    {searchResult.reference_number || searchResult.incoming_number || searchResult.outgoing_number}
-                  </span>
-                  <span className="mx-2">|</span>
-                  <span className="capitalize">{searchResult.letter_type}</span>
-                  <span className="mx-2">|</span>
-                  <span>{searchResult.authority_name || 'No authority'}</span>
-                </p>
+            <div className="bg-white border border-green-200 rounded-lg p-3 space-y-2">
+              <p className="text-sm font-medium text-green-700">Letter found:</p>
+              <p className="text-sm text-gray-900">{searchResult.subject}</p>
+              <div className="grid grid-cols-2 gap-2">
+                <select
+                  value={searchRefType}
+                  onChange={(e) => setSearchRefType(e.target.value as ReferenceType)}
+                  className="input text-sm"
+                >
+                  <option value="related">Related Reference</option>
+                  <option value="reply_to">Reply To</option>
+                </select>
+                <button type="button" onClick={handleAddReference} className="btn-primary text-sm">
+                  Add Reference
+                </button>
               </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">
-                    Reference Type
-                  </label>
-                  <select
-                    value={searchRefType}
-                    onChange={(e) => setSearchRefType(e.target.value as ReferenceType)}
-                    className="input w-full text-sm"
-                  >
-                    <option value="reply_to">Reply To (this is a reply to that letter)</option>
-                    <option value="related">Related (general relationship)</option>
-                    <option value="supersedes">Supersedes (this replaces that letter)</option>
-                    <option value="amends">Amends (this modifies that letter)</option>
-                    <option value="attachment_to">Attachment To</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">
-                    Notes (optional)
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="Add a note..."
-                    value={searchRefNotes}
-                    onChange={(e) => setSearchRefNotes(e.target.value)}
-                    className="input w-full text-sm"
-                  />
-                </div>
-              </div>
-
-              <button
-                type="button"
-                onClick={handleAddReference}
-                className="btn-primary text-sm"
-              >
-                Add Reference
-              </button>
             </div>
           )}
         </div>
 
-        {/* Pending References List */}
         {pendingReferences.length > 0 && (
-          <div className="mt-4">
-            <p className="text-xs text-gray-500 mb-2">
-              References to add ({pendingReferences.length}):
-            </p>
-            <div className="space-y-2">
+          <div className="mt-3">
+            <p className="text-xs text-gray-500 mb-2">References to add:</p>
+            <div className="space-y-1">
               {pendingReferences.map((ref, index) => (
-                <div key={index} className="bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 flex items-center justify-between">
+                <div key={index} className="bg-blue-50 border border-blue-200 rounded px-3 py-2 flex items-center justify-between">
                   <div className="flex items-center gap-2 text-sm">
                     <span className="text-xs font-medium text-blue-600 uppercase px-2 py-0.5 bg-blue-100 rounded">
                       {getReferenceTypeLabel(ref.referenceType)}
                     </span>
                     <span className="text-gray-700">{ref.targetLetter.subject}</span>
-                    <span className="text-xs text-gray-500 font-mono">
-                      ({ref.targetLetter.reference_number || ref.targetLetter.incoming_number || ref.targetLetter.outgoing_number})
-                    </span>
-                    {ref.notes && (
-                      <span className="text-xs text-gray-400 italic">- {ref.notes}</span>
-                    )}
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => handleRemoveReference(index)}
-                    className="text-red-500 hover:text-red-700 p-1"
-                    title="Remove reference"
-                  >
+                  <button type="button" onClick={() => handleRemoveReference(index)} className="text-red-500 hover:text-red-700">
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                     </svg>
@@ -670,14 +664,24 @@ export function LetterForm({ letter, topics, authorities, existingReferences = [
         )}
       </div>
 
+      {/* Section 10: Status (edit only) */}
+      {letter && (
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
+          <select value={status} onChange={(e) => setStatus(e.target.value as LetterStatus)} className="input w-full">
+            <option value="pending">Pending</option>
+            <option value="in_progress">In Progress</option>
+            <option value="replied">Replied</option>
+            <option value="closed">Closed</option>
+            <option value="archived">Archived</option>
+          </select>
+        </div>
+      )}
+
       {/* Actions */}
       <div className="flex justify-end gap-3 pt-4 border-t">
-        <button type="button" onClick={onCancel} className="btn-secondary">
-          Cancel
-        </button>
-        <button type="submit" className="btn-primary">
-          {letter ? 'Update Letter' : 'Create Letter'}
-        </button>
+        <button type="button" onClick={onCancel} className="btn-secondary">Cancel</button>
+        <button type="submit" className="btn-primary">{letter ? 'Update Letter' : 'Create Letter'}</button>
       </div>
     </form>
   )

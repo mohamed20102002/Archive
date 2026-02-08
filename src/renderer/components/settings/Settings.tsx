@@ -9,6 +9,16 @@ const DATE_FORMAT_OPTIONS = [
   { value: 'YYYY-MM-DD', label: 'YYYY-MM-DD' }
 ]
 
+const HANDOVER_START_DAY_OPTIONS = [
+  { value: 0, label: 'Sunday' },
+  { value: 1, label: 'Monday' },
+  { value: 2, label: 'Tuesday' },
+  { value: 3, label: 'Wednesday' },
+  { value: 4, label: 'Thursday' },
+  { value: 5, label: 'Friday' },
+  { value: 6, label: 'Saturday' }
+]
+
 const DEFAULT_VIEW_OPTIONS = [
   { value: '/topics', label: 'Topics' },
   { value: '/letters', label: 'Letters' },
@@ -31,6 +41,7 @@ export function Settings() {
   const [defaultView, setDefaultView] = useState('/topics')
   const [defaultViewMode, setDefaultViewMode] = useState<'card' | 'table'>('card')
   const [dateFormat, setDateFormat] = useState('DD/MM/YYYY')
+  const [handoverStartDay, setHandoverStartDay] = useState(1)
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
@@ -39,6 +50,7 @@ export function Settings() {
     setDefaultView(settings.default_view)
     setDefaultViewMode(settings.default_view_mode)
     setDateFormat(settings.date_format)
+    setHandoverStartDay(settings.handover_start_day)
   }, [settings])
 
   const handleSave = async () => {
@@ -51,7 +63,8 @@ export function Settings() {
           theme,
           default_view: defaultView,
           default_view_mode: defaultViewMode,
-          date_format: dateFormat
+          date_format: dateFormat,
+          handover_start_day: String(handoverStartDay)
         },
         user.id
       )
@@ -251,6 +264,34 @@ export function Settings() {
             </div>
             <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">
               Default display mode for list pages.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      {/* Shift Handover Section */}
+      <section className="card dark:bg-gray-800 dark:border-gray-700">
+        <div className="px-2 pb-4 border-b border-gray-100 dark:border-gray-700">
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Shift Handover</h2>
+          <p className="text-sm text-gray-500 dark:text-gray-400">Configure shift handover timeline calculation</p>
+        </div>
+        <div className="px-2 pt-4 space-y-5">
+          <div>
+            <label className="label dark:text-gray-300">Week Start Day</label>
+            <select
+              value={handoverStartDay}
+              onChange={(e) => setHandoverStartDay(Number(e.target.value))}
+              disabled={!isAdmin}
+              className="input dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100"
+            >
+              {HANDOVER_START_DAY_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+            <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">
+              The day of the week when the shift handover period starts. Records from this day to the day before will be included in the handover.
             </p>
           </div>
         </div>

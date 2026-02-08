@@ -512,6 +512,15 @@ export function LetterDetail({ letter, onEdit, onDelete, onClose, onRefresh }: L
                   {letter.authority_short_name && ` (${letter.authority_short_name})`}
                 </p>
               </div>
+              {letter.contact_name && (
+                <div className="bg-amber-50 rounded-lg p-3">
+                  <h4 className="text-xs font-medium text-amber-600 uppercase mb-2">Att (Contact Person)</h4>
+                  <p className="text-gray-900">{letter.contact_name}</p>
+                  {letter.contact_title && (
+                    <p className="text-sm text-gray-500">{letter.contact_title}</p>
+                  )}
+                </div>
+              )}
               <div className="bg-gray-50 rounded-lg p-3">
                 <h4 className="text-xs font-medium text-gray-500 uppercase mb-2">Topic</h4>
                 <p className="text-gray-900">{letter.topic_title || 'Not specified'}</p>
@@ -525,18 +534,14 @@ export function LetterDetail({ letter, onEdit, onDelete, onClose, onRefresh }: L
                   {letter.letter_date ? new Date(letter.letter_date).toLocaleDateString() : 'Not set'}
                 </p>
               </div>
-              <div className="bg-gray-50 rounded-lg p-3">
-                <h4 className="text-xs font-medium text-gray-500 uppercase mb-2">Received Date</h4>
-                <p className="text-gray-900">
-                  {letter.received_date ? new Date(letter.received_date).toLocaleDateString() : 'Not set'}
-                </p>
-              </div>
-              <div className={`rounded-lg p-3 ${isOverdue ? 'bg-red-50' : 'bg-gray-50'}`}>
-                <h4 className="text-xs font-medium text-gray-500 uppercase mb-2">Due Date</h4>
-                <p className={isOverdue ? 'text-red-600 font-medium' : 'text-gray-900'}>
-                  {letter.due_date ? new Date(letter.due_date).toLocaleDateString() : 'Not set'}
-                </p>
-              </div>
+              {letter.letter_type === 'incoming' && (
+                <div className="bg-gray-50 rounded-lg p-3">
+                  <h4 className="text-xs font-medium text-gray-500 uppercase mb-2">Received Date</h4>
+                  <p className="text-gray-900">
+                    {letter.received_date ? new Date(letter.received_date).toLocaleDateString() : 'Not set'}
+                  </p>
+                </div>
+              )}
               <div className="bg-gray-50 rounded-lg p-3">
                 <h4 className="text-xs font-medium text-gray-500 uppercase mb-2">Response Type</h4>
                 <p className="text-gray-900 capitalize">

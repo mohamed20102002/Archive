@@ -329,7 +329,7 @@ function collectFolders(folder: any, parentPath: string, folders: OutlookFolder[
   }
 }
 
-export function getEmails(folderId: string, storeId: string, limit: number = 50): OutlookEmail[] {
+export async function getEmails(folderId: string, storeId: string, limit: number = 50): Promise<OutlookEmail[]> {
   console.log('=== outlookService.getEmails called ===')
   console.log('folderId received:', folderId)
   console.log('storeId received:', storeId)
@@ -365,6 +365,7 @@ export function getEmails(folderId: string, storeId: string, limit: number = 50)
     items.Sort('[ReceivedTime]', true) // Sort by received time, descending
 
     const count = Math.min(items.Count, limit)
+    const BATCH_SIZE = 5 // Process emails in small batches to prevent UI freeze
 
     for (let i = 1; i <= count; i++) {
       try {
@@ -403,6 +404,8 @@ export function getEmails(folderId: string, storeId: string, limit: number = 50)
         // Get sender display name
         const senderDisplay = item.SenderName || extractDisplayName(item.SenderEmailAddress, 'Unknown Sender')
 
+        // Skip body preview in list view - it's too slow
+        // Full body is loaded via getEmailDetails when user clicks
         emails.push({
           entryId: item.EntryID,
           storeId: storeId,
@@ -418,13 +421,18 @@ export function getEmails(folderId: string, storeId: string, limit: number = 50)
           attachmentNames,
           importance: item.Importance || 1,
           folderPath: folder.FolderPath || '',
-          bodyPreview: (item.Body || '').substring(0, 200),
-          body: item.Body || '',
-          htmlBody: item.HTMLBody || ''
+          bodyPreview: '', // Skip preview - too slow to fetch for every email
+          body: '', // Full body loaded on demand
+          htmlBody: '' // Full HTML body loaded on demand
         })
       } catch (error) {
         // Skip items that can't be read
         console.error('Error reading email item:', error)
+      }
+
+      // Yield control every BATCH_SIZE emails to prevent UI freeze
+      if (i % BATCH_SIZE === 0) {
+        await new Promise(resolve => setImmediate(resolve))
       }
     }
   } catch (error: any) {

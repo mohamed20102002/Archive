@@ -23,7 +23,7 @@ export function AttendanceSummary({ summary, conditions, shifts }: AttendanceSum
 
       {/* Condition breakdown */}
       <div className="space-y-2 mb-4">
-        {conditions.map(cond => {
+        {conditions.filter(c => !c.is_ignored).map(cond => {
           const count = summary.condition_totals[cond.id] || 0
           if (count === 0) return null
           return (

@@ -18,6 +18,7 @@ export interface Reminder {
   created_at: string
   updated_at: string
   topic_title?: string
+  record_title?: string
   creator_name?: string
   is_overdue?: boolean
 }
@@ -113,10 +114,12 @@ export function getAllReminders(): Reminder[] {
     SELECT
       r.*,
       t.title as topic_title,
+      rec.title as record_title,
       u.display_name as creator_name,
       CASE WHEN r.is_completed = 0 AND datetime(r.due_date) < datetime('now') THEN 1 ELSE 0 END as is_overdue
     FROM reminders r
     LEFT JOIN topics t ON r.topic_id = t.id
+    LEFT JOIN records rec ON r.record_id = rec.id
     LEFT JOIN users u ON r.created_by = u.id
     ORDER BY r.is_completed ASC, r.due_date ASC
   `).all() as Reminder[]
@@ -138,10 +141,12 @@ export function getUpcomingReminders(days: number = 7): Reminder[] {
     SELECT
       r.*,
       t.title as topic_title,
+      rec.title as record_title,
       u.display_name as creator_name,
       0 as is_overdue
     FROM reminders r
     LEFT JOIN topics t ON r.topic_id = t.id
+    LEFT JOIN records rec ON r.record_id = rec.id
     LEFT JOIN users u ON r.created_by = u.id
     WHERE r.is_completed = 0
       AND datetime(r.due_date) <= datetime(?)
@@ -163,10 +168,12 @@ export function getOverdueReminders(): Reminder[] {
     SELECT
       r.*,
       t.title as topic_title,
+      rec.title as record_title,
       u.display_name as creator_name,
       1 as is_overdue
     FROM reminders r
     LEFT JOIN topics t ON r.topic_id = t.id
+    LEFT JOIN records rec ON r.record_id = rec.id
     LEFT JOIN users u ON r.created_by = u.id
     WHERE r.is_completed = 0
       AND datetime(r.due_date) < datetime('now')
@@ -187,10 +194,12 @@ export function getReminderById(id: string): Reminder | null {
     SELECT
       r.*,
       t.title as topic_title,
+      rec.title as record_title,
       u.display_name as creator_name,
       CASE WHEN r.is_completed = 0 AND datetime(r.due_date) < datetime('now') THEN 1 ELSE 0 END as is_overdue
     FROM reminders r
     LEFT JOIN topics t ON r.topic_id = t.id
+    LEFT JOIN records rec ON r.record_id = rec.id
     LEFT JOIN users u ON r.created_by = u.id
     WHERE r.id = ?
   `).get(id) as Reminder | undefined
@@ -395,10 +404,12 @@ export function getRemindersByTopic(topicId: string): Reminder[] {
     SELECT
       r.*,
       t.title as topic_title,
+      rec.title as record_title,
       u.display_name as creator_name,
       CASE WHEN r.is_completed = 0 AND datetime(r.due_date) < datetime('now') THEN 1 ELSE 0 END as is_overdue
     FROM reminders r
     LEFT JOIN topics t ON r.topic_id = t.id
+    LEFT JOIN records rec ON r.record_id = rec.id
     LEFT JOIN users u ON r.created_by = u.id
     WHERE r.topic_id = ?
     ORDER BY r.is_completed ASC, r.due_date ASC

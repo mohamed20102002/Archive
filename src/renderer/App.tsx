@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { HashRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { useAuth } from './context/AuthContext'
 import { useSettings } from './context/SettingsContext'
 import { MainLayout } from './components/layout/MainLayout'
@@ -89,7 +89,7 @@ export function App() {
   }
 
   return (
-    <BrowserRouter>
+    <HashRouter>
       <Routes>
         {/* Public routes */}
         <Route
@@ -116,21 +116,22 @@ export function App() {
           {/* Keep-alive routes: rendered in MainLayout, toggled by CSS */}
           <Route path="topics" element={null} />
           <Route path="topics/:topicId" element={<Timeline />} />
+          <Route path="issues" element={null} />
+          <Route path="reminders" element={null} />
+          <Route path="mom" element={null} />
           <Route path="letters" element={null} />
           <Route path="outlook" element={null} />
-          <Route path="reminders" element={null} />
-          <Route path="issues" element={null} />
-          <Route path="mom" element={null} />
           <Route path="handover" element={null} />
-          <Route path="attendance" element={null} />
           <Route path="secure-resources" element={null} />
+          <Route path="attendance" element={null} />
           <Route path="audit" element={null} />
+          <Route path="backup" element={null} />
           <Route path="settings" element={null} />
         </Route>
 
         {/* Catch all */}
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
-    </BrowserRouter>
+    </HashRouter>
   )
 }

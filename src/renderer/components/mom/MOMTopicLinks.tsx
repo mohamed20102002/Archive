@@ -166,7 +166,7 @@ export function MOMTopicLinks({ momInternalId, onLinksChanged }: MOMTopicLinksPr
     }
   }
 
-  // Letter search
+  // Letter search - search by both internal ID and display letter_id
   useEffect(() => {
     if (!letterIdSearch.trim()) {
       setFoundLetter(null)
@@ -175,7 +175,17 @@ export function MOMTopicLinks({ momInternalId, onLinksChanged }: MOMTopicLinksPr
     }
     const timer = setTimeout(async () => {
       try {
-        const result = await window.electronAPI.letters.getById(letterIdSearch.trim())
+        const searchTerm = letterIdSearch.trim()
+        // Try by internal UUID first
+        let result = await window.electronAPI.letters.getById(searchTerm)
+        // If not found, try by display letter_id
+        if (!result) {
+          result = await window.electronAPI.letters.getByLetterId(searchTerm)
+        }
+        // If still not found, try by reference numbers
+        if (!result) {
+          result = await window.electronAPI.letterReferences.findByRefNumber(searchTerm)
+        }
         if (result) {
           setFoundLetter(result as Letter)
           setLetterSearchError('')

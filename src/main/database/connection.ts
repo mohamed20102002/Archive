@@ -86,7 +86,34 @@ export function closeDatabase(): void {
   }
 }
 
+export function checkpointDatabases(): void {
+  if (db) {
+    db.pragma('wal_checkpoint(TRUNCATE)')
+    console.log('Main database WAL checkpointed')
+  }
+  if (auditDb) {
+    auditDb.pragma('wal_checkpoint(TRUNCATE)')
+    console.log('Audit database WAL checkpointed')
+  }
+}
+
 export function isDatabaseInitialized(): boolean {
   const dbPath = path.join(getDataPath(), 'archive.db')
   return fs.existsSync(dbPath)
+}
+
+export function refreshDatabase(): void {
+  console.log('Refreshing database connections...')
+
+  // Checkpoint WAL to ensure all changes are written
+  checkpointDatabases()
+
+  // Close connections
+  closeDatabase()
+
+  // Reopen connections
+  getDatabase()
+  getAuditDatabase()
+
+  console.log('Database connections refreshed')
 }

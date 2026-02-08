@@ -1,18 +1,30 @@
 import React, { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { format } from 'date-fns'
 import { Modal } from '../common/Modal'
 import { useToast } from '../../context/ToastContext'
 import { useAuth } from '../../context/AuthContext'
 import type { OutlookEmail, OutlookFolder, Topic, Subcategory } from '../../types'
 
+interface EmailArchiveInfo {
+  topicId: string
+  topicTitle: string
+  recordId: string
+  recordTitle: string
+  subcategoryId: string | null
+  subcategoryTitle: string | null
+  archivedAt: string
+}
+
 interface EmailPreviewProps {
   email: OutlookEmail | null
   selectedFolder: OutlookFolder | null
   isArchived?: boolean
+  isLoadingDetails?: boolean
   onArchiveSuccess?: () => void
 }
 
-export function EmailPreview({ email, selectedFolder, isArchived, onArchiveSuccess }: EmailPreviewProps) {
+export function EmailPreview({ email, selectedFolder, isArchived, isLoadingDetails, onArchiveSuccess }: EmailPreviewProps) {
   const [showArchiveModal, setShowArchiveModal] = useState(false)
   const [topics, setTopics] = useState<Topic[]>([])
   const [selectedTopic, setSelectedTopic] = useState<string>('')
@@ -21,9 +33,32 @@ export function EmailPreview({ email, selectedFolder, isArchived, onArchiveSucce
   const [isArchiving, setIsArchiving] = useState(false)
   const [isLoadingTopics, setIsLoadingTopics] = useState(false)
   const [isLoadingSubcategories, setIsLoadingSubcategories] = useState(false)
+  const [archiveInfo, setArchiveInfo] = useState<EmailArchiveInfo | null>(null)
+  const [isLoadingArchiveInfo, setIsLoadingArchiveInfo] = useState(false)
 
   const { success, error } = useToast()
   const { user } = useAuth()
+  const navigate = useNavigate()
+
+  // Load archive info when email changes and is archived
+  useEffect(() => {
+    if (email?.entryId && isArchived) {
+      setIsLoadingArchiveInfo(true)
+      window.electronAPI.emails.getArchiveInfo(email.entryId)
+        .then((info) => {
+          setArchiveInfo(info as EmailArchiveInfo | null)
+        })
+        .catch((err) => {
+          console.error('Error loading archive info:', err)
+          setArchiveInfo(null)
+        })
+        .finally(() => {
+          setIsLoadingArchiveInfo(false)
+        })
+    } else {
+      setArchiveInfo(null)
+    }
+  }, [email?.entryId, isArchived])
 
   // Load subcategories when topic changes
   useEffect(() => {
@@ -143,12 +178,35 @@ export function EmailPreview({ email, selectedFolder, isArchived, onArchiveSucce
               )}
             </div>
             {isArchived ? (
-              <span className="text-sm text-green-600 font-medium flex items-center gap-1.5 flex-shrink-0">
-                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
-                  <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z" />
-                </svg>
-                Already Archived
-              </span>
+              <div className="flex items-center gap-2 flex-shrink-0">
+                {isLoadingArchiveInfo ? (
+                  <span className="text-sm text-gray-500">Loading...</span>
+                ) : archiveInfo ? (
+                  <button
+                    onClick={() => navigate(`/topics/${archiveInfo.topicId}?recordId=${archiveInfo.recordId}`)}
+                    className="btn-secondary text-sm flex items-center gap-2"
+                    title={`View in ${archiveInfo.topicTitle}${archiveInfo.subcategoryTitle ? ` / ${archiveInfo.subcategoryTitle}` : ''}`}
+                  >
+                    <svg className="w-4 h-4 text-green-600" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z" />
+                    </svg>
+                    <span className="text-gray-700">
+                      {archiveInfo.topicTitle}
+                      {archiveInfo.subcategoryTitle && <span className="text-gray-400"> / {archiveInfo.subcategoryTitle}</span>}
+                    </span>
+                    <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                    </svg>
+                  </button>
+                ) : (
+                  <span className="text-sm text-green-600 font-medium flex items-center gap-1.5">
+                    <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z" />
+                    </svg>
+                    Already Archived
+                  </span>
+                )}
+              </div>
             ) : (
               <button
                 onClick={handleOpenArchiveModal}
@@ -233,7 +291,29 @@ export function EmailPreview({ email, selectedFolder, isArchived, onArchiveSucce
         </div>
 
         {/* Body */}
-        <div className="flex-1 overflow-y-auto p-4">
+        <div className="flex-1 overflow-y-auto p-4 relative">
+          {isLoadingDetails && (
+            <div className="absolute inset-0 bg-white/80 flex flex-col items-center justify-center z-10">
+              <div className="w-48 mb-3">
+                <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-primary-600 rounded-full"
+                    style={{
+                      animation: 'emailLoadingBar 1.2s ease-in-out infinite'
+                    }}
+                  />
+                </div>
+              </div>
+              <p className="text-sm text-gray-600 font-medium">Loading email content...</p>
+              <style>{`
+                @keyframes emailLoadingBar {
+                  0% { width: 0%; margin-left: 0%; }
+                  50% { width: 70%; margin-left: 15%; }
+                  100% { width: 0%; margin-left: 100%; }
+                }
+              `}</style>
+            </div>
+          )}
           <div className="prose prose-sm max-w-none whitespace-pre-wrap text-gray-700">
             {email.body || email.bodyPreview || '(No content)'}
           </div>

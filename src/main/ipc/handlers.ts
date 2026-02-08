@@ -9,6 +9,7 @@ import * as outlookService from '../services/outlook.service'
 import * as reminderService from '../services/reminder.service'
 import * as handoverService from '../services/handover.service'
 import * as authorityService from '../services/authority.service'
+import * as contactService from '../services/contact.service'
 import * as letterService from '../services/letter.service'
 import * as letterDraftService from '../services/letter-draft.service'
 import * as letterReferenceService from '../services/letter-reference.service'
@@ -22,6 +23,8 @@ import * as aiService from '../services/ai.service'
 import * as attendanceService from '../services/attendance.service'
 import * as attendancePdfService from '../services/attendance-pdf.service'
 import * as momService from '../services/mom.service'
+import * as backupService from '../services/backup.service'
+import { refreshDatabase } from '../database/connection'
 
 export function registerIpcHandlers(): void {
   // ===== Auth Handlers =====
@@ -166,6 +169,10 @@ export function registerIpcHandlers(): void {
     return emailService.openEmailFile(emailId)
   })
 
+  ipcMain.handle('emails:getArchiveInfo', async (_event, outlookEntryId: string) => {
+    return emailService.getEmailArchiveInfo(outlookEntryId)
+  })
+
   // ===== Outlook Handlers =====
 
   ipcMain.handle('outlook:connect', async () => {
@@ -211,7 +218,7 @@ export function registerIpcHandlers(): void {
     console.log('storeId:', storeId)
     console.log('limit:', limit)
     try {
-      const emails = outlookService.getEmails(folderId, storeId, limit)
+      const emails = await outlookService.getEmails(folderId, storeId, limit)
       console.log('Emails loaded:', emails.length)
       return emails
     } catch (error: any) {
@@ -322,6 +329,14 @@ export function registerIpcHandlers(): void {
     return authorityService.getAuthoritiesByType(type)
   })
 
+  ipcMain.handle('authorities:getInternal', async () => {
+    return authorityService.getInternalAuthorities()
+  })
+
+  ipcMain.handle('authorities:getExternal', async () => {
+    return authorityService.getExternalAuthorities()
+  })
+
   ipcMain.handle('authorities:search', async (_event, query: string) => {
     return authorityService.searchAuthorities(query)
   })
@@ -340,6 +355,36 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle('authorities:getStats', async () => {
     return authorityService.getAuthorityStats()
+  })
+
+  // ===== Contact Handlers =====
+
+  ipcMain.handle('contacts:create', async (_event, data: unknown, userId: string) => {
+    return contactService.createContact(data as contactService.CreateContactData, userId)
+  })
+
+  ipcMain.handle('contacts:getAll', async () => {
+    return contactService.getAllContacts()
+  })
+
+  ipcMain.handle('contacts:getById', async (_event, id: string) => {
+    return contactService.getContactById(id)
+  })
+
+  ipcMain.handle('contacts:getByAuthority', async (_event, authorityId: string) => {
+    return contactService.getContactsByAuthority(authorityId)
+  })
+
+  ipcMain.handle('contacts:search', async (_event, query: string) => {
+    return contactService.searchContacts(query)
+  })
+
+  ipcMain.handle('contacts:update', async (_event, id: string, data: unknown, userId: string) => {
+    return contactService.updateContact(id, data as contactService.UpdateContactData, userId)
+  })
+
+  ipcMain.handle('contacts:delete', async (_event, id: string, userId: string) => {
+    return contactService.deleteContact(id, userId)
   })
 
   // ===== Letter Handlers =====
@@ -808,9 +853,15 @@ export function registerIpcHandlers(): void {
     const win = BrowserWindow.getFocusedWindow()
     if (!win) return { success: false, error: 'No active window' }
 
+    // Create filename with user name (sanitize for filesystem)
+    const sanitizedName = (result.userDisplayName || 'user')
+      .replace(/[<>:"/\\|?*]/g, '_')
+      .replace(/\s+/g, '_')
+    const defaultFileName = `Attendance_${sanitizedName}_${year}.pdf`
+
     const dialogResult = await dialog.showSaveDialog(win, {
       title: 'Save Attendance PDF',
-      defaultPath: `attendance_${year}.pdf`,
+      defaultPath: defaultFileName,
       filters: [{ name: 'PDF Files', extensions: ['pdf'] }]
     })
 
@@ -1094,6 +1145,94 @@ export function registerIpcHandlers(): void {
       return { success: true }
     } catch (error: any) {
       return { success: false, error: error.message }
+    }
+  })
+
+  // ===== Backup Handlers =====
+
+  ipcMain.handle('backup:create', async (_event, userId: string, username: string, displayName: string, includeEmails: boolean) => {
+    const win = BrowserWindow.getFocusedWindow()
+    if (!win) return { success: false, error: 'No active window' }
+
+    const now = new Date()
+    const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}_${String(now.getHours()).padStart(2, '0')}-${String(now.getMinutes()).padStart(2, '0')}`
+    const defaultName = `Backup_${dateStr}_${username}.zip`
+
+    const dialogResult = await dialog.showSaveDialog(win, {
+      title: 'Save Backup',
+      defaultPath: defaultName,
+      filters: [{ name: 'ZIP Archives', extensions: ['zip'] }]
+    })
+
+    if (dialogResult.canceled || !dialogResult.filePath) {
+      return { success: false, error: 'Backup canceled' }
+    }
+
+    return backupService.createBackup(userId, username, displayName, dialogResult.filePath, includeEmails)
+  })
+
+  ipcMain.handle('backup:getEmailsSize', async () => {
+    return backupService.getEmailsFolderSize()
+  })
+
+  ipcMain.handle('backup:selectFile', async () => {
+    const win = BrowserWindow.getFocusedWindow()
+    if (!win) return { success: false, error: 'No active window' }
+
+    const dialogResult = await dialog.showOpenDialog(win, {
+      title: 'Select Backup File',
+      filters: [{ name: 'ZIP Archives', extensions: ['zip'] }],
+      properties: ['openFile']
+    })
+
+    if (dialogResult.canceled || dialogResult.filePaths.length === 0) {
+      return { success: false, error: 'Selection canceled' }
+    }
+
+    return { success: true, filePath: dialogResult.filePaths[0] }
+  })
+
+  ipcMain.handle('backup:analyze', async (_event, zipPath: string) => {
+    console.log('[IPC backup:analyze] Called with path:', zipPath)
+    console.error('[IPC backup:analyze] Called with path:', zipPath) // Also log to stderr
+    try {
+      // Check file exists
+      if (!fs.existsSync(zipPath)) {
+        return { success: false, error: `[DEBUG] File not found: ${zipPath}` }
+      }
+      const stat = fs.statSync(zipPath)
+      console.log('[IPC backup:analyze] File size:', stat.size, 'bytes')
+
+      const result = await backupService.analyzeBackup(zipPath)
+      console.log('[IPC backup:analyze] Result:', JSON.stringify(result).substring(0, 500))
+      return result
+    } catch (err: any) {
+      console.error('[IPC backup:analyze] Error:', err)
+      return { success: false, error: `[DEBUG CATCH] ${err.message || err}` }
+    }
+  })
+
+  ipcMain.handle('backup:compare', async (_event, backupInfo: unknown, userId: string, username: string, displayName: string) => {
+    return backupService.compareBackup(backupInfo as backupService.BackupInfo, userId, username, displayName)
+  })
+
+  ipcMain.handle('backup:restore', async (_event, zipPath: string, userId: string, username: string, displayName: string) => {
+    return backupService.restoreBackup(zipPath, userId, username, displayName)
+  })
+
+  ipcMain.handle('backup:getStatus', async () => {
+    return backupService.getBackupStatus()
+  })
+
+  // ===== Database Handlers =====
+
+  ipcMain.handle('database:refresh', async () => {
+    try {
+      refreshDatabase()
+      return { success: true }
+    } catch (err: any) {
+      console.error('Database refresh failed:', err)
+      return { success: false, error: err.message }
     }
   })
 

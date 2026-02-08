@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useRef, useEffect } from 'react'
 import { Modal } from '../common/Modal'
 import { useAuth } from '../../context/AuthContext'
 import { useToast } from '../../context/ToastContext'
@@ -20,9 +20,12 @@ export function SubcategoryManager({ topicId, subcategories, onClose, onUpdate }
   const [editTitle, setEditTitle] = useState('')
   const [editDescription, setEditDescription] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [recentlyAddedId, setRecentlyAddedId] = useState<string | null>(null)
+  const listRef = useRef<HTMLDivElement>(null)
 
-  const handleCreate = async (e: React.FormEvent) => {
+  const handleCreate = async (e: React.FormEvent, closeAfter: boolean = false) => {
     e.preventDefault()
+    e.stopPropagation()
     if (!user || !newTitle.trim()) return
 
     setIsSubmitting(true)
@@ -40,7 +43,26 @@ export function SubcategoryManager({ topicId, subcategories, onClose, onUpdate }
         success('Subcategory created')
         setNewTitle('')
         setNewDescription('')
-        onUpdate()
+
+        if (closeAfter) {
+          onUpdate()
+          onClose()
+        } else {
+          // Track the new ID for highlighting
+          const newId = (result as any).subcategory?.id
+          if (newId) {
+            setRecentlyAddedId(newId)
+            // Clear highlight after animation
+            setTimeout(() => setRecentlyAddedId(null), 2000)
+          }
+          onUpdate()
+          // Scroll to bottom of list after update
+          setTimeout(() => {
+            if (listRef.current) {
+              listRef.current.scrollTop = listRef.current.scrollHeight
+            }
+          }, 100)
+        }
       } else {
         error('Failed to create subcategory', result.error)
       }
@@ -122,7 +144,7 @@ export function SubcategoryManager({ topicId, subcategories, onClose, onUpdate }
     <Modal title="Manage Subcategories" onClose={onClose} size="md">
       <div className="space-y-6">
         {/* Create New Subcategory */}
-        <form onSubmit={handleCreate} className="space-y-4 pb-6 border-b border-gray-200">
+        <form onSubmit={(e) => handleCreate(e, false)} className="space-y-4 pb-6 border-b border-gray-200">
           <h3 className="text-sm font-medium text-gray-700">Add New Subcategory</h3>
           <div className="flex gap-3">
             <div className="flex-1">
@@ -135,13 +157,25 @@ export function SubcategoryManager({ topicId, subcategories, onClose, onUpdate }
                 disabled={isSubmitting}
               />
             </div>
-            <button
-              type="submit"
-              className="btn-primary"
-              disabled={isSubmitting || !newTitle.trim()}
-            >
-              Add
-            </button>
+            <div className="flex gap-2">
+              <button
+                type="submit"
+                className="btn-secondary text-sm"
+                disabled={isSubmitting || !newTitle.trim()}
+                title="Add and continue adding more"
+              >
+                Add More
+              </button>
+              <button
+                type="button"
+                onClick={(e) => handleCreate(e, true)}
+                className="btn-primary text-sm"
+                disabled={isSubmitting || !newTitle.trim()}
+                title="Add and close"
+              >
+                Add & Close
+              </button>
+            </div>
           </div>
           <input
             type="text"
@@ -164,11 +198,15 @@ export function SubcategoryManager({ topicId, subcategories, onClose, onUpdate }
               No subcategories yet. Add one above to organize records within this topic.
             </p>
           ) : (
-            <div className="space-y-2 max-h-80 overflow-y-auto">
+            <div ref={listRef} className="space-y-2 max-h-80 overflow-y-auto">
               {subcategories.map((sub) => (
                 <div
                   key={sub.id}
-                  className="p-3 bg-gray-50 rounded-lg"
+                  className={`p-3 rounded-lg transition-all duration-500 ${
+                    recentlyAddedId === sub.id
+                      ? 'bg-green-100 ring-2 ring-green-400'
+                      : 'bg-gray-50'
+                  }`}
                 >
                   {editingId === sub.id ? (
                     <div className="space-y-3">

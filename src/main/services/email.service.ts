@@ -317,6 +317,57 @@ export function getArchivedEmailIds(): string[] {
   return results.map(r => r.outlook_entry_id)
 }
 
+export interface EmailArchiveInfo {
+  topicId: string
+  topicTitle: string
+  recordId: string
+  recordTitle: string
+  subcategoryId: string | null
+  subcategoryTitle: string | null
+  archivedAt: string
+}
+
+export function getEmailArchiveInfo(outlookEntryId: string): EmailArchiveInfo | null {
+  const db = getDatabase()
+
+  const result = db.prepare(`
+    SELECT
+      t.id as topic_id,
+      t.title as topic_title,
+      r.id as record_id,
+      r.title as record_title,
+      s.id as subcategory_id,
+      s.title as subcategory_title,
+      e.archived_at
+    FROM emails e
+    JOIN records r ON r.email_id = e.id
+    JOIN topics t ON r.topic_id = t.id
+    LEFT JOIN subcategories s ON r.subcategory_id = s.id
+    WHERE e.outlook_entry_id = ?
+    LIMIT 1
+  `).get(outlookEntryId) as {
+    topic_id: string
+    topic_title: string
+    record_id: string
+    record_title: string
+    subcategory_id: string | null
+    subcategory_title: string | null
+    archived_at: string
+  } | undefined
+
+  if (!result) return null
+
+  return {
+    topicId: result.topic_id,
+    topicTitle: result.topic_title,
+    recordId: result.record_id,
+    recordTitle: result.record_title,
+    subcategoryId: result.subcategory_id,
+    subcategoryTitle: result.subcategory_title,
+    archivedAt: result.archived_at
+  }
+}
+
 export function openEmailFile(emailId: string): { success: boolean; error?: string } {
   const email = getEmailById(emailId)
   if (!email) {

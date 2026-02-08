@@ -185,7 +185,10 @@ export interface Reminder {
   updated_at: string
   // Computed fields
   topic?: Topic
+  topic_title?: string
+  record_title?: string
   creator?: User
+  creator_name?: string
   is_overdue?: boolean
 }
 
@@ -213,6 +216,7 @@ export interface Authority {
   name: string
   short_name: string | null
   type: AuthorityType
+  is_internal: boolean
   address: string | null
   contact_email: string | null
   contact_phone: string | null
@@ -229,6 +233,7 @@ export interface CreateAuthorityData {
   name: string
   short_name?: string
   type?: AuthorityType
+  is_internal?: boolean
   address?: string
   contact_email?: string
   contact_phone?: string
@@ -239,9 +244,47 @@ export interface UpdateAuthorityData {
   name?: string
   short_name?: string
   type?: AuthorityType
+  is_internal?: boolean
   address?: string
   contact_email?: string
   contact_phone?: string
+  notes?: string
+}
+
+// Contact types (for external letter addressees)
+export interface Contact {
+  id: string
+  name: string
+  title: string | null
+  authority_id: string | null
+  email: string | null
+  phone: string | null
+  notes: string | null
+  created_by: string
+  created_at: string
+  updated_at: string
+  deleted_at: string | null
+  // Joined fields
+  authority_name?: string
+  authority_short_name?: string
+  creator_name?: string
+}
+
+export interface CreateContactData {
+  name: string
+  title?: string
+  authority_id?: string
+  email?: string
+  phone?: string
+  notes?: string
+}
+
+export interface UpdateContactData {
+  name?: string
+  title?: string
+  authority_id?: string
+  email?: string
+  phone?: string
   notes?: string
 }
 
@@ -265,6 +308,7 @@ export interface Letter {
   summary: string | null
   content: string | null
   authority_id: string | null
+  contact_id: string | null
   topic_id: string
   subcategory_id: string | null
   parent_letter_id: string | null
@@ -276,6 +320,7 @@ export interface Letter {
   outlook_entry_id: string | null
   outlook_store_id: string | null
   email_id: string | null
+  is_notification: boolean
   letter_date: string | null
   received_date: string | null
   due_date: string | null
@@ -287,6 +332,9 @@ export interface Letter {
   // Joined fields
   authority_name?: string
   authority_short_name?: string
+  authority_is_internal?: boolean
+  contact_name?: string
+  contact_title?: string
   topic_title?: string
   subcategory_title?: string
   creator_name?: string
@@ -308,12 +356,14 @@ export interface CreateLetterData {
   summary?: string
   content?: string
   authority_id?: string
+  contact_id?: string
   topic_id: string
   subcategory_id?: string
   parent_letter_id?: string
   outlook_entry_id?: string
   outlook_store_id?: string
   email_id?: string
+  is_notification?: boolean
   letter_date?: string
   received_date?: string
   due_date?: string
@@ -332,8 +382,10 @@ export interface UpdateLetterData {
   summary?: string
   content?: string
   authority_id?: string
+  contact_id?: string
   topic_id?: string
   subcategory_id?: string
+  is_notification?: boolean
   due_date?: string
   responded_date?: string
 }
@@ -575,6 +627,9 @@ export type AuditAction =
   | 'AUTHORITY_CREATE'
   | 'AUTHORITY_UPDATE'
   | 'AUTHORITY_DELETE'
+  | 'CONTACT_CREATE'
+  | 'CONTACT_UPDATE'
+  | 'CONTACT_DELETE'
   | 'LETTER_CREATE'
   | 'LETTER_UPDATE'
   | 'LETTER_DELETE'
@@ -632,6 +687,10 @@ export type AuditAction =
   | 'MOM_LOCATION_CREATE'
   | 'MOM_LOCATION_UPDATE'
   | 'MOM_LOCATION_DELETE'
+  | 'BACKUP_CREATE'
+  | 'BACKUP_RESTORE'
+  | 'BACKUP_ROLLBACK'
+  | 'BACKUP_FAILED'
   | 'SYSTEM_STARTUP'
   | 'SYSTEM_SHUTDOWN'
 
@@ -673,6 +732,7 @@ export interface AppSettings {
   default_view: string
   default_view_mode: 'card' | 'table'
   date_format: string
+  handover_start_day: number // 0 = Sunday, 1 = Monday, ... 6 = Saturday
 }
 
 // Tag types
@@ -898,6 +958,7 @@ export interface AttendanceCondition {
   color: string
   sort_order: number
   display_number: number
+  is_ignored: boolean
   created_by: string
   created_at: string
   updated_at: string
@@ -909,6 +970,7 @@ export interface CreateAttendanceConditionData {
   color: string
   sort_order?: number
   display_number?: number
+  is_ignored?: boolean
 }
 
 export interface UpdateAttendanceConditionData {
@@ -916,6 +978,7 @@ export interface UpdateAttendanceConditionData {
   color?: string
   sort_order?: number
   display_number?: number
+  is_ignored?: boolean
 }
 
 export interface AttendanceEntry {
@@ -929,6 +992,7 @@ export interface AttendanceEntry {
   shift_name: string | null
   note: string | null
   created_by: string
+  created_by_name?: string
   created_at: string
   updated_at: string
   conditions: AttendanceCondition[]
@@ -1184,6 +1248,76 @@ export interface CreateMomDraftData {
   mom_internal_id: string
   title: string
   description?: string
+}
+
+// Backup types
+export interface BackupModuleCounts {
+  topics: number
+  records: number
+  emails: number
+  letters: number
+  moms: number
+  issues: number
+  attendance_entries: number
+  handovers: number
+  reminders: number
+  authorities: number
+  credentials: number
+  secure_references: number
+  users: number
+}
+
+export interface BackupInfo {
+  backup_date: string
+  backup_by_user_id: string
+  backup_by_username: string
+  backup_by_display_name: string
+  app_version: string
+  schema_version: number
+  total_size_bytes: number
+  file_count: number
+  module_counts: BackupModuleCounts
+  includes_emails?: boolean
+}
+
+export interface BackupComparison {
+  backup: BackupInfo
+  current: BackupInfo
+  is_backup_older: boolean
+  differences: {
+    module: string
+    backup_count: number
+    current_count: number
+    diff: number
+  }[]
+}
+
+export type BackupProgressPhase =
+  | 'preparing'
+  | 'checkpointing'
+  | 'closing_db'
+  | 'archiving'
+  | 'finalizing'
+  | 'reopening_db'
+  | 'creating_rollback'
+  | 'extracting'
+  | 'replacing'
+  | 'verifying'
+  | 'complete'
+  | 'error'
+
+export interface BackupProgress {
+  phase: BackupProgressPhase
+  percentage: number
+  message: string
+  currentFile?: string
+}
+
+export interface BackupStatusFile {
+  last_backup_date: string
+  last_backup_user: string
+  last_backup_file: string
+  last_backup_size_bytes: number
 }
 
 // UI State types

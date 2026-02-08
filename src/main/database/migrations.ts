@@ -1062,6 +1062,98 @@ const migrations: Migration[] = [
         END
       `)
     }
+  },
+  {
+    version: 16,
+    name: 'add_handover_start_day_setting',
+    up: (db: ReturnType<typeof getDatabase>) => {
+      // Add handover_start_day setting (default: Monday = 1)
+      // Values: 0 = Sunday, 1 = Monday, ... 6 = Saturday
+      db.prepare(
+        'INSERT OR IGNORE INTO app_settings (key, value) VALUES (?, ?)'
+      ).run('handover_start_day', '1')
+    }
+  },
+  {
+    version: 17,
+    name: 'letters_redesign',
+    up: (db: ReturnType<typeof getDatabase>) => {
+      // 1. Add is_internal flag to authorities table
+      const authInfo = db.prepare("PRAGMA table_info(authorities)").all() as { name: string }[]
+      if (!authInfo.some(c => c.name === 'is_internal')) {
+        db.exec(`ALTER TABLE authorities ADD COLUMN is_internal INTEGER NOT NULL DEFAULT 0`)
+      }
+
+      // 2. Create contacts table for external letter addressees (Att field)
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS contacts (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          title TEXT,
+          authority_id TEXT,
+          email TEXT,
+          phone TEXT,
+          notes TEXT,
+          created_by TEXT NOT NULL,
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+          deleted_at TEXT,
+          FOREIGN KEY (authority_id) REFERENCES authorities(id),
+          FOREIGN KEY (created_by) REFERENCES users(id)
+        )
+      `)
+
+      // 3. Create indexes for contacts
+      db.exec(`
+        CREATE INDEX IF NOT EXISTS idx_contacts_name ON contacts(name);
+        CREATE INDEX IF NOT EXISTS idx_contacts_authority ON contacts(authority_id);
+        CREATE INDEX IF NOT EXISTS idx_contacts_deleted ON contacts(deleted_at);
+      `)
+
+      // 4. Add contact_id to letters table for external letters (addressee)
+      const letterInfo = db.prepare("PRAGMA table_info(letters)").all() as { name: string }[]
+      if (!letterInfo.some(c => c.name === 'contact_id')) {
+        db.exec(`ALTER TABLE letters ADD COLUMN contact_id TEXT REFERENCES contacts(id)`)
+      }
+
+      // 5. Add index for contact_id
+      db.exec(`CREATE INDEX IF NOT EXISTS idx_letters_contact ON letters(contact_id)`)
+
+      // 6. Update existing authorities: set is_internal=1 for type='internal'
+      db.exec(`UPDATE authorities SET is_internal = 1 WHERE type = 'internal'`)
+    }
+  },
+  {
+    version: 18,
+    name: 'add_letter_is_notification',
+    up: (db) => {
+      // Add is_notification column to letters table for internal notification letters
+      const letterInfo = db.prepare("PRAGMA table_info(letters)").all() as { name: string }[]
+      if (!letterInfo.some(c => c.name === 'is_notification')) {
+        db.exec(`ALTER TABLE letters ADD COLUMN is_notification INTEGER DEFAULT 0`)
+      }
+    }
+  },
+  {
+    version: 19,
+    name: 'fix_authority_is_internal',
+    up: (db) => {
+      // Fix all NULL is_internal values based on type field
+      db.exec(`UPDATE authorities SET is_internal = 1 WHERE type = 'internal' AND (is_internal IS NULL OR is_internal != 1)`)
+      db.exec(`UPDATE authorities SET is_internal = 0 WHERE type != 'internal' AND (is_internal IS NULL OR is_internal != 0)`)
+      // Set default for future inserts
+      db.exec(`UPDATE authorities SET is_internal = 0 WHERE is_internal IS NULL`)
+    }
+  },
+  {
+    version: 20,
+    name: 'add_attendance_condition_is_ignored',
+    up: (db) => {
+      const tableInfo = db.prepare("PRAGMA table_info(attendance_conditions)").all() as { name: string }[]
+      if (!tableInfo.some(c => c.name === 'is_ignored')) {
+        db.exec(`ALTER TABLE attendance_conditions ADD COLUMN is_ignored INTEGER DEFAULT 0`)
+      }
+    }
   }
 ]
 

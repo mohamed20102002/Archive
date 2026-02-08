@@ -287,6 +287,7 @@ export function AttendancePage() {
             <AttendanceCalendar
               year={selectedYear}
               entries={entries}
+              conditions={conditions}
               isEditable={isEditable}
               onCellClick={handleCellClick}
             />
@@ -295,23 +296,24 @@ export function AttendancePage() {
           {/* Legend */}
           {conditions.length > 0 && (
             <div className="mt-4 pt-3 border-t border-gray-100 dark:border-gray-700">
-              <div className="flex flex-wrap gap-3">
-                {conditions.map(c => (
-                  <div key={c.id} className="flex items-center gap-1.5 text-xs text-gray-600 dark:text-gray-400">
+              <div className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">Legend</div>
+              <div className="flex flex-col gap-1.5">
+                {conditions.filter(c => !c.is_ignored).map(c => (
+                  <div key={c.id} className="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-400">
                     <span
-                      className="w-3 h-3 rounded-sm inline-block"
+                      className="w-3 h-3 rounded-sm flex-shrink-0"
                       style={{ backgroundColor: c.color }}
                     />
-                    {c.display_number} - {c.name}
+                    <span>{c.display_number} - {c.name}</span>
                   </div>
                 ))}
-                <div className="flex items-center gap-1.5 text-xs text-gray-600 dark:text-gray-400">
-                  <span className="w-3 h-3 rounded-sm inline-block bg-gray-200 dark:bg-gray-600" />
-                  N/A
+                <div className="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-400">
+                  <span className="w-3 h-3 rounded-sm flex-shrink-0 bg-gray-200 dark:bg-gray-600" />
+                  <span>N/A - No entry</span>
                 </div>
-                <div className="flex items-center gap-1.5 text-xs text-blue-600 dark:text-blue-400">
-                  <span className="w-3 h-3 rounded-sm inline-block ring-2 ring-blue-500" />
-                  Today
+                <div className="flex items-center gap-2 text-xs text-blue-600 dark:text-blue-400">
+                  <span className="w-3 h-3 rounded-sm flex-shrink-0 ring-2 ring-blue-500" />
+                  <span>Today</span>
                 </div>
               </div>
             </div>

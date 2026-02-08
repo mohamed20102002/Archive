@@ -40,20 +40,65 @@ export function AttendanceToolbar({
   exporting,
   onBulkEntryClick
 }: AttendanceToolbarProps) {
+  // Sort users by shift name, then by display name
+  const sortedUsers = [...users].sort((a, b) => {
+    const shiftA = shifts.find(s => s.id === a.shift_id)?.name || ''
+    const shiftB = shifts.find(s => s.id === b.shift_id)?.name || ''
+    if (shiftA !== shiftB) return shiftA.localeCompare(shiftB)
+    return a.display_name.localeCompare(b.display_name)
+  })
+
+  const currentIndex = sortedUsers.findIndex(u => u.id === selectedUserId)
+  const canGoPrev = currentIndex > 0
+  const canGoNext = currentIndex < sortedUsers.length - 1
+
+  const handlePrev = () => {
+    if (canGoPrev) onUserChange(sortedUsers[currentIndex - 1].id)
+  }
+
+  const handleNext = () => {
+    if (canGoNext) onUserChange(sortedUsers[currentIndex + 1].id)
+  }
+
   return (
     <div className="flex flex-wrap items-center gap-3">
-      {/* User select */}
-      <div className="flex items-center gap-2">
-        <label className="text-sm font-medium text-gray-600 dark:text-gray-400">User:</label>
+      {/* User select with prev/next */}
+      <div className="flex items-center gap-1">
+        <label className="text-sm font-medium text-gray-600 dark:text-gray-400 mr-1">User:</label>
+        <button
+          onClick={handlePrev}
+          disabled={!canGoPrev}
+          className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-30 disabled:cursor-not-allowed"
+          title="Previous user"
+        >
+          <svg className="w-4 h-4 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+          </svg>
+        </button>
         <select
           value={selectedUserId}
           onChange={e => onUserChange(e.target.value)}
           className="text-sm border border-gray-200 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-primary-500"
         >
-          {users.map(u => (
-            <option key={u.id} value={u.id}>{u.display_name}</option>
-          ))}
+          {sortedUsers.map(u => {
+            const shift = shifts.find(s => s.id === u.shift_id)
+            return (
+              <option key={u.id} value={u.id}>
+                {u.display_name}{shift ? ` (${shift.name})` : ''}
+              </option>
+            )
+          })}
         </select>
+        <button
+          onClick={handleNext}
+          disabled={!canGoNext}
+          className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-30 disabled:cursor-not-allowed"
+          title="Next user"
+        >
+          <svg className="w-4 h-4 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+          </svg>
+        </button>
       </div>
 
       {/* Year select */}

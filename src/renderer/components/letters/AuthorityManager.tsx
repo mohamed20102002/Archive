@@ -60,8 +60,11 @@ export function AuthorityManager() {
   const handleUpdate = async (id: string, data: any) => {
     if (!user) return
 
+    console.log('[AuthorityManager] handleUpdate called with:', { id, data })
+
     try {
       const result = await window.electronAPI.authorities.update(id, data, user.id)
+      console.log('[AuthorityManager] update result:', result)
       if (result.success) {
         setEditingAuthority(null)
         loadAuthorities()
@@ -88,16 +91,6 @@ export function AuthorityManager() {
     }
   }
 
-  const getTypeColor = (type: AuthorityType) => {
-    switch (type) {
-      case 'internal': return 'bg-blue-100 text-blue-800'
-      case 'external': return 'bg-green-100 text-green-800'
-      case 'government': return 'bg-purple-100 text-purple-800'
-      case 'private': return 'bg-orange-100 text-orange-800'
-      default: return 'bg-gray-100 text-gray-800'
-    }
-  }
-
   return (
     <div className="flex-1 overflow-auto p-6">
       {/* Filters */}
@@ -119,8 +112,6 @@ export function AuthorityManager() {
           <option value="">All Types</option>
           <option value="internal">Internal</option>
           <option value="external">External</option>
-          <option value="government">Government</option>
-          <option value="private">Private</option>
         </select>
         <div className="flex bg-white rounded-lg border border-gray-200 p-1">
           <button
@@ -174,8 +165,8 @@ export function AuthorityManager() {
                     <p className="text-sm text-gray-500">{auth.short_name}</p>
                   )}
                 </div>
-                <span className={`inline-flex px-2 py-0.5 text-xs font-medium rounded-full capitalize ${getTypeColor(auth.type)}`}>
-                  {auth.type}
+                <span className={`inline-flex px-2 py-0.5 text-xs font-medium rounded-full ${auth.is_internal ? 'bg-blue-100 text-blue-800' : 'bg-amber-100 text-amber-800'}`}>
+                  {auth.is_internal ? 'Internal' : 'External'}
                 </span>
               </div>
 
@@ -255,8 +246,8 @@ export function AuthorityManager() {
                   </td>
                   <td className="px-4 py-3 text-gray-600">{auth.short_name || '-'}</td>
                   <td className="px-4 py-3">
-                    <span className={`inline-flex px-2 py-0.5 text-xs font-medium rounded-full capitalize ${getTypeColor(auth.type)}`}>
-                      {auth.type}
+                    <span className={`inline-flex px-2 py-0.5 text-xs font-medium rounded-full ${auth.is_internal ? 'bg-blue-100 text-blue-800' : 'bg-amber-100 text-amber-800'}`}>
+                      {auth.is_internal ? 'Internal' : 'External'}
                     </span>
                   </td>
                   <td className="px-4 py-3 text-gray-600">{auth.contact_email || '-'}</td>
@@ -325,12 +316,27 @@ interface AuthorityFormProps {
 function AuthorityForm({ authority, onSubmit, onCancel }: AuthorityFormProps) {
   const [name, setName] = useState(authority?.name || '')
   const [shortName, setShortName] = useState(authority?.short_name || '')
-  const [type, setType] = useState<AuthorityType>(authority?.type || 'external')
+  const [isInternal, setIsInternal] = useState(authority?.is_internal ?? false)
   const [address, setAddress] = useState(authority?.address || '')
   const [email, setEmail] = useState(authority?.contact_email || '')
   const [phone, setPhone] = useState(authority?.contact_phone || '')
   const [notes, setNotes] = useState(authority?.notes || '')
   const [errors, setErrors] = useState<Record<string, string>>({})
+
+  // Sync state when authority prop changes (for editing)
+  useEffect(() => {
+    console.log('[AuthorityForm] authority prop:', authority)
+    console.log('[AuthorityForm] authority.is_internal:', authority?.is_internal, 'type:', typeof authority?.is_internal)
+    if (authority) {
+      setName(authority.name || '')
+      setShortName(authority.short_name || '')
+      setIsInternal(authority.is_internal ?? false)
+      setAddress(authority.address || '')
+      setEmail(authority.contact_email || '')
+      setPhone(authority.contact_phone || '')
+      setNotes(authority.notes || '')
+    }
+  }, [authority])
 
   const validate = () => {
     const newErrors: Record<string, string> = {}
@@ -345,15 +351,19 @@ function AuthorityForm({ authority, onSubmit, onCancel }: AuthorityFormProps) {
     e.preventDefault()
     if (!validate()) return
 
-    onSubmit({
+    const submitData = {
       name: name.trim(),
       short_name: shortName.trim() || undefined,
-      type,
+      type: isInternal ? 'internal' : 'external',
+      is_internal: isInternal,
       address: address.trim() || undefined,
       contact_email: email.trim() || undefined,
       contact_phone: phone.trim() || undefined,
       notes: notes.trim() || undefined
-    })
+    }
+    console.log('[AuthorityForm] handleSubmit - isInternal state:', isInternal)
+    console.log('[AuthorityForm] handleSubmit - submitting data:', submitData)
+    onSubmit(submitData)
   }
 
   return (
@@ -388,18 +398,21 @@ function AuthorityForm({ authority, onSubmit, onCancel }: AuthorityFormProps) {
 
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-1">
-          Type
+          Organization Type <span className="text-red-500">*</span>
         </label>
         <select
-          value={type}
-          onChange={(e) => setType(e.target.value as AuthorityType)}
+          value={isInternal ? 'internal' : 'external'}
+          onChange={(e) => setIsInternal(e.target.value === 'internal')}
           className="input w-full"
         >
           <option value="internal">Internal</option>
           <option value="external">External</option>
-          <option value="government">Government</option>
-          <option value="private">Private</option>
         </select>
+        <p className="text-xs text-gray-500 mt-1">
+          {isInternal
+            ? 'Internal organizations are used for internal correspondence'
+            : 'External organizations are used for external correspondence with contacts'}
+        </p>
       </div>
 
       <div>

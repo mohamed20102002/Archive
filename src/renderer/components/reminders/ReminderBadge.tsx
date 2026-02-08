@@ -1,16 +1,18 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { format, isPast, isToday, parseISO } from 'date-fns'
-import type { Reminder, Issue } from '../../types'
+import type { Reminder, Issue, MomAction } from '../../types'
 
 // Unified type for items shown in the badge dropdown
 interface BadgeItem {
   id: string
+  originalId: string // The actual ID (without prefix) for navigation
   title: string
   due_date: string
   is_overdue: boolean
   topic_title?: string
-  source: 'reminder' | 'issue'
+  record_title?: string
+  source: 'reminder' | 'issue' | 'mom-action'
 }
 
 // Dispatch this event from any component after mutating reminder or issue data
@@ -21,40 +23,44 @@ export function notifyReminderDataChanged(): void {
 
 export function ReminderBadge() {
   const [items, setItems] = useState<BadgeItem[]>([])
+  const [totalCount, setTotalCount] = useState(0)
+  const [overdueCount, setOverdueCount] = useState(0)
   const [isOpen, setIsOpen] = useState(false)
   const dropdownRef = useRef<HTMLDivElement>(null)
   const navigate = useNavigate()
 
   const loadAll = useCallback(async () => {
     try {
-      // Fetch regular reminders and issue reminders in parallel
-      const [overdue, upcoming, issueReminders] = await Promise.all([
-        window.electronAPI.reminders.getOverdue(),
-        window.electronAPI.reminders.getUpcoming(3), // Next 3 days
-        window.electronAPI.issues.getWithReminders(3) // All open issues with reminders (overdue + next 3 days)
+      // Fetch ALL reminders, issue reminders, and MOM actions with reminders/deadlines
+      const [allReminders, allIssueReminders, momActionsWithReminders, momActionsWithDeadlines] = await Promise.all([
+        window.electronAPI.reminders.getAll(),
+        window.electronAPI.issues.getWithReminders(365),
+        window.electronAPI.momActions.getWithReminders(),
+        window.electronAPI.momActions.getWithDeadlines()
       ])
 
-      // Build unified list from regular reminders
-      const remindersCombined = [...(overdue as Reminder[]), ...(upcoming as Reminder[])]
-      const uniqueReminders = remindersCombined.filter((r, idx, arr) =>
-        arr.findIndex(x => x.id === r.id) === idx
-      )
+      const now = new Date()
 
-      const reminderItems: BadgeItem[] = uniqueReminders.map(r => ({
+      // Filter to only pending (non-completed) reminders
+      const pendingReminders = (allReminders as Reminder[]).filter(r => !r.is_completed)
+
+      const reminderItems: BadgeItem[] = pendingReminders.map(r => ({
         id: r.id,
+        originalId: r.id,
         title: r.title,
         due_date: r.due_date,
         is_overdue: !!r.is_overdue,
         topic_title: r.topic_title,
+        record_title: r.record_title,
         source: 'reminder'
       }))
 
-      // Build unified list from issue reminders (both overdue and upcoming)
-      const now = new Date()
-      const issueItems: BadgeItem[] = (issueReminders as Issue[])
+      // Build unified list from issue reminders
+      const issueItems: BadgeItem[] = (allIssueReminders as Issue[])
         .filter(i => i.reminder_date)
         .map(i => ({
           id: `issue-${i.id}`,
+          originalId: i.id,
           title: i.title,
           due_date: i.reminder_date!,
           is_overdue: new Date(i.reminder_date!) < now,
@@ -62,12 +68,46 @@ export function ReminderBadge() {
           source: 'issue'
         }))
 
-      // Merge, sort by due date, cap at 8
-      const all = [...reminderItems, ...issueItems]
-        .sort((a, b) => new Date(a.due_date).getTime() - new Date(b.due_date).getTime())
-        .slice(0, 8)
+      // Build unified list from MOM actions (combine reminders and deadlines, dedupe by id)
+      const momActionsMap = new Map<string, MomAction & { mom_title?: string }>()
 
-      setItems(all)
+      // Add actions with reminders
+      for (const action of (momActionsWithReminders as MomAction[])) {
+        if (action.status !== 'resolved' && action.reminder_date) {
+          momActionsMap.set(action.id, action)
+        }
+      }
+
+      // Add actions with deadlines (if not already added)
+      for (const action of (momActionsWithDeadlines as (MomAction & { mom_title?: string })[])) {
+        if (action.status !== 'resolved' && action.deadline && !momActionsMap.has(action.id)) {
+          momActionsMap.set(action.id, action)
+        }
+      }
+
+      const momActionItems: BadgeItem[] = Array.from(momActionsMap.values()).map(a => {
+        const dueDate = a.reminder_date || a.deadline!
+        return {
+          id: `mom-action-${a.id}`,
+          originalId: a.mom_internal_id,
+          title: a.description.length > 50 ? a.description.substring(0, 50) + '...' : a.description,
+          due_date: dueDate,
+          is_overdue: new Date(dueDate) < now,
+          topic_title: (a as any).mom_title,
+          source: 'mom-action'
+        }
+      })
+
+      // Merge and sort by due date
+      const all = [...reminderItems, ...issueItems, ...momActionItems]
+        .sort((a, b) => new Date(a.due_date).getTime() - new Date(b.due_date).getTime())
+
+      // Count totals BEFORE slicing
+      setTotalCount(all.length)
+      setOverdueCount(all.filter(item => item.is_overdue).length)
+
+      // Cap display at 8 items (show most urgent first)
+      setItems(all.slice(0, 8))
     } catch (err) {
       console.error('Error loading reminders:', err)
     }
@@ -99,9 +139,6 @@ export function ReminderBadge() {
     document.addEventListener('mousedown', handleClickOutside)
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
-
-  const overdueCount = items.filter(r => r.is_overdue).length
-  const totalCount = items.length
 
   const formatDueText = (item: BadgeItem): { text: string; urgent: boolean } => {
     try {
@@ -172,7 +209,13 @@ export function ReminderBadge() {
                     key={item.id}
                     onClick={() => {
                       setIsOpen(false)
-                      navigate(item.source === 'issue' ? '/issues' : '/reminders')
+                      if (item.source === 'issue') {
+                        navigate(`/issues?issueId=${item.originalId}`)
+                      } else if (item.source === 'mom-action') {
+                        navigate(`/mom?momId=${item.originalId}`)
+                      } else {
+                        navigate('/reminders')
+                      }
                     }}
                     className="px-4 py-3 border-b border-gray-50 last:border-0 hover:bg-gray-50 transition-colors cursor-pointer"
                   >
@@ -188,17 +231,21 @@ export function ReminderBadge() {
                           <span className={`flex-shrink-0 text-[10px] px-1.5 py-0 rounded font-medium ${
                             item.source === 'issue'
                               ? 'bg-orange-100 text-orange-600'
+                              : item.source === 'mom-action'
+                              ? 'bg-purple-100 text-purple-600'
                               : 'bg-blue-100 text-blue-600'
                           }`}>
-                            {item.source === 'issue' ? 'Issue' : 'Reminder'}
+                            {item.source === 'issue' ? 'Issue' : item.source === 'mom-action' ? 'MOM' : 'Reminder'}
                           </span>
                         </div>
                         <p className={`text-xs ${dueInfo.urgent ? 'text-red-600 font-medium' : 'text-gray-500'}`}>
                           {dueInfo.text}
                         </p>
-                        {item.topic_title && (
+                        {(item.topic_title || item.record_title) && (
                           <p className="text-xs text-gray-400 truncate mt-0.5">
                             {item.topic_title}
+                            {item.topic_title && item.record_title && ' / '}
+                            {item.record_title}
                           </p>
                         )}
                       </div>
@@ -217,7 +264,9 @@ export function ReminderBadge() {
               }}
               className="w-full text-center text-sm text-primary-600 hover:text-primary-700 font-medium"
             >
-              View all reminders
+              {totalCount > items.length
+                ? `View all ${totalCount} reminders`
+                : 'View all reminders'}
             </button>
           </div>
         </div>

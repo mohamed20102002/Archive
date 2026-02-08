@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useRef } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { Modal } from '../common/Modal'
 import { IssueCard } from './IssueCard'
@@ -18,6 +19,8 @@ interface IssueStats {
 
 export function OpenIssues() {
   const { user } = useAuth()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const highlightedIssueId = useRef<string | null>(null)
 
   // Data state
   const [issues, setIssues] = useState<Issue[]>([])
@@ -35,6 +38,22 @@ export function OpenIssues() {
   const [filterTopic, setFilterTopic] = useState('')
   const [filterImportance, setFilterImportance] = useState<IssueImportance | ''>('')
   const [filterHasReminder, setFilterHasReminder] = useState<'' | 'yes' | 'no'>('')
+
+  // Handle issueId from URL params (e.g., /issues?issueId=xxx)
+  useEffect(() => {
+    const issueId = searchParams.get('issueId')
+    if (issueId && issueId !== highlightedIssueId.current) {
+      highlightedIssueId.current = issueId
+      // Fetch and open the issue detail
+      window.electronAPI.issues.getById(issueId).then((issue) => {
+        if (issue) {
+          setSelectedIssue(issue as Issue)
+          // Clear the URL param after opening
+          setSearchParams({}, { replace: true })
+        }
+      })
+    }
+  }, [searchParams, setSearchParams])
 
   const buildFilters = useCallback((): IssueFilters => {
     const filters: IssueFilters = {}

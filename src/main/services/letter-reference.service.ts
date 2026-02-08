@@ -545,10 +545,11 @@ export function findLettersByReferencePattern(pattern: string): Letter[] {
   `).all(sqlPattern, sqlPattern, sqlPattern) as Letter[]
 }
 
-// Find letter by exact reference number (any type of reference number)
+// Find letter by exact reference number (any type of reference number) or letter_id
 export function findLetterByReferenceNumber(refNumber: string): Letter | null {
   const db = getDatabase()
 
+  // Search by letter_id, reference_number, incoming_number, or outgoing_number
   const letter = db.prepare(`
     SELECT l.*,
            a.name as authority_name,
@@ -560,9 +561,9 @@ export function findLetterByReferenceNumber(refNumber: string): Letter | null {
     LEFT JOIN topics t ON l.topic_id = t.id
     LEFT JOIN subcategories s ON l.subcategory_id = s.id
     WHERE l.deleted_at IS NULL
-      AND (l.reference_number = ? OR l.incoming_number = ? OR l.outgoing_number = ?)
+      AND (l.letter_id = ? OR l.reference_number = ? OR l.incoming_number = ? OR l.outgoing_number = ?)
     LIMIT 1
-  `).get(refNumber, refNumber, refNumber) as Letter | undefined
+  `).get(refNumber, refNumber, refNumber, refNumber) as Letter | undefined
 
   return letter || null
 }

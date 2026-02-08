@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "electron-vite dev",
     "build": "electron-vite build",
+    "build:portable": "electron-vite build && electron-builder --win dir --config.win.signAndEditExecutable=false",
+    "build:portable:zip": "electron-vite build && electron-builder --win dir --config.win.signAndEditExecutable=false && node -e \"const{execSync}=require('child_process');const p=require('path');const v=require('./package.json').version;execSync(`${p.join('node_modules','7zip-bin','win','x64','7za.exe')} a -tzip release/Project-Data-Archiving-System-${v}-portable.zip release/win-unpacked/*`,{stdio:'inherit'})\"",
     "preview": "electron-vite preview",
     "package": "electron-builder",
     "package:win": "electron-builder --win",
@@ -13,6 +15,7 @@
     "postinstall": "electron-builder install-app-deps"
   },
   "dependencies": {
+    "archiver": "^7.0.1",
     "argon2": "^0.31.0",
     "better-sqlite3": "^9.2.0",
     "date-fns": "^3.0.0",
@@ -23,19 +26,23 @@
     "react-dom": "^18.2.0",
     "react-router-dom": "^6.21.0",
     "uuid": "^9.0.0",
-    "winax": "^3.4.2"
+    "winax": "^3.4.2",
+    "yauzl": "^3.2.0"
   },
   "devDependencies": {
+    "@electron-forge/maker-wix": "^7.11.1",
+    "@types/archiver": "^7.0.0",
     "@types/better-sqlite3": "^7.6.0",
     "@types/jsonwebtoken": "^9.0.0",
     "@types/node": "^20.10.0",
     "@types/react": "^18.2.0",
     "@types/react-dom": "^18.2.0",
     "@types/uuid": "^9.0.0",
+    "@types/yauzl": "^2.10.3",
     "@vitejs/plugin-react": "^4.2.0",
     "autoprefixer": "^10.4.0",
     "electron": "^25.9.8",
-    "electron-builder": "^24.9.0",
+    "electron-builder": "^24.13.3",
     "electron-vite": "^2.0.0",
     "postcss": "^8.4.0",
     "tailwindcss": "^3.4.0",

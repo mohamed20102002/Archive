@@ -49,14 +49,14 @@ function createWindow() {
 async function initializeApp() {
   console.log('Initializing application...')
 
-  // Run migrations first (adds new columns/tables to existing DB)
+  // Initialize base schemas first (creates tables if they don't exist)
+  initializeSchema()
+  initializeAuditSchema()
+
+  // Run migrations (adds new columns/tables on top of base schema)
   const migrationResult = runMigrations()
   console.log('Migrations applied:', migrationResult.applied)
   console.log('Current schema version:', migrationResult.currentVersion)
-
-  // Initialize/verify schemas (creates tables if they don't exist)
-  initializeSchema()
-  initializeAuditSchema()
 
   // Register IPC handlers
   registerIpcHandlers()

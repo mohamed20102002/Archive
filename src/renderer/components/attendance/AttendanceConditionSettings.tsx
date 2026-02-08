@@ -25,6 +25,7 @@ export function AttendanceConditionSettings({
   const [editName, setEditName] = useState('')
   const [editColor, setEditColor] = useState('')
   const [editDisplayNumber, setEditDisplayNumber] = useState('')
+  const [editIsIgnored, setEditIsIgnored] = useState(false)
   const [saving, setSaving] = useState(false)
 
   // Shift state
@@ -68,7 +69,7 @@ export function AttendanceConditionSettings({
   const handleUpdateCondition = async (id: string) => {
     if (!editName.trim() || !user) return
     setSaving(true)
-    const data: any = { name: editName.trim(), color: editColor }
+    const data: any = { name: editName.trim(), color: editColor, is_ignored: editIsIgnored }
     if (editDisplayNumber) data.display_number = parseInt(editDisplayNumber)
     const result = await window.electronAPI.attendance.updateCondition(id, data, user.id)
     if (result.success) {
@@ -94,6 +95,7 @@ export function AttendanceConditionSettings({
     setEditName(cond.name)
     setEditColor(cond.color)
     setEditDisplayNumber(String(cond.display_number))
+    setEditIsIgnored(cond.is_ignored)
   }
 
   // ===== Shifts =====
@@ -193,6 +195,15 @@ export function AttendanceConditionSettings({
                         title="Display Number"
                         min="1"
                       />
+                      <label className="flex items-center gap-1 text-xs text-gray-500 dark:text-gray-400" title="Exclude from statistics and legend">
+                        <input
+                          type="checkbox"
+                          checked={editIsIgnored}
+                          onChange={e => setEditIsIgnored(e.target.checked)}
+                          className="rounded border-gray-300 dark:border-gray-600"
+                        />
+                        Ignore
+                      </label>
                       <button
                         onClick={() => handleUpdateCondition(cond.id)}
                         className="text-xs text-primary-600 dark:text-primary-400 hover:text-primary-700 font-medium"
@@ -214,6 +225,11 @@ export function AttendanceConditionSettings({
                       />
                       <span className="flex-1 text-sm text-gray-700 dark:text-gray-300">{cond.name}</span>
                       <span className="text-xs text-gray-400 dark:text-gray-500 font-mono">#{cond.display_number}</span>
+                      {cond.is_ignored && (
+                        <span className="text-xs px-1.5 py-0.5 bg-gray-200 dark:bg-gray-600 text-gray-500 dark:text-gray-400 rounded">
+                          Ignored
+                        </span>
+                      )}
                       <button
                         onClick={() => startEdit(cond)}
                         className="text-xs text-gray-500 hover:text-primary-600 dark:text-gray-400 dark:hover:text-primary-400"

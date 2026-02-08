@@ -9,3 +9,5 @@ nul
 *.db-shm
 .keyfile
 models/
+release/
+*.txt

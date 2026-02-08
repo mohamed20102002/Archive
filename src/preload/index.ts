@@ -67,6 +67,7 @@ export interface ElectronAPI {
     isArchived: (outlookEntryId: string) => Promise<{ archived: boolean; emailId?: string; topicId?: string }>
     getArchivedIds: () => Promise<string[]>
     openFile: (emailId: string) => Promise<{ success: boolean; error?: string }>
+    getArchiveInfo: (outlookEntryId: string) => Promise<{ topicId: string; topicTitle: string; recordId: string; recordTitle: string; subcategoryId: string | null; subcategoryTitle: string | null; archivedAt: string } | null>
   }
   outlook: {
     connect: () => Promise<{ success: boolean; error?: string }>
@@ -104,11 +105,22 @@ export interface ElectronAPI {
     getAll: () => Promise<unknown[]>
     getById: (id: string) => Promise<unknown | null>
     getByType: (type: string) => Promise<unknown[]>
+    getInternal: () => Promise<unknown[]>
+    getExternal: () => Promise<unknown[]>
     search: (query: string) => Promise<unknown[]>
     findByEmailDomain: (email: string) => Promise<unknown | null>
     update: (id: string, data: unknown, userId: string) => Promise<{ success: boolean; error?: string }>
     delete: (id: string, userId: string) => Promise<{ success: boolean; error?: string }>
     getStats: () => Promise<{ total: number; byType: Record<string, number> }>
+  }
+  contacts: {
+    create: (data: unknown, userId: string) => Promise<{ success: boolean; contact?: unknown; error?: string }>
+    getAll: () => Promise<unknown[]>
+    getById: (id: string) => Promise<unknown | null>
+    getByAuthority: (authorityId: string) => Promise<unknown[]>
+    search: (query: string) => Promise<unknown[]>
+    update: (id: string, data: unknown, userId: string) => Promise<{ success: boolean; error?: string }>
+    delete: (id: string, userId: string) => Promise<{ success: boolean; error?: string }>
   }
   letters: {
     create: (data: unknown, userId: string) => Promise<{ success: boolean; letter?: unknown; error?: string }>
@@ -282,6 +294,20 @@ export interface ElectronAPI {
     getFilePath: (draftId: string) => Promise<string | null>
     delete: (id: string, userId: string) => Promise<{ success: boolean; error?: string }>
   }
+  backup: {
+    create: (userId: string, username: string, displayName: string, includeEmails: boolean) => Promise<{ success: boolean; filePath?: string; error?: string }>
+    selectFile: () => Promise<{ success: boolean; filePath?: string; error?: string }>
+    analyze: (zipPath: string) => Promise<{ success: boolean; info?: unknown; error?: string }>
+    compare: (info: unknown, userId: string, username: string, displayName: string) => Promise<unknown>
+    restore: (zipPath: string, userId: string, username: string, displayName: string) => Promise<{ success: boolean; error?: string }>
+    getStatus: () => Promise<unknown>
+    getEmailsSize: () => Promise<{ totalBytes: number; fileCount: number }>
+    onProgress: (callback: (progress: unknown) => void) => void
+    offProgress: () => void
+  }
+  database: {
+    refresh: () => Promise<{ success: boolean; error?: string }>
+  }
   settings: {
     get: (key: string) => Promise<string | null>
     getAll: () => Promise<Record<string, string>>
@@ -361,7 +387,8 @@ const electronAPI: ElectronAPI = {
     search: (query) => ipcRenderer.invoke('emails:search', query),
     isArchived: (outlookEntryId) => ipcRenderer.invoke('emails:isArchived', outlookEntryId),
     getArchivedIds: () => ipcRenderer.invoke('emails:getArchivedIds'),
-    openFile: (emailId) => ipcRenderer.invoke('emails:openFile', emailId)
+    openFile: (emailId) => ipcRenderer.invoke('emails:openFile', emailId),
+    getArchiveInfo: (outlookEntryId) => ipcRenderer.invoke('emails:getArchiveInfo', outlookEntryId)
   },
   outlook: {
     connect: () => ipcRenderer.invoke('outlook:connect'),
@@ -399,11 +426,22 @@ const electronAPI: ElectronAPI = {
     getAll: () => ipcRenderer.invoke('authorities:getAll'),
     getById: (id) => ipcRenderer.invoke('authorities:getById', id),
     getByType: (type) => ipcRenderer.invoke('authorities:getByType', type),
+    getInternal: () => ipcRenderer.invoke('authorities:getInternal'),
+    getExternal: () => ipcRenderer.invoke('authorities:getExternal'),
     search: (query) => ipcRenderer.invoke('authorities:search', query),
     findByEmailDomain: (email) => ipcRenderer.invoke('authorities:findByEmailDomain', email),
     update: (id, data, userId) => ipcRenderer.invoke('authorities:update', id, data, userId),
     delete: (id, userId) => ipcRenderer.invoke('authorities:delete', id, userId),
     getStats: () => ipcRenderer.invoke('authorities:getStats')
+  },
+  contacts: {
+    create: (data, userId) => ipcRenderer.invoke('contacts:create', data, userId),
+    getAll: () => ipcRenderer.invoke('contacts:getAll'),
+    getById: (id) => ipcRenderer.invoke('contacts:getById', id),
+    getByAuthority: (authorityId) => ipcRenderer.invoke('contacts:getByAuthority', authorityId),
+    search: (query) => ipcRenderer.invoke('contacts:search', query),
+    update: (id, data, userId) => ipcRenderer.invoke('contacts:update', id, data, userId),
+    delete: (id, userId) => ipcRenderer.invoke('contacts:delete', id, userId)
   },
   letters: {
     create: (data, userId) => ipcRenderer.invoke('letters:create', data, userId),
@@ -576,6 +614,24 @@ const electronAPI: ElectronAPI = {
     saveFile: (draftId, fileBase64, filename, userId) => ipcRenderer.invoke('momDrafts:saveFile', draftId, fileBase64, filename, userId),
     getFilePath: (draftId) => ipcRenderer.invoke('momDrafts:getFilePath', draftId),
     delete: (id, userId) => ipcRenderer.invoke('momDrafts:delete', id, userId)
+  },
+  backup: {
+    create: (userId, username, displayName, includeEmails) => ipcRenderer.invoke('backup:create', userId, username, displayName, includeEmails),
+    selectFile: () => ipcRenderer.invoke('backup:selectFile'),
+    analyze: (zipPath) => ipcRenderer.invoke('backup:analyze', zipPath),
+    compare: (info, userId, username, displayName) => ipcRenderer.invoke('backup:compare', info, userId, username, displayName),
+    restore: (zipPath, userId, username, displayName) => ipcRenderer.invoke('backup:restore', zipPath, userId, username, displayName),
+    getStatus: () => ipcRenderer.invoke('backup:getStatus'),
+    getEmailsSize: () => ipcRenderer.invoke('backup:getEmailsSize'),
+    onProgress: (callback) => {
+      ipcRenderer.on('backup:progress', (_event, progress) => callback(progress))
+    },
+    offProgress: () => {
+      ipcRenderer.removeAllListeners('backup:progress')
+    }
+  },
+  database: {
+    refresh: () => ipcRenderer.invoke('database:refresh')
   },
   settings: {
     get: (key) => ipcRenderer.invoke('settings:get', key),

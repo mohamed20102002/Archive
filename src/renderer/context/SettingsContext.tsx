@@ -6,7 +6,8 @@ const DEFAULT_SETTINGS: AppSettings = {
   theme: 'light',
   default_view: '/topics',
   default_view_mode: 'card',
-  date_format: 'DD/MM/YYYY'
+  date_format: 'DD/MM/YYYY',
+  handover_start_day: 1 // Monday
 }
 
 interface SettingsContextType {
@@ -37,7 +38,8 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
         theme: (raw.theme as 'light' | 'dark') ?? DEFAULT_SETTINGS.theme,
         default_view: raw.default_view ?? DEFAULT_SETTINGS.default_view,
         default_view_mode: (raw.default_view_mode as 'card' | 'table') ?? DEFAULT_SETTINGS.default_view_mode,
-        date_format: raw.date_format ?? DEFAULT_SETTINGS.date_format
+        date_format: raw.date_format ?? DEFAULT_SETTINGS.date_format,
+        handover_start_day: raw.handover_start_day !== undefined ? Number(raw.handover_start_day) : DEFAULT_SETTINGS.handover_start_day
       }
       setSettings(merged)
       applyTheme(merged.theme)

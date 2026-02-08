@@ -7,6 +7,7 @@ export interface Authority {
   name: string
   short_name: string | null
   type: 'internal' | 'external' | 'government' | 'private'
+  is_internal: boolean
   address: string | null
   contact_email: string | null
   contact_phone: string | null
@@ -23,6 +24,7 @@ export interface CreateAuthorityData {
   name: string
   short_name?: string
   type?: 'internal' | 'external' | 'government' | 'private'
+  is_internal?: boolean
   address?: string
   contact_email?: string
   contact_phone?: string
@@ -33,6 +35,7 @@ export interface UpdateAuthorityData {
   name?: string
   short_name?: string
   type?: 'internal' | 'external' | 'government' | 'private'
+  is_internal?: boolean
   address?: string
   contact_email?: string
   contact_phone?: string
@@ -78,14 +81,15 @@ export function createAuthority(
   try {
     db.prepare(`
       INSERT INTO authorities (
-        id, name, short_name, type, address, contact_email, contact_phone, notes,
+        id, name, short_name, type, is_internal, address, contact_email, contact_phone, notes,
         created_by, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       id,
       data.name.trim(),
       data.short_name?.trim() || null,
       data.type || 'external',
+      data.is_internal ? 1 : 0,
       data.address?.trim() || null,
       data.contact_email?.trim() || null,
       data.contact_phone?.trim() || null,
@@ -98,7 +102,8 @@ export function createAuthority(
     // Log audit
     logAudit('AUTHORITY_CREATE', userId, getUsername(userId), 'authority', id, {
       name: data.name,
-      type: data.type || 'external'
+      type: data.type || 'external',
+      is_internal: data.is_internal || false
     })
 
     const authority = getAuthorityById(id)
@@ -120,16 +125,21 @@ export function getAuthorityById(id: string): Authority | null {
     FROM authorities a
     LEFT JOIN users u ON a.created_by = u.id
     WHERE a.id = ? AND a.deleted_at IS NULL
-  `).get(id) as Authority | undefined
+  `).get(id) as (Omit<Authority, 'is_internal'> & { is_internal: number }) | undefined
 
-  return authority || null
+  if (!authority) return null
+
+  return {
+    ...authority,
+    is_internal: authority.is_internal === 1 || (authority.is_internal === null && authority.type === 'internal')
+  }
 }
 
 // Get all authorities
 export function getAllAuthorities(): Authority[] {
   const db = getDatabase()
 
-  return db.prepare(`
+  const results = db.prepare(`
     SELECT a.*,
            u.display_name as creator_name,
            (SELECT COUNT(*) FROM letters WHERE authority_id = a.id AND deleted_at IS NULL) as letter_count
@@ -137,14 +147,19 @@ export function getAllAuthorities(): Authority[] {
     LEFT JOIN users u ON a.created_by = u.id
     WHERE a.deleted_at IS NULL
     ORDER BY a.name ASC
-  `).all() as Authority[]
+  `).all() as (Omit<Authority, 'is_internal'> & { is_internal: number })[]
+
+  return results.map(auth => ({
+    ...auth,
+    is_internal: auth.is_internal === 1 || (auth.is_internal === null && auth.type === 'internal')
+  }))
 }
 
 // Get authorities by type
 export function getAuthoritiesByType(type: string): Authority[] {
   const db = getDatabase()
 
-  return db.prepare(`
+  const results = db.prepare(`
     SELECT a.*,
            u.display_name as creator_name,
            (SELECT COUNT(*) FROM letters WHERE authority_id = a.id AND deleted_at IS NULL) as letter_count
@@ -152,7 +167,52 @@ export function getAuthoritiesByType(type: string): Authority[] {
     LEFT JOIN users u ON a.created_by = u.id
     WHERE a.type = ? AND a.deleted_at IS NULL
     ORDER BY a.name ASC
-  `).all(type) as Authority[]
+  `).all(type) as (Omit<Authority, 'is_internal'> & { is_internal: number })[]
+
+  return results.map(auth => ({
+    ...auth,
+    is_internal: auth.is_internal === 1 || (auth.is_internal === null && auth.type === 'internal')
+  }))
+}
+
+// Get internal authorities (for internal letters)
+export function getInternalAuthorities(): Authority[] {
+  const db = getDatabase()
+
+  const results = db.prepare(`
+    SELECT a.*,
+           u.display_name as creator_name,
+           (SELECT COUNT(*) FROM letters WHERE authority_id = a.id AND deleted_at IS NULL) as letter_count
+    FROM authorities a
+    LEFT JOIN users u ON a.created_by = u.id
+    WHERE a.is_internal = 1 AND a.deleted_at IS NULL
+    ORDER BY a.name ASC
+  `).all() as (Omit<Authority, 'is_internal'> & { is_internal: number })[]
+
+  return results.map(auth => ({
+    ...auth,
+    is_internal: true
+  }))
+}
+
+// Get external authorities (for external letters)
+export function getExternalAuthorities(): Authority[] {
+  const db = getDatabase()
+
+  const results = db.prepare(`
+    SELECT a.*,
+           u.display_name as creator_name,
+           (SELECT COUNT(*) FROM letters WHERE authority_id = a.id AND deleted_at IS NULL) as letter_count
+    FROM authorities a
+    LEFT JOIN users u ON a.created_by = u.id
+    WHERE a.is_internal = 0 AND a.deleted_at IS NULL
+    ORDER BY a.name ASC
+  `).all() as (Omit<Authority, 'is_internal'> & { is_internal: number })[]
+
+  return results.map(auth => ({
+    ...auth,
+    is_internal: false
+  }))
 }
 
 // Search authorities by name or short_name
@@ -160,7 +220,7 @@ export function searchAuthorities(query: string): Authority[] {
   const db = getDatabase()
   const searchTerm = `%${query}%`
 
-  return db.prepare(`
+  const results = db.prepare(`
     SELECT a.*,
            u.display_name as creator_name,
            (SELECT COUNT(*) FROM letters WHERE authority_id = a.id AND deleted_at IS NULL) as letter_count
@@ -169,7 +229,12 @@ export function searchAuthorities(query: string): Authority[] {
     WHERE a.deleted_at IS NULL
       AND (a.name LIKE ? OR a.short_name LIKE ? OR a.contact_email LIKE ?)
     ORDER BY a.name ASC
-  `).all(searchTerm, searchTerm, searchTerm) as Authority[]
+  `).all(searchTerm, searchTerm, searchTerm) as (Omit<Authority, 'is_internal'> & { is_internal: number })[]
+
+  return results.map(auth => ({
+    ...auth,
+    is_internal: auth.is_internal === 1 || (auth.is_internal === null && auth.type === 'internal')
+  }))
 }
 
 // Find authority by email domain
@@ -190,9 +255,14 @@ export function findAuthorityByEmailDomain(email: string): Authority | null {
       AND LOWER(a.contact_email) LIKE ?
     ORDER BY a.name ASC
     LIMIT 1
-  `).get(`%@${domain}`) as Authority | undefined
+  `).get(`%@${domain}`) as (Omit<Authority, 'is_internal'> & { is_internal: number }) | undefined
 
-  return authority || null
+  if (!authority) return null
+
+  return {
+    ...authority,
+    is_internal: authority.is_internal === 1 || (authority.is_internal === null && authority.type === 'internal')
+  }
 }
 
 // Update authority
@@ -201,10 +271,12 @@ export function updateAuthority(
   data: UpdateAuthorityData,
   userId: string
 ): { success: boolean; error?: string } {
+  console.log('[authority.service] updateAuthority called with:', JSON.stringify({ id, data, userId }, null, 2))
   const db = getDatabase()
 
   // Check if authority exists
   const existing = getAuthorityById(id)
+  console.log('[authority.service] existing authority is_internal:', existing?.is_internal)
   if (!existing) {
     return { success: false, error: 'Authority not found' }
   }
@@ -235,6 +307,10 @@ export function updateAuthority(
     updates.push('type = ?')
     values.push(data.type)
   }
+  if (data.is_internal !== undefined) {
+    updates.push('is_internal = ?')
+    values.push(data.is_internal ? 1 : 0)
+  }
   if (data.address !== undefined) {
     updates.push('address = ?')
     values.push(data.address?.trim() || null)
@@ -253,6 +329,7 @@ export function updateAuthority(
   }
 
   if (updates.length === 0) {
+    console.log('[authority.service] No updates to apply')
     return { success: true }
   }
 
@@ -260,10 +337,16 @@ export function updateAuthority(
   values.push(new Date().toISOString())
   values.push(id)
 
+  const sql = `UPDATE authorities SET ${updates.join(', ')} WHERE id = ?`
+  console.log('[authority.service] SQL:', sql)
+  console.log('[authority.service] Values:', values)
+
   try {
-    db.prepare(`
-      UPDATE authorities SET ${updates.join(', ')} WHERE id = ?
-    `).run(...values)
+    db.prepare(sql).run(...values)
+
+    // Verify the update
+    const updated = getAuthorityById(id)
+    console.log('[authority.service] After update, is_internal:', updated?.is_internal)
 
     // Log audit
     logAudit('AUTHORITY_UPDATE', userId, getUsername(userId), 'authority', id, {
