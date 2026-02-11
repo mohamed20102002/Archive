@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { format, parseISO } from 'date-fns'
 import { useAuth } from '../../context/AuthContext'
+import { useToast } from '../../context/ToastContext'
+import { useConfirm } from '../common/ConfirmDialog'
 import { MOMForm } from './MOMForm'
 import { MOMActions } from './MOMActions'
 import { MOMDrafts } from './MOMDrafts'
@@ -18,6 +20,8 @@ type DetailTab = 'actions' | 'drafts' | 'links' | 'history'
 
 export function MOMDetail({ mom, onClose, onUpdated }: MOMDetailProps) {
   const { user } = useAuth()
+  const toast = useToast()
+  const confirm = useConfirm()
   const [currentMom, setCurrentMom] = useState<Mom>(mom)
   const [activeTab, setActiveTab] = useState<DetailTab>('actions')
   const [isEditing, setIsEditing] = useState(false)
@@ -66,7 +70,7 @@ export function MOMDetail({ mom, onClose, onUpdated }: MOMDetailProps) {
         loadHistory()
         onUpdated()
       } else {
-        alert(result.error || 'Failed to update MOM')
+        toast.error('Failed to update MOM', result.error)
       }
     } catch (err) {
       console.error('Error updating MOM:', err)
@@ -75,7 +79,12 @@ export function MOMDetail({ mom, onClose, onUpdated }: MOMDetailProps) {
 
   const handleClose = async () => {
     if (!user) return
-    if (!confirm('Close this MOM?')) return
+    const confirmed = await confirm({
+      title: 'Close MOM',
+      message: 'Close this MOM?',
+      confirmText: 'Close'
+    })
+    if (!confirmed) return
     try {
       const result = await window.electronAPI.moms.close(currentMom.id, user.id)
       if (result.success) {
@@ -83,7 +92,7 @@ export function MOMDetail({ mom, onClose, onUpdated }: MOMDetailProps) {
         loadHistory()
         onUpdated()
       } else {
-        alert(result.error || 'Failed to close MOM')
+        toast.error('Failed to close MOM', result.error)
       }
     } catch (err) {
       console.error('Error closing MOM:', err)
@@ -99,7 +108,7 @@ export function MOMDetail({ mom, onClose, onUpdated }: MOMDetailProps) {
         loadHistory()
         onUpdated()
       } else {
-        alert(result.error || 'Failed to reopen MOM')
+        toast.error('Failed to reopen MOM', result.error)
       }
     } catch (err) {
       console.error('Error reopening MOM:', err)
@@ -108,14 +117,20 @@ export function MOMDetail({ mom, onClose, onUpdated }: MOMDetailProps) {
 
   const handleDelete = async () => {
     if (!user) return
-    if (!confirm(`Delete MOM "${currentMom.mom_id || currentMom.title}"? This action is irreversible.`)) return
+    const confirmed = await confirm({
+      title: 'Delete MOM',
+      message: `Delete MOM "${currentMom.mom_id || currentMom.title}"? This action is irreversible.`,
+      confirmText: 'Delete',
+      danger: true
+    })
+    if (!confirmed) return
     try {
       const result = await window.electronAPI.moms.delete(currentMom.id, user.id)
       if (result.success) {
         onUpdated()
         onClose()
       } else {
-        alert(result.error || 'Failed to delete MOM')
+        toast.error('Failed to delete MOM', result.error)
       }
     } catch (err) {
       console.error('Error deleting MOM:', err)
@@ -130,14 +145,11 @@ export function MOMDetail({ mom, onClose, onUpdated }: MOMDetailProps) {
         filters: [{ name: 'All Files', extensions: ['*'] }]
       })
 
-      if (!result || result.canceled || !result.filePaths?.length) return
+      if (!result || result.canceled || !result.files?.length) return
 
-      const filePath = result.filePaths[0]
-      const fileData = await window.electronAPI.files.readAsBase64(filePath)
-      const filename = filePath.split(/[\\/]/).pop() || 'file'
-
+      const file = result.files[0]
       const uploadResult = await window.electronAPI.moms.saveFile(
-        currentMom.id, fileData, filename, user.id
+        currentMom.id, file.buffer, file.filename, user.id
       )
 
       if (uploadResult.success) {
@@ -145,7 +157,7 @@ export function MOMDetail({ mom, onClose, onUpdated }: MOMDetailProps) {
         loadHistory()
         onUpdated()
       } else {
-        alert(uploadResult.error || 'Failed to upload file')
+        toast.error('Failed to upload file', uploadResult.error)
       }
     } catch (err) {
       console.error('Error uploading file:', err)
@@ -156,7 +168,7 @@ export function MOMDetail({ mom, onClose, onUpdated }: MOMDetailProps) {
     try {
       const filePath = await window.electronAPI.moms.getFilePath(currentMom.id)
       if (filePath) {
-        await window.electronAPI.files.openPath(filePath)
+        await window.electronAPI.file.openExternal(filePath)
       }
     } catch (err) {
       console.error('Error opening file:', err)
@@ -275,18 +287,30 @@ export function MOMDetail({ mom, onClose, onUpdated }: MOMDetailProps) {
           <p className="text-xs text-gray-500 uppercase font-medium">Creator</p>
           <p className="text-sm text-gray-700 mt-0.5">{currentMom.creator_name || '—'}</p>
         </div>
-        <div>
+        <div className="min-w-0">
           <p className="text-xs text-gray-500 uppercase font-medium">File</p>
           {currentMom.original_filename ? (
-            <button
-              onClick={handleOpenFile}
-              className="text-sm text-blue-600 hover:text-blue-700 mt-0.5 inline-flex items-center gap-1"
-            >
-              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
-              </svg>
-              {currentMom.original_filename}
-            </button>
+            <div className="flex items-center gap-2 mt-0.5">
+              <button
+                onClick={handleOpenFile}
+                className="text-sm text-blue-600 hover:text-blue-700 inline-flex items-center gap-1 min-w-0"
+                title={currentMom.original_filename}
+              >
+                <svg className="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
+                </svg>
+                <span className="truncate max-w-[150px]">{currentMom.original_filename}</span>
+              </button>
+              <button
+                onClick={() => window.electronAPI.moms.showInFolder(currentMom.id)}
+                className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors"
+                title="Open folder"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+                </svg>
+              </button>
+            </div>
           ) : (
             <button
               onClick={handleFileUpload}

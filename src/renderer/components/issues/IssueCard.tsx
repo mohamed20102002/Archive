@@ -5,6 +5,7 @@ import type { Issue } from '../../types'
 interface IssueCardProps {
   issue: Issue
   onClick: () => void
+  highlighted?: boolean
 }
 
 const importanceStyles: Record<string, { badge: string; border: string }> = {
@@ -29,14 +30,18 @@ function isReminderOverdue(reminderDate: string | null): boolean {
   return new Date(reminderDate) < new Date()
 }
 
-export function IssueCard({ issue, onClick }: IssueCardProps) {
+export function IssueCard({ issue, onClick, highlighted }: IssueCardProps) {
   const styles = importanceStyles[issue.importance] || importanceStyles.medium
   const reminderOverdue = issue.status === 'open' && isReminderOverdue(issue.reminder_date)
 
   return (
     <div
       onClick={onClick}
-      className={`bg-white rounded-lg border border-gray-200 border-l-4 ${styles.border} p-4 hover:shadow-md transition-shadow cursor-pointer`}
+      className={`bg-white rounded-lg border border-l-4 ${styles.border} p-4 hover:shadow-md transition-all cursor-pointer ${
+        highlighted
+          ? 'border-primary-500 ring-2 ring-primary-500 ring-opacity-50 shadow-lg'
+          : 'border-gray-200'
+      }`}
     >
       {/* Header */}
       <div className="flex items-start justify-between gap-3 mb-2">

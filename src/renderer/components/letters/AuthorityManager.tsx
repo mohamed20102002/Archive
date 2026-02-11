@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { useAuth } from '../../context/AuthContext'
+import { useToast } from '../../context/ToastContext'
+import { useConfirm } from '../common/ConfirmDialog'
 import { Authority, AuthorityType } from '../../types'
 import { Modal } from '../common/Modal'
 
@@ -7,6 +9,8 @@ type ViewMode = 'card' | 'table'
 
 export function AuthorityManager() {
   const { user } = useAuth()
+  const toast = useToast()
+  const confirm = useConfirm()
   const [authorities, setAuthorities] = useState<Authority[]>([])
   const [loading, setLoading] = useState(true)
   const [viewMode, setViewMode] = useState<ViewMode>('card')
@@ -50,7 +54,7 @@ export function AuthorityManager() {
         setShowCreateModal(false)
         loadAuthorities()
       } else {
-        alert(result.error || 'Failed to create authority')
+        toast.error('Error', result.error || 'Failed to create authority')
       }
     } catch (error) {
       console.error('Error creating authority:', error)
@@ -69,7 +73,7 @@ export function AuthorityManager() {
         setEditingAuthority(null)
         loadAuthorities()
       } else {
-        alert(result.error || 'Failed to update authority')
+        toast.error('Error', result.error || 'Failed to update authority')
       }
     } catch (error) {
       console.error('Error updating authority:', error)
@@ -77,14 +81,21 @@ export function AuthorityManager() {
   }
 
   const handleDelete = async (id: string) => {
-    if (!user || !confirm('Are you sure you want to delete this authority?')) return
+    if (!user) return
+    const confirmed = await confirm({
+      title: 'Delete Authority',
+      message: 'Are you sure you want to delete this authority?',
+      confirmText: 'Delete',
+      danger: true
+    })
+    if (!confirmed) return
 
     try {
       const result = await window.electronAPI.authorities.delete(id, user.id)
       if (result.success) {
         loadAuthorities()
       } else {
-        alert(result.error || 'Failed to delete authority')
+        toast.error('Error', result.error || 'Failed to delete authority')
       }
     } catch (error) {
       console.error('Error deleting authority:', error)

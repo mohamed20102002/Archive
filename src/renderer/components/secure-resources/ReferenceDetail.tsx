@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { useAuth } from '../../context/AuthContext'
+import { useToast } from '../../context/ToastContext'
 import { ReferenceForm } from './ReferenceForm'
 import type { SecureReference, SecureReferenceFile, UpdateReferenceData } from '../../types'
 
@@ -20,6 +21,7 @@ interface ReferenceDetailProps {
 
 export function ReferenceDetail({ reference, onClose, onUpdated }: ReferenceDetailProps) {
   const { user } = useAuth()
+  const toast = useToast()
   const [editing, setEditing] = useState(false)
   const [files, setFiles] = useState<SecureReferenceFile[]>([])
   const [loadingFiles, setLoadingFiles] = useState(true)
@@ -49,7 +51,7 @@ export function ReferenceDetail({ reference, onClose, onUpdated }: ReferenceDeta
         setEditing(false)
         onUpdated()
       } else {
-        alert(result.error || 'Failed to update reference')
+        toast.error('Error', result.error || 'Failed to update reference')
       }
     } catch (err) {
       console.error('Error updating reference:', err)
@@ -64,7 +66,7 @@ export function ReferenceDetail({ reference, onClose, onUpdated }: ReferenceDeta
         onClose()
         onUpdated()
       } else {
-        alert(result.error || 'Failed to delete reference')
+        toast.error('Error', result.error || 'Failed to delete reference')
       }
     } catch (err) {
       console.error('Error deleting reference:', err)
@@ -129,7 +131,7 @@ export function ReferenceDetail({ reference, onClose, onUpdated }: ReferenceDeta
         loadFiles()
         onUpdated()
       } else {
-        alert(result.error || 'Failed to delete file')
+        toast.error('Error', result.error || 'Failed to delete file')
       }
     } catch (err) {
       console.error('Error deleting file:', err)

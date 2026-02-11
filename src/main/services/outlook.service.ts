@@ -55,10 +55,11 @@ const cache = {
 }
 
 // Cache TTL values (in milliseconds)
+// Longer TTL prevents expensive Outlook COM calls on page refresh
 const CACHE_TTL = {
-  mailboxes: 5 * 60 * 1000, // 5 minutes
-  folders: 5 * 60 * 1000, // 5 minutes
-  emails: 2 * 60 * 1000 // 2 minutes
+  mailboxes: 30 * 60 * 1000, // 30 minutes - rarely changes
+  folders: 30 * 60 * 1000, // 30 minutes - rarely changes
+  emails: 5 * 60 * 1000 // 5 minutes - balance between freshness and performance
 }
 
 function isCacheValid<T>(entry: CacheEntry<T> | null | undefined, ttl: number): boolean {
@@ -129,12 +130,46 @@ export function getIsConnected(): boolean {
   return isConnected && outlookApp !== null
 }
 
-export function getMailboxes(): OutlookMailbox[] {
+// Clear all cached data to force fresh fetch
+export function clearCache(): void {
+  cache.mailboxes = null
+  cache.folders.clear()
+  cache.emails.clear()
+  console.log('Outlook cache cleared')
+}
+
+// Validate that the COM connection is still alive
+function validateConnection(): boolean {
+  if (!isConnected || !outlookApp) {
+    return false
+  }
+  try {
+    // Try to access a property to verify the COM object is still valid
+    const namespace = outlookApp.GetNamespace('MAPI')
+    return namespace !== null
+  } catch {
+    // COM object is no longer valid
+    console.log('Outlook COM connection is stale, needs reconnection')
+    isConnected = false
+    outlookApp = null
+    return false
+  }
+}
+
+// Ensure connection is valid, reconnect if needed
+async function ensureConnection(): Promise<void> {
+  if (!validateConnection()) {
+    const result = await connect()
+    if (!result.success) {
+      throw new Error(result.error || 'Failed to connect to Outlook')
+    }
+  }
+}
+
+export async function getMailboxes(): Promise<OutlookMailbox[]> {
   console.log('=== outlookService.getMailboxes called ===')
 
-  if (!isConnected || !outlookApp) {
-    throw new Error('Not connected to Outlook')
-  }
+  await ensureConnection()
 
   // Check cache first
   if (isCacheValid(cache.mailboxes, CACHE_TTL.mailboxes)) {
@@ -182,13 +217,11 @@ export function getMailboxes(): OutlookMailbox[] {
   return mailboxes
 }
 
-export function getFolders(storeId: string): OutlookFolder[] {
+export async function getFolders(storeId: string): Promise<OutlookFolder[]> {
   console.log('=== outlookService.getFolders called ===')
   console.log('storeId received:', storeId)
 
-  if (!isConnected || !outlookApp) {
-    throw new Error('Not connected to Outlook')
-  }
+  await ensureConnection()
 
   // Check cache first
   const cachedFolders = cache.folders.get(storeId)
@@ -335,9 +368,7 @@ export async function getEmails(folderId: string, storeId: string, limit: number
   console.log('storeId received:', storeId)
   console.log('limit:', limit)
 
-  if (!isConnected || !outlookApp) {
-    throw new Error('Not connected to Outlook')
-  }
+  await ensureConnection()
 
   // Check cache first (use composite key of folderId + storeId)
   const cacheKey = `${folderId}:${storeId}`
@@ -446,14 +477,12 @@ export async function getEmails(folderId: string, storeId: string, limit: number
   return emails
 }
 
-export function getEmailDetails(entryId: string, storeId: string): OutlookEmail | null {
+export async function getEmailDetails(entryId: string, storeId: string): Promise<OutlookEmail | null> {
   console.log('=== outlookService.getEmailDetails called ===')
   console.log('entryId:', entryId)
   console.log('storeId:', storeId)
 
-  if (!isConnected || !outlookApp) {
-    throw new Error('Not connected to Outlook')
-  }
+  await ensureConnection()
 
   try {
     const namespace = outlookApp.GetNamespace('MAPI')

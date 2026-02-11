@@ -32,9 +32,10 @@ export function updateSetting(
   try {
     const db = getDatabase()
 
+    // Use INSERT OR REPLACE to handle both new and existing settings
     db.prepare(
-      "UPDATE app_settings SET value = ?, updated_by = ?, updated_at = datetime('now') WHERE key = ?"
-    ).run(value, userId, key)
+      "INSERT OR REPLACE INTO app_settings (key, value, updated_by, updated_at) VALUES (?, ?, ?, datetime('now'))"
+    ).run(key, value, userId)
 
     // Get username for audit
     const user = db
@@ -65,13 +66,14 @@ export function updateSettings(
       .prepare('SELECT username FROM users WHERE id = ?')
       .get(userId) as { username: string } | undefined
 
-    const update = db.prepare(
-      "UPDATE app_settings SET value = ?, updated_by = ?, updated_at = datetime('now') WHERE key = ?"
+    // Use INSERT OR REPLACE to handle both new and existing settings
+    const upsert = db.prepare(
+      "INSERT OR REPLACE INTO app_settings (key, value, updated_by, updated_at) VALUES (?, ?, ?, datetime('now'))"
     )
 
     db.transaction(() => {
       for (const [key, value] of Object.entries(settings)) {
-        update.run(value, userId, key)
+        upsert.run(key, value, userId)
       }
     })()
 

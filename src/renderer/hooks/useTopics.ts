@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { useToast } from '../context/ToastContext'
+import { notifyDataChanged, onDataTypeChanged } from '../utils/dataEvents'
 import type { Topic, CreateTopicData, UpdateTopicData } from '../types'
 
 export function useTopics() {
@@ -31,6 +32,14 @@ export function useTopics() {
     loadTopics()
   }, [loadTopics])
 
+  // Listen for record changes to update topic record counts
+  useEffect(() => {
+    const unsubscribe = onDataTypeChanged(['record', 'topic', 'all'], () => {
+      loadTopics()
+    })
+    return unsubscribe
+  }, [loadTopics])
+
   const createTopic = useCallback(async (data: CreateTopicData): Promise<{ success: boolean; topic?: Topic; error?: string }> => {
     if (!user) {
       return { success: false, error: 'Not authenticated' }
@@ -41,6 +50,7 @@ export function useTopics() {
       if (result.success) {
         await loadTopics()
         toast.success('Topic created', `"${data.title}" has been created`)
+        notifyDataChanged('topic', 'create', (result.topic as any)?.id)
       }
       return result as { success: boolean; topic?: Topic; error?: string }
     } catch (err) {
@@ -60,6 +70,7 @@ export function useTopics() {
       if (result.success) {
         await loadTopics()
         toast.success('Topic updated')
+        notifyDataChanged('topic', 'update', id)
       }
       return result
     } catch (err) {
@@ -79,6 +90,7 @@ export function useTopics() {
       if (result.success) {
         await loadTopics()
         toast.success('Topic deleted')
+        notifyDataChanged('topic', 'delete', id)
       }
       return result
     } catch (err) {

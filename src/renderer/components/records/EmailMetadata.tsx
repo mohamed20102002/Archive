@@ -71,9 +71,21 @@ export function EmailMetadata({ email, showFull = false }: EmailMetadataProps) {
       {/* Attachments */}
       {email.has_attachments && (
         <div>
-          <label className="text-xs font-medium text-gray-500 uppercase tracking-wider">
-            Attachments ({email.attachment_count})
-          </label>
+          <div className="flex items-center justify-between">
+            <label className="text-xs font-medium text-gray-500 uppercase tracking-wider">
+              Attachments ({email.attachment_count})
+            </label>
+            <button
+              onClick={() => window.electronAPI.emails.showInFolder(email.id)}
+              className="flex items-center gap-1 px-2 py-1 text-xs text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded transition-colors"
+              title="Open email folder"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+              </svg>
+              Open Folder
+            </button>
+          </div>
           <div className="mt-2 flex flex-wrap gap-2">
             {email.attachment_names?.split(',').map((name, idx) => (
               <div

@@ -3,6 +3,7 @@ import { format, parseISO } from 'date-fns'
 import { Modal } from '../common/Modal'
 import { useAuth } from '../../context/AuthContext'
 import { useToast } from '../../context/ToastContext'
+import { useConfirm } from '../common/ConfirmDialog'
 import type { Handover } from '../../types'
 
 interface HandoverArchiveProps {
@@ -12,6 +13,7 @@ interface HandoverArchiveProps {
 export function HandoverArchive({ onClose }: HandoverArchiveProps) {
   const { user } = useAuth()
   const { success, error } = useToast()
+  const confirm = useConfirm()
   const [archives, setArchives] = useState<Handover[]>([])
   const [isLoading, setIsLoading] = useState(true)
 
@@ -46,9 +48,20 @@ export function HandoverArchive({ onClose }: HandoverArchiveProps) {
   const handleDelete = async (archive: Handover) => {
     if (!user) return
 
-    if (!confirm(`Are you sure you want to delete the handover for Week ${archive.week_number}, ${archive.year}?`)) {
-      return
+    const formatDate = (isoDate: string) => {
+      try {
+        return format(parseISO(isoDate), 'MMM d, yyyy')
+      } catch {
+        return isoDate
+      }
     }
+    const confirmed = await confirm({
+      title: 'Delete Handover',
+      message: `Are you sure you want to delete the handover for ${formatDate(archive.start_date)} - ${formatDate(archive.end_date)}?`,
+      confirmText: 'Delete',
+      danger: true
+    })
+    if (!confirmed) return
 
     try {
       const result = await window.electronAPI.handover.deleteArchive(archive.id, user.id)
@@ -84,7 +97,7 @@ export function HandoverArchive({ onClose }: HandoverArchiveProps) {
               <div className="flex items-center justify-between">
                 <div>
                   <h4 className="font-medium text-gray-900">
-                    Week {archive.week_number}, {archive.year}
+                    {format(parseISO(archive.start_date), 'MMM d')} - {format(parseISO(archive.end_date), 'MMM d, yyyy')}
                   </h4>
                   <div className="text-sm text-gray-500 mt-1">
                     <span>{archive.record_count} records</span>

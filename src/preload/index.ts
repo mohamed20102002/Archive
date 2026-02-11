@@ -6,6 +6,9 @@ export interface ElectronAPI {
     isFirstRun: () => Promise<boolean>
     showNotification: (title: string, body: string) => Promise<void>
     getInfo: () => Promise<{ version: string; platform: string; isPackaged: boolean }>
+    setWindowTitle: (title: string) => Promise<void>
+    getZoomFactor: () => Promise<number>
+    setZoomFactor: (factor: number) => Promise<{ success: boolean; zoomFactor?: number; error?: string }>
   }
   auth: {
     login: (username: string, password: string) => Promise<{
@@ -35,6 +38,8 @@ export interface ElectronAPI {
     changePassword: (userId: string, currentPassword: string, newPassword: string) => Promise<{ success: boolean; error?: string }>
     hasAdminUser: () => Promise<boolean>
     resetPassword: (userId: string, newPassword: string, adminId: string) => Promise<{ success: boolean; error?: string }>
+    deleteUser: (userId: string, adminId: string) => Promise<{ success: boolean; error?: string }>
+    checkUsername: (username: string) => Promise<{ exists: boolean; isActive: boolean }>
   }
   topics: {
     create: (data: unknown, userId: string) => Promise<{ success: boolean; topic?: unknown; error?: string }>
@@ -52,6 +57,14 @@ export interface ElectronAPI {
     delete: (id: string, userId: string) => Promise<{ success: boolean; error?: string }>
     search: (query: string, topicId?: string) => Promise<unknown[]>
   }
+  recordAttachments: {
+    getByRecord: (recordId: string) => Promise<unknown[]>
+    add: (data: { recordId: string; filename: string; buffer: string; topicTitle: string }, userId: string) => Promise<{ success: boolean; attachment?: unknown; error?: string }>
+    delete: (attachmentId: string, userId: string) => Promise<{ success: boolean; error?: string }>
+    open: (attachmentId: string) => Promise<{ success: boolean; error?: string }>
+    getFilePath: (attachmentId: string) => Promise<string | null>
+    showInFolder: (attachmentId: string) => Promise<{ success: boolean; error?: string }>
+  }
   subcategories: {
     create: (data: unknown, userId: string) => Promise<{ success: boolean; subcategory?: unknown; error?: string }>
     getByTopic: (topicId: string) => Promise<unknown[]>
@@ -68,11 +81,13 @@ export interface ElectronAPI {
     getArchivedIds: () => Promise<string[]>
     openFile: (emailId: string) => Promise<{ success: boolean; error?: string }>
     getArchiveInfo: (outlookEntryId: string) => Promise<{ topicId: string; topicTitle: string; recordId: string; recordTitle: string; subcategoryId: string | null; subcategoryTitle: string | null; archivedAt: string } | null>
+    showInFolder: (emailId: string) => Promise<{ success: boolean; error?: string }>
   }
   outlook: {
     connect: () => Promise<{ success: boolean; error?: string }>
     disconnect: () => Promise<void>
     isConnected: () => Promise<boolean>
+    clearCache: () => Promise<{ success: boolean }>
     getMailboxes: () => Promise<unknown[]>
     getFolders: (mailboxId: string) => Promise<unknown[]>
     getEmails: (folderId: string, storeId: string, limit?: number) => Promise<unknown[]>
@@ -92,7 +107,7 @@ export interface ElectronAPI {
     getStats: () => Promise<unknown>
   }
   handover: {
-    getWeekInfo: (offsetWeeks?: number) => Promise<unknown>
+    getWeekInfo: () => Promise<unknown>
     getRecords: (startDate: string, endDate: string) => Promise<unknown[]>
     getSummary: (records: unknown[]) => Promise<unknown>
     export: (records: unknown[], weekInfo: unknown, userId: string, replaceExisting?: boolean) => Promise<{ success: boolean; handover?: unknown; error?: string; existingHandover?: unknown }>
@@ -152,6 +167,7 @@ export interface ElectronAPI {
     delete: (id: string, userId: string) => Promise<{ success: boolean; error?: string }>
     saveFile: (draftId: string, fileBase64: string, filename: string, userId: string) => Promise<{ success: boolean; error?: string }>
     getFilePath: (draftId: string) => Promise<string | null>
+    showInFolder: (draftId: string) => Promise<{ success: boolean; error?: string }>
   }
   letterReferences: {
     create: (data: unknown, userId: string) => Promise<{ success: boolean; reference?: unknown; error?: string }>
@@ -177,6 +193,7 @@ export interface ElectronAPI {
     getByDraft: (draftId: string) => Promise<unknown[]>
     delete: (id: string, userId: string) => Promise<{ success: boolean; error?: string }>
     getFilePath: (id: string) => Promise<string | null>
+    showInFolder: (id: string) => Promise<{ success: boolean; error?: string }>
     getDataDirectory: () => Promise<string>
   }
   issues: {
@@ -253,10 +270,12 @@ export interface ElectronAPI {
     getAll: (filters?: unknown) => Promise<unknown[]>
     update: (id: string, data: unknown, userId: string) => Promise<{ success: boolean; error?: string }>
     delete: (id: string, userId: string) => Promise<{ success: boolean; error?: string }>
+    deleteAll: (userId: string) => Promise<{ success: boolean; deleted: number; error?: string }>
     close: (id: string, userId: string) => Promise<{ success: boolean; error?: string }>
     reopen: (id: string, userId: string) => Promise<{ success: boolean; error?: string }>
     saveFile: (momId: string, fileBase64: string, filename: string, userId: string) => Promise<{ success: boolean; error?: string }>
     getFilePath: (momId: string) => Promise<string | null>
+    showInFolder: (momId: string) => Promise<{ success: boolean; error?: string }>
     getStats: () => Promise<unknown>
     linkTopic: (momInternalId: string, topicId: string, userId: string) => Promise<{ success: boolean; error?: string }>
     unlinkTopic: (momInternalId: string, topicId: string, userId: string) => Promise<{ success: boolean; error?: string }>
@@ -292,6 +311,7 @@ export interface ElectronAPI {
     getLatest: (momInternalId: string) => Promise<unknown | null>
     saveFile: (draftId: string, fileBase64: string, filename: string, userId: string) => Promise<{ success: boolean; error?: string }>
     getFilePath: (draftId: string) => Promise<string | null>
+    showInFolder: (draftId: string) => Promise<{ success: boolean; error?: string }>
     delete: (id: string, userId: string) => Promise<{ success: boolean; error?: string }>
   }
   backup: {
@@ -307,6 +327,15 @@ export interface ElectronAPI {
   }
   database: {
     refresh: () => Promise<{ success: boolean; error?: string }>
+  }
+  seed: {
+    run: (userId: string, options?: { users?: number; topics?: number; recordsPerTopic?: number; letters?: number; moms?: number; issues?: number; attendanceMonths?: number; reminders?: number; credentials?: number; references?: number }) => Promise<{
+      success: boolean
+      message: string
+      counts: Record<string, number>
+      error?: string
+    }>
+    clear: (userId: string) => Promise<{ success: boolean; message: string; error?: string }>
   }
   settings: {
     get: (key: string) => Promise<string | null>
@@ -333,6 +362,11 @@ export interface ElectronAPI {
     openExternal: (filePath: string) => Promise<{ success: boolean; error?: string }>
     showInFolder: (filePath: string) => Promise<{ success: boolean; error?: string }>
   }
+  logger: {
+    getLogs: (filter?: { level?: string; limit?: number }) => Promise<{ timestamp: string; level: string; message: string }[]>
+    clearLogs: () => Promise<{ success: boolean }>
+    getStats: () => Promise<{ total: number; errors: number; warnings: number }>
+  }
 }
 
 // Expose protected methods that allow the renderer process to use
@@ -341,7 +375,10 @@ const electronAPI: ElectronAPI = {
   app: {
     isFirstRun: () => ipcRenderer.invoke('app:isFirstRun'),
     showNotification: (title, body) => ipcRenderer.invoke('app:showNotification', title, body),
-    getInfo: () => ipcRenderer.invoke('app:getInfo')
+    getInfo: () => ipcRenderer.invoke('app:getInfo'),
+    setWindowTitle: (title) => ipcRenderer.invoke('app:setWindowTitle', title),
+    getZoomFactor: () => ipcRenderer.invoke('app:getZoomFactor'),
+    setZoomFactor: (factor) => ipcRenderer.invoke('app:setZoomFactor', factor)
   },
   auth: {
     login: (username, password) => ipcRenderer.invoke('auth:login', username, password),
@@ -355,7 +392,10 @@ const electronAPI: ElectronAPI = {
       ipcRenderer.invoke('auth:changePassword', userId, currentPassword, newPassword),
     hasAdminUser: () => ipcRenderer.invoke('auth:hasAdminUser'),
     resetPassword: (userId, newPassword, adminId) =>
-      ipcRenderer.invoke('auth:resetPassword', userId, newPassword, adminId)
+      ipcRenderer.invoke('auth:resetPassword', userId, newPassword, adminId),
+    deleteUser: (userId, adminId) =>
+      ipcRenderer.invoke('auth:deleteUser', userId, adminId),
+    checkUsername: (username) => ipcRenderer.invoke('auth:checkUsername', username)
   },
   topics: {
     create: (data, userId) => ipcRenderer.invoke('topics:create', data, userId),
@@ -373,6 +413,14 @@ const electronAPI: ElectronAPI = {
     delete: (id, userId) => ipcRenderer.invoke('records:delete', id, userId),
     search: (query, topicId) => ipcRenderer.invoke('records:search', query, topicId)
   },
+  recordAttachments: {
+    getByRecord: (recordId) => ipcRenderer.invoke('recordAttachments:getByRecord', recordId),
+    add: (data, userId) => ipcRenderer.invoke('recordAttachments:add', data, userId),
+    delete: (attachmentId, userId) => ipcRenderer.invoke('recordAttachments:delete', attachmentId, userId),
+    open: (attachmentId) => ipcRenderer.invoke('recordAttachments:open', attachmentId),
+    getFilePath: (attachmentId) => ipcRenderer.invoke('recordAttachments:getFilePath', attachmentId),
+    showInFolder: (attachmentId) => ipcRenderer.invoke('recordAttachments:showInFolder', attachmentId)
+  },
   subcategories: {
     create: (data, userId) => ipcRenderer.invoke('subcategories:create', data, userId),
     getByTopic: (topicId) => ipcRenderer.invoke('subcategories:getByTopic', topicId),
@@ -388,12 +436,14 @@ const electronAPI: ElectronAPI = {
     isArchived: (outlookEntryId) => ipcRenderer.invoke('emails:isArchived', outlookEntryId),
     getArchivedIds: () => ipcRenderer.invoke('emails:getArchivedIds'),
     openFile: (emailId) => ipcRenderer.invoke('emails:openFile', emailId),
-    getArchiveInfo: (outlookEntryId) => ipcRenderer.invoke('emails:getArchiveInfo', outlookEntryId)
+    getArchiveInfo: (outlookEntryId) => ipcRenderer.invoke('emails:getArchiveInfo', outlookEntryId),
+    showInFolder: (emailId) => ipcRenderer.invoke('emails:showInFolder', emailId)
   },
   outlook: {
     connect: () => ipcRenderer.invoke('outlook:connect'),
     disconnect: () => ipcRenderer.invoke('outlook:disconnect'),
     isConnected: () => ipcRenderer.invoke('outlook:isConnected'),
+    clearCache: () => ipcRenderer.invoke('outlook:clearCache'),
     getMailboxes: () => ipcRenderer.invoke('outlook:getMailboxes'),
     getFolders: (mailboxId) => ipcRenderer.invoke('outlook:getFolders', mailboxId),
     getEmails: (folderId, storeId, limit) => ipcRenderer.invoke('outlook:getEmails', folderId, storeId, limit),
@@ -413,7 +463,7 @@ const electronAPI: ElectronAPI = {
     getStats: () => ipcRenderer.invoke('audit:getStats')
   },
   handover: {
-    getWeekInfo: (offsetWeeks) => ipcRenderer.invoke('handover:getWeekInfo', offsetWeeks),
+    getWeekInfo: () => ipcRenderer.invoke('handover:getWeekInfo'),
     getRecords: (startDate, endDate) => ipcRenderer.invoke('handover:getRecords', startDate, endDate),
     getSummary: (records) => ipcRenderer.invoke('handover:getSummary', records),
     export: (records, weekInfo, userId, replaceExisting) => ipcRenderer.invoke('handover:export', records, weekInfo, userId, replaceExisting),
@@ -472,7 +522,8 @@ const electronAPI: ElectronAPI = {
     markAsSent: (id, userId) => ipcRenderer.invoke('letterDrafts:markAsSent', id, userId),
     delete: (id, userId) => ipcRenderer.invoke('letterDrafts:delete', id, userId),
     saveFile: (draftId, fileBuffer, filename, userId) => ipcRenderer.invoke('letterDrafts:saveFile', draftId, fileBuffer, filename, userId),
-    getFilePath: (draftId) => ipcRenderer.invoke('letterDrafts:getFilePath', draftId)
+    getFilePath: (draftId) => ipcRenderer.invoke('letterDrafts:getFilePath', draftId),
+    showInFolder: (draftId) => ipcRenderer.invoke('letterDrafts:showInFolder', draftId)
   },
   letterReferences: {
     create: (data, userId) => ipcRenderer.invoke('letterReferences:create', data, userId),
@@ -498,6 +549,7 @@ const electronAPI: ElectronAPI = {
     getByDraft: (draftId) => ipcRenderer.invoke('letterAttachments:getByDraft', draftId),
     delete: (id, userId) => ipcRenderer.invoke('letterAttachments:delete', id, userId),
     getFilePath: (id) => ipcRenderer.invoke('letterAttachments:getFilePath', id),
+    showInFolder: (id) => ipcRenderer.invoke('letterAttachments:showInFolder', id),
     getDataDirectory: () => ipcRenderer.invoke('letterAttachments:getDataDirectory')
   },
   issues: {
@@ -574,10 +626,12 @@ const electronAPI: ElectronAPI = {
     getAll: (filters) => ipcRenderer.invoke('moms:getAll', filters),
     update: (id, data, userId) => ipcRenderer.invoke('moms:update', id, data, userId),
     delete: (id, userId) => ipcRenderer.invoke('moms:delete', id, userId),
+    deleteAll: (userId) => ipcRenderer.invoke('moms:deleteAll', userId),
     close: (id, userId) => ipcRenderer.invoke('moms:close', id, userId),
     reopen: (id, userId) => ipcRenderer.invoke('moms:reopen', id, userId),
     saveFile: (momId, fileBase64, filename, userId) => ipcRenderer.invoke('moms:saveFile', momId, fileBase64, filename, userId),
     getFilePath: (momId) => ipcRenderer.invoke('moms:getFilePath', momId),
+    showInFolder: (momId) => ipcRenderer.invoke('moms:showInFolder', momId),
     getStats: () => ipcRenderer.invoke('moms:getStats'),
     linkTopic: (momInternalId, topicId, userId) => ipcRenderer.invoke('moms:linkTopic', momInternalId, topicId, userId),
     unlinkTopic: (momInternalId, topicId, userId) => ipcRenderer.invoke('moms:unlinkTopic', momInternalId, topicId, userId),
@@ -613,6 +667,7 @@ const electronAPI: ElectronAPI = {
     getLatest: (momInternalId) => ipcRenderer.invoke('momDrafts:getLatest', momInternalId),
     saveFile: (draftId, fileBase64, filename, userId) => ipcRenderer.invoke('momDrafts:saveFile', draftId, fileBase64, filename, userId),
     getFilePath: (draftId) => ipcRenderer.invoke('momDrafts:getFilePath', draftId),
+    showInFolder: (draftId) => ipcRenderer.invoke('momDrafts:showInFolder', draftId),
     delete: (id, userId) => ipcRenderer.invoke('momDrafts:delete', id, userId)
   },
   backup: {
@@ -633,6 +688,10 @@ const electronAPI: ElectronAPI = {
   database: {
     refresh: () => ipcRenderer.invoke('database:refresh')
   },
+  seed: {
+    run: (userId, options) => ipcRenderer.invoke('seed:run', userId, options),
+    clear: (userId) => ipcRenderer.invoke('seed:clear', userId)
+  },
   settings: {
     get: (key) => ipcRenderer.invoke('settings:get', key),
     getAll: () => ipcRenderer.invoke('settings:getAll'),
@@ -650,6 +709,11 @@ const electronAPI: ElectronAPI = {
   file: {
     openExternal: (filePath) => ipcRenderer.invoke('file:openExternal', filePath),
     showInFolder: (filePath) => ipcRenderer.invoke('file:showInFolder', filePath)
+  },
+  logger: {
+    getLogs: (filter) => ipcRenderer.invoke('logger:getLogs', filter),
+    clearLogs: () => ipcRenderer.invoke('logger:clearLogs'),
+    getStats: () => ipcRenderer.invoke('logger:getStats')
   }
 }
 

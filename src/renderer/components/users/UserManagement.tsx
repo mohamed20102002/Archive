@@ -52,6 +52,7 @@ export function UserManagement({ isOpen, onClose }: UserManagementProps) {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
   const [showNewPassword, setShowNewPassword] = useState(false)
   const [showConfirmNewPassword, setShowConfirmNewPassword] = useState(false)
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState<User | null>(null)
 
   const { success, error } = useToast()
   const { user: currentUser } = useAuth()
@@ -260,10 +261,34 @@ export function UserManagement({ isOpen, onClose }: UserManagementProps) {
     }
   }
 
+  const handleDeleteUser = async () => {
+    if (!showDeleteConfirm || !currentUser) return
+
+    setIsSubmitting(true)
+    try {
+      const result = await window.electronAPI.auth.deleteUser(
+        showDeleteConfirm.id,
+        currentUser.id
+      )
+
+      if (result.success) {
+        success('User Deleted', `User "${showDeleteConfirm.display_name}" has been deleted`)
+        setShowDeleteConfirm(null)
+        loadUsers()
+      } else {
+        error('Failed to delete user', result.error)
+      }
+    } catch (err: any) {
+      error('Failed to delete user', err.message)
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
   if (!isOpen) return null
 
   return (
-    <Modal title="Manage Users" onClose={onClose} size="lg">
+    <Modal title="Manage Users" onClose={onClose} size="xl">
       <div className="space-y-4">
         {/* Header */}
         <div className="flex items-center justify-between">
@@ -291,8 +316,8 @@ export function UserManagement({ isOpen, onClose }: UserManagementProps) {
             No users found
           </div>
         ) : (
-          <div className="border border-gray-200 rounded-lg overflow-hidden">
-            <table className="w-full">
+          <div className="border border-gray-200 rounded-lg overflow-x-auto">
+            <table className="w-full min-w-[700px]">
               <thead className="bg-gray-50">
                 <tr>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -316,100 +341,136 @@ export function UserManagement({ isOpen, onClose }: UserManagementProps) {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
-                {users.map((user) => (
-                  <tr key={user.id} className={!user.is_active ? 'bg-gray-50' : ''}>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-full bg-primary-100 text-primary-700 flex items-center justify-center text-sm font-medium">
-                          {user.display_name.charAt(0).toUpperCase()}
-                        </div>
-                        <div>
-                          <div className="font-medium text-gray-900">
-                            {user.display_name}
-                            {user.id === currentUser?.id && (
-                              <span className="ml-2 text-xs text-gray-400">(You)</span>
-                            )}
+                {users.map((user) => {
+                  const isDeleted = !!user.deleted_at
+                  return (
+                    <tr key={user.id} className={isDeleted ? 'bg-gray-100 opacity-60' : !user.is_active ? 'bg-gray-50' : ''}>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-3">
+                          <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${
+                            isDeleted ? 'bg-gray-200 text-gray-500' : 'bg-primary-100 text-primary-700'
+                          }`}>
+                            {user.display_name.charAt(0).toUpperCase()}
                           </div>
-                          <div className="text-sm text-gray-500">@{user.username}</div>
+                          <div>
+                            <div className={`font-medium ${isDeleted ? 'text-gray-500 line-through' : 'text-gray-900'}`}>
+                              {user.display_name}
+                              {user.id === currentUser?.id && (
+                                <span className="ml-2 text-xs text-gray-400">(You)</span>
+                              )}
+                            </div>
+                            <div className={`text-sm ${isDeleted ? 'text-gray-400' : 'text-gray-500'}`}>@{user.username}</div>
+                          </div>
                         </div>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3 text-sm text-gray-600">
-                      {user.employee_number || '-'}
-                    </td>
-                    <td className="px-4 py-3">
-                      <select
-                        value={user.role}
-                        onChange={(e) => handleChangeRole(user, e.target.value as 'admin' | 'user')}
-                        disabled={user.id === currentUser?.id}
-                        className="text-sm border border-gray-200 rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-primary-500 disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        <option value="admin">Admin</option>
-                        <option value="user">User</option>
-                      </select>
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-xs font-medium ${
-                        user.is_active
-                          ? 'bg-green-100 text-green-700'
-                          : 'bg-red-100 text-red-700'
-                      }`}>
-                        <span className={`w-1.5 h-1.5 rounded-full ${user.is_active ? 'bg-green-500' : 'bg-red-500'}`} />
-                        {user.is_active ? 'Active' : 'Inactive'}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-sm text-gray-500">
-                      {user.last_login_at
-                        ? new Date(user.last_login_at).toLocaleDateString()
-                        : 'Never'
-                      }
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      <div className="flex items-center justify-end gap-2">
-                        <button
-                          onClick={() => handleOpenEditUser(user)}
-                          className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded"
-                          title="Edit User"
-                        >
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                          </svg>
-                        </button>
-                        <button
-                          onClick={() => setShowResetPassword(user)}
-                          className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded"
-                          title="Reset Password"
-                        >
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
-                          </svg>
-                        </button>
-                        <button
-                          onClick={() => handleToggleActive(user)}
-                          disabled={user.id === currentUser?.id}
-                          className={`p-1.5 rounded ${
-                            user.id === currentUser?.id
-                              ? 'text-gray-300 cursor-not-allowed'
-                              : user.is_active
-                                ? 'text-red-400 hover:text-red-600 hover:bg-red-50'
-                                : 'text-green-400 hover:text-green-600 hover:bg-green-50'
-                          }`}
-                          title={user.is_active ? 'Deactivate User' : 'Activate User'}
-                        >
-                          {user.is_active ? (
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
-                            </svg>
-                          ) : (
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                            </svg>
-                          )}
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-gray-600">
+                        {user.employee_number || '-'}
+                      </td>
+                      <td className="px-4 py-3">
+                        {isDeleted ? (
+                          <span className="text-sm text-gray-400">{user.role}</span>
+                        ) : (
+                          <select
+                            value={user.role}
+                            onChange={(e) => handleChangeRole(user, e.target.value as 'admin' | 'user')}
+                            disabled={user.id === currentUser?.id}
+                            className="text-sm border border-gray-200 rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-primary-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            <option value="admin">Admin</option>
+                            <option value="user">User</option>
+                          </select>
+                        )}
+                      </td>
+                      <td className="px-4 py-3">
+                        {isDeleted ? (
+                          <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-xs font-medium bg-gray-200 text-gray-600">
+                            <span className="w-1.5 h-1.5 rounded-full bg-gray-400" />
+                            Deleted
+                          </span>
+                        ) : (
+                          <span className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-xs font-medium ${
+                            user.is_active
+                              ? 'bg-green-100 text-green-700'
+                              : 'bg-red-100 text-red-700'
+                          }`}>
+                            <span className={`w-1.5 h-1.5 rounded-full ${user.is_active ? 'bg-green-500' : 'bg-red-500'}`} />
+                            {user.is_active ? 'Active' : 'Inactive'}
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-gray-500">
+                        {isDeleted
+                          ? `Deleted ${new Date(user.deleted_at!).toLocaleDateString()}`
+                          : user.last_login_at
+                            ? new Date(user.last_login_at).toLocaleDateString()
+                            : 'Never'
+                        }
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        {isDeleted ? (
+                          <span className="text-xs text-gray-400 italic">No actions available</span>
+                        ) : (
+                          <div className="flex items-center justify-end gap-2">
+                            <button
+                              onClick={() => handleOpenEditUser(user)}
+                              className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded"
+                              title="Edit User"
+                            >
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                              </svg>
+                            </button>
+                            <button
+                              onClick={() => setShowResetPassword(user)}
+                              className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded"
+                              title="Reset Password"
+                            >
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
+                              </svg>
+                            </button>
+                            <button
+                              onClick={() => handleToggleActive(user)}
+                              disabled={user.id === currentUser?.id}
+                              className={`p-1.5 rounded ${
+                                user.id === currentUser?.id
+                                  ? 'text-gray-300 cursor-not-allowed'
+                                  : user.is_active
+                                    ? 'text-red-400 hover:text-red-600 hover:bg-red-50'
+                                    : 'text-green-400 hover:text-green-600 hover:bg-green-50'
+                              }`}
+                              title={user.is_active ? 'Deactivate User' : 'Activate User'}
+                            >
+                              {user.is_active ? (
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+                                </svg>
+                              ) : (
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                </svg>
+                              )}
+                            </button>
+                            <button
+                              onClick={() => setShowDeleteConfirm(user)}
+                              disabled={user.id === currentUser?.id}
+                              className={`p-1.5 rounded ${
+                                user.id === currentUser?.id
+                                  ? 'text-gray-300 cursor-not-allowed'
+                                  : 'text-red-400 hover:text-red-600 hover:bg-red-50'
+                              }`}
+                              title="Delete User"
+                            >
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                              </svg>
+                            </button>
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  )
+                })}
               </tbody>
             </table>
           </div>
@@ -794,6 +855,55 @@ export function UserManagement({ isOpen, onClose }: UserManagementProps) {
                 className="btn-primary"
               >
                 {isSubmitting ? 'Saving...' : 'Save Changes'}
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {showDeleteConfirm && (
+        <Modal
+          title="Delete User"
+          onClose={() => setShowDeleteConfirm(null)}
+          size="sm"
+        >
+          <div className="space-y-4">
+            <div className="flex items-center gap-3 p-3 bg-red-50 rounded-lg">
+              <div className="flex-shrink-0">
+                <svg className="w-6 h-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                </svg>
+              </div>
+              <div>
+                <p className="text-sm font-medium text-red-800">
+                  Are you sure you want to delete this user?
+                </p>
+                <p className="text-sm text-red-600 mt-1">
+                  User: <strong>{showDeleteConfirm.display_name}</strong> (@{showDeleteConfirm.username})
+                </p>
+              </div>
+            </div>
+
+            <p className="text-sm text-gray-600">
+              This user will be marked as deleted and will no longer be able to log in.
+              Their audit history will be preserved for record-keeping purposes.
+            </p>
+
+            <div className="flex justify-end gap-3 pt-4 border-t border-gray-100">
+              <button
+                onClick={() => setShowDeleteConfirm(null)}
+                className="btn-secondary"
+                disabled={isSubmitting}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDeleteUser}
+                disabled={isSubmitting}
+                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 focus:ring-2 focus:ring-red-500 focus:ring-offset-2 disabled:opacity-50"
+              >
+                {isSubmitting ? 'Deleting...' : 'Delete User'}
               </button>
             </div>
           </div>

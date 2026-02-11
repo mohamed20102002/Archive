@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react'
-import { AppSettings } from '../types'
+import { AppSettings, LoginBackgroundStyle } from '../types'
 
 const DEFAULT_SETTINGS: AppSettings = {
   department_name: '',
@@ -7,7 +7,8 @@ const DEFAULT_SETTINGS: AppSettings = {
   default_view: '/topics',
   default_view_mode: 'card',
   date_format: 'DD/MM/YYYY',
-  handover_start_day: 1 // Monday
+  login_animation_speed: 4, // 4x speed
+  login_background_style: 'atom' // Default background style
 }
 
 interface SettingsContextType {
@@ -39,10 +40,13 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
         default_view: raw.default_view ?? DEFAULT_SETTINGS.default_view,
         default_view_mode: (raw.default_view_mode as 'card' | 'table') ?? DEFAULT_SETTINGS.default_view_mode,
         date_format: raw.date_format ?? DEFAULT_SETTINGS.date_format,
-        handover_start_day: raw.handover_start_day !== undefined ? Number(raw.handover_start_day) : DEFAULT_SETTINGS.handover_start_day
+        login_animation_speed: raw.login_animation_speed !== undefined ? Number(raw.login_animation_speed) : DEFAULT_SETTINGS.login_animation_speed,
+        login_background_style: (raw.login_background_style as LoginBackgroundStyle) ?? DEFAULT_SETTINGS.login_background_style
       }
       setSettings(merged)
       applyTheme(merged.theme)
+      // Update window title with department name
+      window.electronAPI.app.setWindowTitle(merged.department_name?.trim() || 'Database')
     } catch (error) {
       console.error('Error loading settings:', error)
     } finally {

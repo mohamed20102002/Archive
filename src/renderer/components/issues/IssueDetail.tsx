@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react'
 import { parseISO, differenceInDays, format } from 'date-fns'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
+import { useToast } from '../../context/ToastContext'
 import { IssueTimeline } from './IssueTimeline'
 import { IssueForm } from './IssueForm'
 import { notifyReminderDataChanged } from '../reminders/ReminderBadge'
@@ -32,6 +33,7 @@ function getAgingText(createdAt: string): string {
 
 export function IssueDetail({ issue: initialIssue, onClose, onUpdated }: IssueDetailProps) {
   const { user } = useAuth()
+  const toast = useToast()
   const navigate = useNavigate()
   const [issue, setIssue] = useState<Issue>(initialIssue)
   const [history, setHistory] = useState<IssueHistory[]>([])
@@ -125,7 +127,7 @@ export function IssueDetail({ issue: initialIssue, onClose, onUpdated }: IssueDe
         onUpdated()
         notifyReminderDataChanged()
       } else {
-        alert(result.error || 'Failed to update issue')
+        toast.error('Error', result.error || 'Failed to update issue')
       }
     } catch (err) {
       console.error('Error updating issue:', err)
@@ -147,7 +149,7 @@ export function IssueDetail({ issue: initialIssue, onClose, onUpdated }: IssueDe
         onUpdated()
         notifyReminderDataChanged()
       } else {
-        alert(result.error || 'Failed to close issue')
+        toast.error('Error', result.error || 'Failed to close issue')
       }
     } catch (err) {
       console.error('Error closing issue:', err)
@@ -167,7 +169,7 @@ export function IssueDetail({ issue: initialIssue, onClose, onUpdated }: IssueDe
         onUpdated()
         notifyReminderDataChanged()
       } else {
-        alert(result.error || 'Failed to reopen issue')
+        toast.error('Error', result.error || 'Failed to reopen issue')
       }
     } catch (err) {
       console.error('Error reopening issue:', err)
@@ -189,7 +191,7 @@ export function IssueDetail({ issue: initialIssue, onClose, onUpdated }: IssueDe
         setShowRecordPicker(false)
         await loadHistory()
       } else {
-        alert(result.error || 'Failed to add comment')
+        toast.error('Error', result.error || 'Failed to add comment')
       }
     } catch (err) {
       console.error('Error adding comment:', err)

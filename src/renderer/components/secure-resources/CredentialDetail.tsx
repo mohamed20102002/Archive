@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { useAuth } from '../../context/AuthContext'
+import { useToast } from '../../context/ToastContext'
 import { CredentialForm } from './CredentialForm'
 import type { Credential, UpdateCredentialData } from '../../types'
 
@@ -19,6 +20,7 @@ interface CredentialDetailProps {
 
 export function CredentialDetail({ credential, onClose, onUpdated }: CredentialDetailProps) {
   const { user } = useAuth()
+  const toast = useToast()
   const [editing, setEditing] = useState(false)
   const [passwordVisible, setPasswordVisible] = useState(false)
   const [passwordValue, setPasswordValue] = useState('')
@@ -82,7 +84,7 @@ export function CredentialDetail({ credential, onClose, onUpdated }: CredentialD
         setEditing(false)
         onUpdated()
       } else {
-        alert(result.error || 'Failed to update credential')
+        toast.error('Error', result.error || 'Failed to update credential')
       }
     } catch (err) {
       console.error('Error updating credential:', err)
@@ -97,7 +99,7 @@ export function CredentialDetail({ credential, onClose, onUpdated }: CredentialD
         onClose()
         onUpdated()
       } else {
-        alert(result.error || 'Failed to delete credential')
+        toast.error('Error', result.error || 'Failed to delete credential')
       }
     } catch (err) {
       console.error('Error deleting credential:', err)

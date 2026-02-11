@@ -201,6 +201,39 @@ function ensureMomFolder(storagePath: string): void {
   ensureDirectory(path.join(fullPath, 'actions'))
 }
 
+// Clean up empty parent directories after deleting a MOM folder
+// Goes up the tree (day -> month -> year) and removes empty folders
+function cleanupEmptyParentFolders(storagePath: string): void {
+  const momBasePath = getMomBasePath()
+  // storagePath is like "2026/02/08/MOM_ID_Title"
+  // We want to check and delete empty: 2026/02/08, then 2026/02, then 2026
+  const parts = storagePath.split('/')
+
+  // Remove the MOM folder name, leaving just date parts
+  parts.pop()
+
+  // Walk up the tree: day folder, month folder, year folder
+  while (parts.length > 0) {
+    const checkPath = path.join(momBasePath, ...parts)
+    try {
+      if (fs.existsSync(checkPath)) {
+        const contents = fs.readdirSync(checkPath)
+        if (contents.length === 0) {
+          // Folder is empty, safe to delete
+          fs.rmdirSync(checkPath)
+        } else {
+          // Folder has other contents, stop here
+          break
+        }
+      }
+    } catch (err) {
+      console.error('Error cleaning up parent folder:', checkPath, err)
+      break
+    }
+    parts.pop()
+  }
+}
+
 function writeMetadata(momInternalId: string): void {
   const db = getDatabase()
   const mom = db.prepare(`
@@ -413,12 +446,16 @@ export function createMom(
   const now = new Date().toISOString()
   const meetingDate = data.meeting_date || now.split('T')[0]
 
-  // Storage path: YYYY/MM/DD/mom_id or internal id
+  // Storage path: YYYY/MM/DD/mom_id_title or internal id
   const d = new Date(meetingDate)
   const year = d.getFullYear().toString()
   const month = (d.getMonth() + 1).toString().padStart(2, '0')
   const day = d.getDate().toString().padStart(2, '0')
-  const storageName = data.mom_id?.trim() || id
+  // Sanitize MOM ID and title for filesystem - replace slashes and invalid chars with underscores
+  const sanitize = (str: string) => str.replace(/[/\\:*?"<>|]/g, '_').replace(/\s+/g, '_')
+  const momIdPart = data.mom_id?.trim() ? sanitize(data.mom_id.trim()) : ''
+  const titlePart = sanitize(data.title.trim()).substring(0, 50) // Limit title length
+  const storageName = momIdPart ? `${momIdPart}_${titlePart}` : `${id}_${titlePart}`
   const storagePath = path.join(year, month, day, storageName).replace(/\\/g, '/')
 
   try {
@@ -654,6 +691,21 @@ export function deleteMom(
   if (!existing) return { success: false, error: 'MOM not found' }
 
   try {
+    // Delete physical folder if it exists
+    if (existing.storage_path) {
+      const folderPath = path.join(getMomBasePath(), existing.storage_path)
+      try {
+        if (fs.existsSync(folderPath)) {
+          fs.rmSync(folderPath, { recursive: true, force: true })
+        }
+        // Clean up empty parent date folders (day/month/year)
+        cleanupEmptyParentFolders(existing.storage_path)
+      } catch (folderError) {
+        console.error('Error deleting MOM folder:', folderError)
+        // Continue with DB deletion even if folder deletion fails
+      }
+    }
+
     db.prepare('UPDATE moms SET deleted_at = ?, updated_at = ? WHERE id = ?')
       .run(new Date().toISOString(), new Date().toISOString(), id)
     logAudit('MOM_DELETE', userId, getUsername(userId), 'mom', id, { mom_id: existing.mom_id })
@@ -754,6 +806,46 @@ export function getMomFilePath(momId: string): string | null {
   return path.join(getMomBasePath(), mom.storage_path, 'mom', mom.original_filename)
 }
 
+// Clean up all MOMs - deletes all MOM data and folders
+export function deleteAllMoms(userId: string): { success: boolean; deleted: number; error?: string } {
+  const db = getDatabase()
+
+  try {
+    // Get all MOMs to delete their folders
+    const moms = db.prepare('SELECT id, storage_path FROM moms').all() as { id: string; storage_path: string | null }[]
+
+    // Delete all physical folders
+    const momBasePath = getMomBasePath()
+    try {
+      if (fs.existsSync(momBasePath)) {
+        // Delete the entire mom data folder and recreate it empty
+        fs.rmSync(momBasePath, { recursive: true, force: true })
+        ensureDirectory(momBasePath)
+      }
+    } catch (folderError) {
+      console.error('Error deleting MOM folders:', folderError)
+    }
+
+    // Delete all MOM-related records from database
+    db.transaction(() => {
+      db.prepare('DELETE FROM mom_letter_links').run()
+      db.prepare('DELETE FROM mom_record_links').run()
+      db.prepare('DELETE FROM mom_topic_links').run()
+      db.prepare('DELETE FROM mom_history').run()
+      db.prepare('DELETE FROM mom_drafts').run()
+      db.prepare('DELETE FROM mom_actions').run()
+      db.prepare('DELETE FROM moms').run()
+    })()
+
+    logAudit('MOM_DELETE_ALL', userId, getUsername(userId), 'system', null, { count: moms.length })
+
+    return { success: true, deleted: moms.length }
+  } catch (error) {
+    console.error('Error deleting all MOMs:', error)
+    return { success: false, deleted: 0, error: 'Failed to delete all MOMs' }
+  }
+}
+
 export function getMomStats(): {
   total: number
   open: number
@@ -829,16 +921,25 @@ export function unlinkTopic(
   }
 }
 
-export function getLinkedTopics(momInternalId: string): { id: string; topic_id: string; topic_title: string; created_at: string }[] {
+export function getLinkedTopics(momInternalId: string): { id: string; topic_id: string; topic_title: string | null; created_at: string; deleted_reason?: string | null }[] {
   const db = getDatabase()
 
   return db.prepare(`
-    SELECT mtl.id, mtl.topic_id, t.title as topic_title, mtl.created_at
+    SELECT
+      mtl.id,
+      mtl.topic_id,
+      t.title as topic_title,
+      mtl.created_at,
+      CASE
+        WHEN t.id IS NULL THEN 'topic_deleted'
+        WHEN t.deleted_at IS NOT NULL THEN 'topic_deleted'
+        ELSE NULL
+      END as deleted_reason
     FROM mom_topic_links mtl
-    JOIN topics t ON mtl.topic_id = t.id
+    LEFT JOIN topics t ON mtl.topic_id = t.id
     WHERE mtl.mom_internal_id = ?
-    ORDER BY t.title
-  `).all(momInternalId) as { id: string; topic_id: string; topic_title: string; created_at: string }[]
+    ORDER BY COALESCE(t.title, '')
+  `).all(momInternalId) as { id: string; topic_id: string; topic_title: string | null; created_at: string; deleted_reason?: string | null }[]
 }
 
 export function linkRecord(
@@ -884,17 +985,30 @@ export function unlinkRecord(
   }
 }
 
-export function getLinkedRecords(momInternalId: string): { id: string; record_id: string; record_title: string; topic_title: string; topic_id: string; created_at: string }[] {
+export function getLinkedRecords(momInternalId: string): { id: string; record_id: string; record_title: string | null; topic_title: string | null; topic_id: string | null; created_at: string; deleted_reason?: string | null }[] {
   const db = getDatabase()
 
   return db.prepare(`
-    SELECT mrl.id, mrl.record_id, r.title as record_title, t.title as topic_title, r.topic_id, mrl.created_at
+    SELECT
+      mrl.id,
+      mrl.record_id,
+      r.title as record_title,
+      t.title as topic_title,
+      r.topic_id,
+      mrl.created_at,
+      CASE
+        WHEN r.id IS NULL THEN 'record_deleted'
+        WHEN r.deleted_at IS NOT NULL AND t.deleted_at IS NOT NULL THEN 'topic_deleted'
+        WHEN r.deleted_at IS NOT NULL THEN 'record_deleted'
+        WHEN t.deleted_at IS NOT NULL THEN 'topic_deleted'
+        ELSE NULL
+      END as deleted_reason
     FROM mom_record_links mrl
-    JOIN records r ON mrl.record_id = r.id
+    LEFT JOIN records r ON mrl.record_id = r.id
     LEFT JOIN topics t ON r.topic_id = t.id
     WHERE mrl.mom_internal_id = ?
-    ORDER BY r.title
-  `).all(momInternalId) as { id: string; record_id: string; record_title: string; topic_title: string; topic_id: string; created_at: string }[]
+    ORDER BY COALESCE(r.title, '')
+  `).all(momInternalId) as { id: string; record_id: string; record_title: string | null; topic_title: string | null; topic_id: string | null; created_at: string; deleted_reason?: string | null }[]
 }
 
 export function getMomsByTopic(topicId: string): Mom[] {
@@ -1094,22 +1208,38 @@ export function resolveAction(
 
   const now = new Date().toISOString()
 
+  // Core database update - this is the critical operation
   try {
     db.prepare(`
       UPDATE mom_actions SET status = 'resolved', resolution_note = ?, resolved_by = ?, resolved_at = ?, updated_at = ?
       WHERE id = ?
     `).run(data.resolution_note.trim(), userId, now, now, id)
-
-    addHistory(existing.mom_internal_id, 'action_resolved', userId, null, null, null, data.resolution_note.trim())
-    logAudit('MOM_ACTION_RESOLVE', userId, getUsername(userId), 'mom_action', id, {})
-
-    checkAutoClose(existing.mom_internal_id)
-    writeMetadata(existing.mom_internal_id)
-    return { success: true }
   } catch (error) {
     console.error('Error resolving action:', error)
     return { success: false, error: 'Failed to resolve action' }
   }
+
+  // Auxiliary operations - failures here shouldn't affect the main result
+  try {
+    addHistory(existing.mom_internal_id, 'action_resolved', userId, null, null, null, data.resolution_note.trim())
+    logAudit('MOM_ACTION_RESOLVE', userId, getUsername(userId), 'mom_action', id, {})
+  } catch (error) {
+    console.error('Error logging action resolution:', error)
+  }
+
+  try {
+    checkAutoClose(existing.mom_internal_id)
+  } catch (error) {
+    console.error('Error checking auto-close:', error)
+  }
+
+  try {
+    writeMetadata(existing.mom_internal_id)
+  } catch (error) {
+    console.error('Error writing metadata:', error)
+  }
+
+  return { success: true }
 }
 
 export function reopenAction(
@@ -1122,22 +1252,38 @@ export function reopenAction(
   if (!existing) return { success: false, error: 'Action not found' }
   if (existing.status === 'open') return { success: false, error: 'Action is already open' }
 
+  // Core database update
   try {
     db.prepare(`
       UPDATE mom_actions SET status = 'open', resolution_note = NULL, resolved_by = NULL, resolved_at = NULL, updated_at = ?
       WHERE id = ?
     `).run(new Date().toISOString(), id)
-
-    addHistory(existing.mom_internal_id, 'action_reopened', userId, 'status', 'resolved', 'open')
-    logAudit('MOM_ACTION_REOPEN', userId, getUsername(userId), 'mom_action', id, {})
-
-    checkAutoReopen(existing.mom_internal_id)
-    writeMetadata(existing.mom_internal_id)
-    return { success: true }
   } catch (error) {
     console.error('Error reopening action:', error)
     return { success: false, error: 'Failed to reopen action' }
   }
+
+  // Auxiliary operations
+  try {
+    addHistory(existing.mom_internal_id, 'action_reopened', userId, 'status', 'resolved', 'open')
+    logAudit('MOM_ACTION_REOPEN', userId, getUsername(userId), 'mom_action', id, {})
+  } catch (error) {
+    console.error('Error logging action reopen:', error)
+  }
+
+  try {
+    checkAutoReopen(existing.mom_internal_id)
+  } catch (error) {
+    console.error('Error checking auto-reopen:', error)
+  }
+
+  try {
+    writeMetadata(existing.mom_internal_id)
+  } catch (error) {
+    console.error('Error writing metadata:', error)
+  }
+
+  return { success: true }
 }
 
 export function saveActionResolutionFile(
@@ -1466,10 +1612,11 @@ export function getLinkedLetters(momInternalId: string): {
   mom_internal_id: string
   letter_id: string
   letter_display_id: string | null
-  letter_subject: string
-  letter_type: string
+  letter_subject: string | null
+  letter_type: string | null
   letter_reference_number: string | null
   created_at: string
+  deleted_reason?: string | null
 }[] {
   const db = getDatabase()
 
@@ -1477,19 +1624,25 @@ export function getLinkedLetters(momInternalId: string): {
     SELECT mll.id, mll.mom_internal_id, mll.letter_id,
            l.letter_id as letter_display_id, l.subject as letter_subject,
            l.letter_type, l.reference_number as letter_reference_number,
-           mll.created_at
+           mll.created_at,
+           CASE
+             WHEN l.id IS NULL THEN 'letter_deleted'
+             WHEN l.deleted_at IS NOT NULL THEN 'letter_deleted'
+             ELSE NULL
+           END as deleted_reason
     FROM mom_letter_links mll
-    JOIN letters l ON mll.letter_id = l.id
-    WHERE mll.mom_internal_id = ? AND l.deleted_at IS NULL
+    LEFT JOIN letters l ON mll.letter_id = l.id
+    WHERE mll.mom_internal_id = ?
     ORDER BY mll.created_at DESC
   `).all(momInternalId) as {
     id: string
     mom_internal_id: string
     letter_id: string
     letter_display_id: string | null
-    letter_subject: string
-    letter_type: string
+    letter_subject: string | null
+    letter_type: string | null
     letter_reference_number: string | null
     created_at: string
+    deleted_reason?: string | null
   }[]
 }

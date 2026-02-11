@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { useAuth } from '../../context/AuthContext'
+import { useToast } from '../../context/ToastContext'
+import { useConfirm } from '../common/ConfirmDialog'
 import { AttendanceCondition, Shift } from '../../types'
 
 interface AttendanceConditionSettingsProps {
@@ -16,6 +18,8 @@ export function AttendanceConditionSettings({
   onShiftsChanged
 }: AttendanceConditionSettingsProps) {
   const { user } = useAuth()
+  const toast = useToast()
+  const confirm = useConfirm()
   const [conditions, setConditions] = useState<AttendanceCondition[]>([])
   const [shifts, setShifts] = useState<Shift[]>([])
   const [newName, setNewName] = useState('')
@@ -82,7 +86,13 @@ export function AttendanceConditionSettings({
 
   const handleDeleteCondition = async (id: string) => {
     if (!user) return
-    if (!confirm('Delete this condition? Historical data will be preserved.')) return
+    const confirmed = await confirm({
+      title: 'Delete Condition',
+      message: 'Delete this condition? Historical data will be preserved.',
+      confirmText: 'Delete',
+      danger: true
+    })
+    if (!confirmed) return
     const result = await window.electronAPI.attendance.deleteCondition(id, user.id)
     if (result.success) {
       await loadData()
@@ -133,13 +143,19 @@ export function AttendanceConditionSettings({
 
   const handleDeleteShift = async (id: string) => {
     if (!user) return
-    if (!confirm('Delete this shift? Users assigned to it must be reassigned first.')) return
+    const confirmed = await confirm({
+      title: 'Delete Shift',
+      message: 'Delete this shift? Users assigned to it must be reassigned first.',
+      confirmText: 'Delete',
+      danger: true
+    })
+    if (!confirmed) return
     const result = await window.electronAPI.attendance.deleteShift(id, user.id)
     if (result.success) {
       await loadData()
       onShiftsChanged()
     } else if (result.error) {
-      alert(result.error)
+      toast.error('Error', result.error)
     }
   }
 

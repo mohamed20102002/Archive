@@ -38,7 +38,7 @@ export interface IssueHistory {
   created_by: string
   created_at: string
   creator_name?: string
-  linked_records?: { record_id: string; record_title: string; topic_title: string; topic_id: string }[]
+  linked_records?: { record_id: string; record_title: string | null; topic_title: string | null; topic_id: string | null; deleted_reason?: string | null }[]
   edit_count?: number
 }
 
@@ -653,17 +653,28 @@ export function getIssueHistory(issueId: string): IssueHistory[] {
     ORDER BY h.created_at ASC
   `).all(issueId) as IssueHistory[]
 
-  // Fetch linked records for each history entry
+  // Fetch linked records for each history entry (including deleted ones)
   const linkStmt = db.prepare(`
-    SELECT ihr.record_id, r.title as record_title, t.title as topic_title, r.topic_id
+    SELECT
+      ihr.record_id,
+      r.title as record_title,
+      t.title as topic_title,
+      r.topic_id,
+      CASE
+        WHEN r.id IS NULL THEN 'record_deleted'
+        WHEN r.deleted_at IS NOT NULL AND t.deleted_at IS NOT NULL THEN 'topic_deleted'
+        WHEN r.deleted_at IS NOT NULL THEN 'record_deleted'
+        WHEN t.deleted_at IS NOT NULL THEN 'topic_deleted'
+        ELSE NULL
+      END as deleted_reason
     FROM issue_history_records ihr
-    JOIN records r ON ihr.record_id = r.id
+    LEFT JOIN records r ON ihr.record_id = r.id
     LEFT JOIN topics t ON r.topic_id = t.id
     WHERE ihr.history_id = ?
   `)
 
   for (const entry of history) {
-    const links = linkStmt.all(entry.id) as { record_id: string; record_title: string; topic_title: string; topic_id: string }[]
+    const links = linkStmt.all(entry.id) as { record_id: string; record_title: string | null; topic_title: string | null; topic_id: string | null; deleted_reason: string | null }[]
     if (links.length > 0) {
       entry.linked_records = links
     }

@@ -4,6 +4,7 @@ import { format } from 'date-fns'
 import { Modal } from '../common/Modal'
 import { useToast } from '../../context/ToastContext'
 import { useAuth } from '../../context/AuthContext'
+import { notifyDataChanged } from '../../utils/dataEvents'
 import type { OutlookEmail, OutlookFolder, Topic, Subcategory } from '../../types'
 
 interface EmailArchiveInfo {
@@ -136,6 +137,8 @@ export function EmailPreview({ email, selectedFolder, isArchived, isLoadingDetai
         setSelectedTopic('')
         setSelectedSubcategory('')
         onArchiveSuccess?.()
+        // Notify other components (like Topics list) to refresh
+        notifyDataChanged('record', 'create', result.recordId)
       } else {
         error('Archive failed', result.error || 'Could not archive the email')
       }

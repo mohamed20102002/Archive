@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
+import { useToast } from '../../context/ToastContext'
 import { Modal } from '../common/Modal'
 import { IssueCard } from './IssueCard'
 import { IssueForm } from './IssueForm'
@@ -19,8 +20,11 @@ interface IssueStats {
 
 export function OpenIssues() {
   const { user } = useAuth()
+  const toast = useToast()
   const [searchParams, setSearchParams] = useSearchParams()
-  const highlightedIssueId = useRef<string | null>(null)
+  const processedIssueId = useRef<string | null>(null)
+  const [highlightedIssueId, setHighlightedIssueId] = useState<string | null>(null)
+  const highlightedCardRef = useRef<HTMLDivElement>(null)
 
   // Data state
   const [issues, setIssues] = useState<Issue[]>([])
@@ -42,18 +46,32 @@ export function OpenIssues() {
   // Handle issueId from URL params (e.g., /issues?issueId=xxx)
   useEffect(() => {
     const issueId = searchParams.get('issueId')
-    if (issueId && issueId !== highlightedIssueId.current) {
-      highlightedIssueId.current = issueId
-      // Fetch and open the issue detail
-      window.electronAPI.issues.getById(issueId).then((issue) => {
-        if (issue) {
-          setSelectedIssue(issue as Issue)
-          // Clear the URL param after opening
-          setSearchParams({}, { replace: true })
-        }
-      })
+    if (issueId && issueId !== processedIssueId.current) {
+      processedIssueId.current = issueId
+      // Set highlight for visual feedback (don't open modal - let user see the highlighted card first)
+      setHighlightedIssueId(issueId)
+      // Clear the URL param
+      setSearchParams({}, { replace: true })
+      // Clear highlight after 5 seconds
+      const timer = setTimeout(() => {
+        setHighlightedIssueId(null)
+      }, 5000)
+      return () => clearTimeout(timer)
     }
   }, [searchParams, setSearchParams])
+
+  // Scroll to highlighted card when it appears
+  useEffect(() => {
+    if (highlightedIssueId && !loading) {
+      // Small delay to ensure the card is rendered
+      const scrollTimer = setTimeout(() => {
+        if (highlightedCardRef.current) {
+          highlightedCardRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        }
+      }, 100)
+      return () => clearTimeout(scrollTimer)
+    }
+  }, [highlightedIssueId, issues, loading])
 
   const buildFilters = useCallback((): IssueFilters => {
     const filters: IssueFilters = {}
@@ -125,7 +143,7 @@ export function OpenIssues() {
         loadStats()
         notifyReminderDataChanged()
       } else {
-        alert(result.error || 'Failed to create issue')
+        toast.error('Error', result.error || 'Failed to create issue')
       }
     } catch (err) {
       console.error('Error creating issue:', err)
@@ -329,11 +347,16 @@ export function OpenIssues() {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {issues.map((issue) => (
-              <IssueCard
+              <div
                 key={issue.id}
-                issue={issue}
-                onClick={() => setSelectedIssue(issue)}
-              />
+                ref={issue.id === highlightedIssueId ? highlightedCardRef : undefined}
+              >
+                <IssueCard
+                  issue={issue}
+                  onClick={() => setSelectedIssue(issue)}
+                  highlighted={issue.id === highlightedIssueId}
+                />
+              </div>
             ))}
           </div>
         )}

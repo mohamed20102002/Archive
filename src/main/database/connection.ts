@@ -5,6 +5,16 @@ import * as fs from 'fs'
 
 let db: Database.Database | null = null
 let auditDb: Database.Database | null = null
+let restoreInProgress = false
+
+export function setRestoreInProgress(value: boolean): void {
+  restoreInProgress = value
+  console.log(`[connection] restoreInProgress set to: ${value}`)
+}
+
+export function isRestoreInProgress(): boolean {
+  return restoreInProgress
+}
 
 export function getDataPath(): string {
   // Use portable path relative to executable in production
@@ -39,6 +49,13 @@ export function ensureDataDirectory(): void {
 
 export function getDatabase(): Database.Database {
   if (!db) {
+    // If restore is in progress, log the call stack and prevent reopening
+    if (restoreInProgress) {
+      const stack = new Error().stack
+      console.error(`[CRITICAL] getDatabase() called during restore! Stack trace:\n${stack}`)
+      throw new Error('Cannot open database during restore operation')
+    }
+
     ensureDataDirectory()
     const dbPath = path.join(getDataPath(), 'archive.db')
 
@@ -57,6 +74,13 @@ export function getDatabase(): Database.Database {
 
 export function getAuditDatabase(): Database.Database {
   if (!auditDb) {
+    // If restore is in progress, log the call stack and prevent reopening
+    if (restoreInProgress) {
+      const stack = new Error().stack
+      console.error(`[CRITICAL] getAuditDatabase() called during restore! Stack trace:\n${stack}`)
+      throw new Error('Cannot open audit database during restore operation')
+    }
+
     ensureDataDirectory()
     const auditDbPath = path.join(getDataPath(), 'audit.db')
 
@@ -73,16 +97,65 @@ export function getAuditDatabase(): Database.Database {
 }
 
 export function closeDatabase(): void {
+  const dataPath = getDataPath()
+  const mainDbPath = path.join(dataPath, 'archive.db')
+  const auditDbPath = path.join(dataPath, 'audit.db')
+
   if (db) {
-    db.close()
-    db = null
-    console.log('Main database closed')
+    try {
+      // Force checkpoint to merge WAL into main database file
+      console.log('Main database: Running TRUNCATE checkpoint...')
+      db.pragma('wal_checkpoint(TRUNCATE)')
+
+      // Switch to DELETE journal mode to remove WAL files
+      console.log('Main database: Switching to DELETE journal mode...')
+      db.pragma('journal_mode = DELETE')
+
+      console.log('Main database: Closing...')
+      db.close()
+      db = null
+      console.log('Main database closed successfully')
+    } catch (err) {
+      console.error('Error closing main database:', err)
+      db = null
+    }
   }
 
   if (auditDb) {
-    auditDb.close()
-    auditDb = null
-    console.log('Audit database closed')
+    try {
+      // Force checkpoint to merge WAL into main database file
+      console.log('Audit database: Running TRUNCATE checkpoint...')
+      auditDb.pragma('wal_checkpoint(TRUNCATE)')
+
+      // Switch to DELETE journal mode to remove WAL files
+      console.log('Audit database: Switching to DELETE journal mode...')
+      auditDb.pragma('journal_mode = DELETE')
+
+      console.log('Audit database: Closing...')
+      auditDb.close()
+      auditDb = null
+      console.log('Audit database closed successfully')
+    } catch (err) {
+      console.error('Error closing audit database:', err)
+      auditDb = null
+    }
+  }
+
+  // Force delete WAL and SHM files if they still exist
+  const walFiles = [
+    `${mainDbPath}-wal`, `${mainDbPath}-shm`,
+    `${auditDbPath}-wal`, `${auditDbPath}-shm`
+  ]
+
+  for (const walFile of walFiles) {
+    if (fs.existsSync(walFile)) {
+      try {
+        fs.unlinkSync(walFile)
+        console.log(`Deleted WAL/SHM file: ${walFile}`)
+      } catch (err) {
+        console.error(`Failed to delete WAL/SHM file ${walFile}:`, err)
+      }
+    }
   }
 }
 

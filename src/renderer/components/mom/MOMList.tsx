@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { useSearchParams, useLocation } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
+import { useToast } from '../../context/ToastContext'
 import { Modal } from '../common/Modal'
 import { MOMCard } from './MOMCard'
 import { MOMForm } from './MOMForm'
@@ -12,6 +13,7 @@ type ViewMode = 'card' | 'table'
 
 export function MOMList() {
   const { user } = useAuth()
+  const toast = useToast()
   const [searchParams, setSearchParams] = useSearchParams()
   const location = useLocation()
   const scrollContainerRef = useRef<HTMLDivElement>(null)
@@ -134,7 +136,7 @@ export function MOMList() {
           setSelectedMom(newMom)
         }
       } else {
-        alert(result.error || 'Failed to create MOM')
+        toast.error('Failed to create MOM', result.error)
       }
     } catch (err) {
       console.error('Error creating MOM:', err)

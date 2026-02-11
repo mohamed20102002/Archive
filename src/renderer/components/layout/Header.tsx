@@ -32,6 +32,8 @@ export function Header() {
       const result = await window.electronAPI.database.refresh()
       if (result.success) {
         toast.success('Database refreshed')
+        // Set flag to skip Outlook refresh on reload (prevents freeze)
+        sessionStorage.setItem('skipOutlookRefresh', 'true')
         setTimeout(() => {
           window.location.reload()
         }, 300)

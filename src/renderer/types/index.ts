@@ -10,6 +10,7 @@ export interface User {
   created_at: string
   updated_at: string
   last_login_at: string | null
+  deleted_at: string | null
 }
 
 // Topic types
@@ -27,6 +28,7 @@ export interface Topic {
   record_count?: number
   last_activity?: string
   creator?: User
+  creator_name?: string
 }
 
 export interface CreateTopicData {
@@ -68,7 +70,7 @@ export interface UpdateSubcategoryData {
   description?: string
 }
 
-// Record types
+// Record types (email is created via Outlook archiving, not manually)
 export type RecordType = 'note' | 'email' | 'document' | 'event' | 'decision'
 
 export interface Record {
@@ -104,6 +106,18 @@ export interface UpdateRecordData {
   content?: string
   type?: RecordType
   subcategory_id?: string | null
+}
+
+// Record Attachment types
+export interface RecordAttachment {
+  id: string
+  record_id: string
+  filename: string
+  filepath: string
+  file_size: number | null
+  mime_type: string | null
+  checksum: string | null
+  created_at: string
 }
 
 // Email types
@@ -468,6 +482,7 @@ export interface LetterReference {
   target_reference_number?: string
   target_letter_type?: LetterType
   target_status?: LetterStatus
+  deleted_reason?: string | null
 }
 
 export interface CreateReferenceData {
@@ -563,7 +578,7 @@ export interface IssueHistory {
   created_by: string
   created_at: string
   creator_name?: string
-  linked_records?: { record_id: string; record_title: string; topic_title: string; topic_id: string }[]
+  linked_records?: { record_id: string; record_title: string | null; topic_title: string | null; topic_id: string | null; deleted_reason?: string | null }[]
   edit_count?: number
 }
 
@@ -726,13 +741,16 @@ export interface AuditStats {
 }
 
 // App Settings types
+export type LoginBackgroundStyle = 'atom' | 'particles' | 'dna' | 'wave' | 'galaxy' | 'fission' | 'neural' | 'matrix' | 'none'
+
 export interface AppSettings {
   department_name: string
   theme: 'light' | 'dark'
   default_view: string
   default_view_mode: 'card' | 'table'
   date_format: string
-  handover_start_day: number // 0 = Sunday, 1 = Monday, ... 6 = Saturday
+  login_animation_speed: number // Animation speed multiplier (1 = normal, 2 = 2x, etc.)
+  login_background_style: LoginBackgroundStyle // Background animation style
 }
 
 // Tag types
@@ -1145,7 +1163,8 @@ export interface MomTopicLink {
   topic_id: string
   created_by: string
   created_at: string
-  topic_title?: string
+  topic_title?: string | null
+  deleted_reason?: string | null
 }
 
 export interface MomRecordLink {
@@ -1154,9 +1173,10 @@ export interface MomRecordLink {
   record_id: string
   created_by: string
   created_at: string
-  record_title?: string
-  topic_title?: string
-  topic_id?: string
+  record_title?: string | null
+  topic_title?: string | null
+  topic_id?: string | null
+  deleted_reason?: string | null
 }
 
 export interface MomStats {
@@ -1180,10 +1200,11 @@ export interface MomLetterLink {
   mom_internal_id: string
   letter_id: string
   letter_display_id: string | null
-  letter_subject: string
-  letter_type: string
+  letter_subject: string | null
+  letter_type: string | null
   letter_reference_number: string | null
   created_at: string
+  deleted_reason?: string | null
 }
 
 export interface LetterMomLink {

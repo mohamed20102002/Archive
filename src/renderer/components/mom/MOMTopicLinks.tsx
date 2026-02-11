@@ -1,22 +1,25 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
+import { useToast } from '../../context/ToastContext'
 import type { Topic, MomLetterLink, Letter } from '../../types'
 
 interface TopicLink {
   id: string
   topic_id: string
-  topic_title: string
+  topic_title: string | null
   created_at: string
+  deleted_reason?: string | null
 }
 
 interface RecordLink {
   id: string
   record_id: string
-  record_title: string
-  topic_title: string
-  topic_id: string
+  record_title: string | null
+  topic_title: string | null
+  topic_id: string | null
   created_at: string
+  deleted_reason?: string | null
 }
 
 interface MOMTopicLinksProps {
@@ -26,6 +29,7 @@ interface MOMTopicLinksProps {
 
 export function MOMTopicLinks({ momInternalId, onLinksChanged }: MOMTopicLinksProps) {
   const { user } = useAuth()
+  const toast = useToast()
   const navigate = useNavigate()
 
   const [linkedTopics, setLinkedTopics] = useState<TopicLink[]>([])
@@ -102,16 +106,17 @@ export function MOMTopicLinks({ momInternalId, onLinksChanged }: MOMTopicLinksPr
     return () => clearTimeout(timer)
   }, [recordIdSearch])
 
-  const handleLinkTopic = async () => {
-    if (!user || !selectedTopicId) return
+  const handleLinkTopic = async (topicId?: string) => {
+    const idToLink = topicId || selectedTopicId
+    if (!user || !idToLink) return
     try {
-      const result = await window.electronAPI.moms.linkTopic(momInternalId, selectedTopicId, user.id)
+      const result = await window.electronAPI.moms.linkTopic(momInternalId, idToLink, user.id)
       if (result.success) {
         setSelectedTopicId('')
         loadData()
         onLinksChanged?.()
       } else {
-        alert(result.error || 'Failed to link topic')
+        toast.error('Failed to link topic', result.error)
       }
     } catch (err) {
       console.error('Error linking topic:', err)
@@ -126,7 +131,7 @@ export function MOMTopicLinks({ momInternalId, onLinksChanged }: MOMTopicLinksPr
         loadData()
         onLinksChanged?.()
       } else {
-        alert(result.error || 'Failed to unlink topic')
+        toast.error('Failed to unlink topic', result.error)
       }
     } catch (err) {
       console.error('Error unlinking topic:', err)
@@ -144,7 +149,7 @@ export function MOMTopicLinks({ momInternalId, onLinksChanged }: MOMTopicLinksPr
         loadData()
         onLinksChanged?.()
       } else {
-        alert(result.error || 'Failed to link record')
+        toast.error('Failed to link record', result.error)
       }
     } catch (err) {
       console.error('Error linking record:', err)
@@ -159,7 +164,7 @@ export function MOMTopicLinks({ momInternalId, onLinksChanged }: MOMTopicLinksPr
         loadData()
         onLinksChanged?.()
       } else {
-        alert(result.error || 'Failed to unlink record')
+        toast.error('Failed to unlink record', result.error)
       }
     } catch (err) {
       console.error('Error unlinking record:', err)
@@ -227,7 +232,7 @@ export function MOMTopicLinks({ momInternalId, onLinksChanged }: MOMTopicLinksPr
         loadData()
         onLinksChanged?.()
       } else {
-        alert(result.error || 'Failed to unlink letter')
+        toast.error('Failed to unlink letter', result.error)
       }
     } catch (err) {
       console.error('Error unlinking letter:', err)
@@ -251,55 +256,76 @@ export function MOMTopicLinks({ momInternalId, onLinksChanged }: MOMTopicLinksPr
     <div className="space-y-6">
       {/* Topics Section */}
       <div>
-        <h4 className="text-sm font-semibold text-gray-900 mb-3">Linked Topics</h4>
+        <h4 className="text-sm font-semibold text-gray-900 mb-2">
+          Topics <span className="font-normal text-gray-400">(optional)</span>
+        </h4>
 
-        {/* Linked topic list */}
-        <div className="space-y-1 mb-3">
+        {/* Topics as chips */}
+        <div className="flex flex-wrap gap-2 p-3 border border-gray-200 rounded-lg bg-gray-50/50 min-h-[44px]">
+          {/* Linked topics - with remove button */}
           {linkedTopics.map((link) => (
-            <div key={link.id} className="flex items-center justify-between p-2 rounded-lg hover:bg-gray-50 group">
+            link.deleted_reason ? (
+              // Deleted/broken link
               <span
-                className="text-sm text-blue-600 hover:text-blue-700 cursor-pointer"
-                onClick={() => navigate(`/topics/${link.topic_id}`)}
+                key={link.id}
+                className="inline-flex items-center gap-1 px-3 py-1 text-sm bg-gray-100 text-gray-400 rounded-full line-through"
+                title="Topic was deleted"
               >
-                {link.topic_title}
-              </span>
-              {linkedTopics.length > 1 && (
+                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+                </svg>
+                <span>{link.topic_title || 'Deleted topic'}</span>
+                <span className="text-[10px] text-gray-400">(deleted)</span>
                 <button
                   onClick={() => handleUnlinkTopic(link.topic_id)}
-                  className="p-1 rounded text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors opacity-0 group-hover:opacity-100"
-                  title="Unlink topic"
+                  className="ml-0.5 p-0.5 rounded-full hover:bg-gray-200 transition-colors"
+                  title="Remove broken link"
                 >
-                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                   </svg>
                 </button>
-              )}
-            </div>
+              </span>
+            ) : (
+              // Active link
+              <span
+                key={link.id}
+                className="inline-flex items-center gap-1 px-3 py-1 text-sm bg-primary-100 text-primary-700 rounded-full"
+              >
+                <span
+                  className="cursor-pointer hover:underline"
+                  onClick={() => navigate(`/topics/${link.topic_id}`)}
+                >
+                  {link.topic_title}
+                </span>
+                <button
+                  onClick={() => handleUnlinkTopic(link.topic_id)}
+                  className="ml-0.5 p-0.5 rounded-full hover:bg-primary-200 transition-colors"
+                  title="Remove topic"
+                >
+                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </span>
+            )
           ))}
-        </div>
 
-        {/* Add topic */}
-        {availableTopics.length > 0 && (
-          <div className="flex items-center gap-2">
-            <select
-              value={selectedTopicId}
-              onChange={(e) => setSelectedTopicId(e.target.value)}
-              className="flex-1 px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
-            >
-              <option value="">Select topic to link...</option>
-              {availableTopics.map(t => (
-                <option key={t.id} value={t.id}>{t.title}</option>
-              ))}
-            </select>
+          {/* Available topics - clickable to add */}
+          {availableTopics.map((topic) => (
             <button
-              onClick={handleLinkTopic}
-              disabled={!selectedTopicId}
-              className="px-3 py-1.5 text-xs font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 disabled:opacity-50 transition-colors"
+              key={topic.id}
+              onClick={() => handleLinkTopic(topic.id)}
+              className="px-3 py-1 text-sm text-gray-600 bg-white border border-gray-300 rounded-full hover:border-primary-400 hover:text-primary-600 transition-colors"
             >
-              Link
+              {topic.title}
             </button>
-          </div>
-        )}
+          ))}
+
+          {linkedTopics.length === 0 && availableTopics.length === 0 && (
+            <span className="text-sm text-gray-400">No topics available</span>
+          )}
+        </div>
       </div>
 
       {/* Records Section */}
@@ -310,27 +336,56 @@ export function MOMTopicLinks({ momInternalId, onLinksChanged }: MOMTopicLinksPr
         {linkedRecords.length > 0 ? (
           <div className="space-y-1 mb-3">
             {linkedRecords.map((link) => (
-              <div key={link.id} className="flex items-center justify-between p-2 rounded-lg hover:bg-gray-50 group">
-                <div className="flex items-center gap-2 min-w-0">
-                  <span className="text-xs text-gray-400">{link.topic_title}</span>
-                  <span className="text-gray-300">/</span>
-                  <span
-                    className="text-sm text-blue-600 hover:text-blue-700 cursor-pointer truncate"
-                    onClick={() => navigate(`/topics/${link.topic_id}?recordId=${link.record_id}`)}
+              link.deleted_reason ? (
+                // Deleted/broken link
+                <div key={link.id} className="flex items-center justify-between p-2 rounded-lg bg-gray-50 group">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <svg className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+                    </svg>
+                    <span className="text-xs text-gray-400">{link.topic_title || 'Deleted topic'}</span>
+                    <span className="text-gray-300">/</span>
+                    <span className="text-sm text-gray-400 line-through truncate">
+                      {link.record_title || 'Deleted record'}
+                    </span>
+                    <span className="text-[10px] text-gray-400 flex-shrink-0">
+                      ({link.deleted_reason === 'topic_deleted' ? 'topic deleted' : 'record deleted'})
+                    </span>
+                  </div>
+                  <button
+                    onClick={() => handleUnlinkRecord(link.record_id)}
+                    className="p-1 rounded text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors opacity-0 group-hover:opacity-100 flex-shrink-0"
+                    title="Remove broken link"
                   >
-                    {link.record_title}
-                  </span>
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
                 </div>
-                <button
-                  onClick={() => handleUnlinkRecord(link.record_id)}
-                  className="p-1 rounded text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors opacity-0 group-hover:opacity-100 flex-shrink-0"
-                  title="Unlink record"
-                >
-                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
+              ) : (
+                // Active link
+                <div key={link.id} className="flex items-center justify-between p-2 rounded-lg hover:bg-gray-50 group">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="text-xs text-gray-400">{link.topic_title}</span>
+                    <span className="text-gray-300">/</span>
+                    <span
+                      className="text-sm text-blue-600 hover:text-blue-700 cursor-pointer truncate"
+                      onClick={() => navigate(`/topics/${link.topic_id}?recordId=${link.record_id}`)}
+                    >
+                      {link.record_title}
+                    </span>
+                  </div>
+                  <button
+                    onClick={() => handleUnlinkRecord(link.record_id)}
+                    className="p-1 rounded text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors opacity-0 group-hover:opacity-100 flex-shrink-0"
+                    title="Unlink record"
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+              )
             ))}
           </div>
         ) : (
@@ -378,37 +433,62 @@ export function MOMTopicLinks({ momInternalId, onLinksChanged }: MOMTopicLinksPr
         {linkedLetters.length > 0 ? (
           <div className="space-y-1 mb-3">
             {linkedLetters.map((link) => (
-              <div key={link.id} className="flex items-center justify-between p-2 rounded-lg hover:bg-gray-50 group">
-                <div className="flex items-center gap-2 min-w-0">
-                  {link.letter_display_id && (
-                    <span className="text-xs font-mono text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded flex-shrink-0">
-                      {link.letter_display_id}
+              link.deleted_reason ? (
+                // Deleted/broken link
+                <div key={link.id} className="flex items-center justify-between p-2 rounded-lg bg-gray-50 group">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <svg className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+                    </svg>
+                    <span className="text-sm text-gray-400 line-through truncate">
+                      {link.letter_subject || 'Deleted letter'}
                     </span>
-                  )}
-                  <span className={`text-xs px-1.5 py-0.5 rounded-full flex-shrink-0 ${
-                    link.letter_type === 'incoming' ? 'bg-blue-100 text-blue-700' :
-                    link.letter_type === 'outgoing' ? 'bg-green-100 text-green-700' :
-                    'bg-purple-100 text-purple-700'
-                  }`}>
-                    {link.letter_type}
-                  </span>
-                  <span
-                    className="text-sm text-blue-600 hover:text-blue-700 cursor-pointer truncate"
-                    onClick={() => navigate(`/letters?letterId=${link.letter_id}`)}
+                    <span className="text-[10px] text-gray-400 flex-shrink-0">(letter deleted)</span>
+                  </div>
+                  <button
+                    onClick={() => handleUnlinkLetter(link.letter_id)}
+                    className="p-1 rounded text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors opacity-0 group-hover:opacity-100 flex-shrink-0"
+                    title="Remove broken link"
                   >
-                    {link.letter_subject}
-                  </span>
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
                 </div>
-                <button
-                  onClick={() => handleUnlinkLetter(link.letter_id)}
-                  className="p-1 rounded text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors opacity-0 group-hover:opacity-100 flex-shrink-0"
-                  title="Unlink letter"
-                >
-                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
+              ) : (
+                // Active link
+                <div key={link.id} className="flex items-center justify-between p-2 rounded-lg hover:bg-gray-50 group">
+                  <div className="flex items-center gap-2 min-w-0">
+                    {link.letter_display_id && (
+                      <span className="text-xs font-mono text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded flex-shrink-0">
+                        {link.letter_display_id}
+                      </span>
+                    )}
+                    <span className={`text-xs px-1.5 py-0.5 rounded-full flex-shrink-0 ${
+                      link.letter_type === 'incoming' ? 'bg-blue-100 text-blue-700' :
+                      link.letter_type === 'outgoing' ? 'bg-green-100 text-green-700' :
+                      'bg-purple-100 text-purple-700'
+                    }`}>
+                      {link.letter_type}
+                    </span>
+                    <span
+                      className="text-sm text-blue-600 hover:text-blue-700 cursor-pointer truncate"
+                      onClick={() => navigate(`/letters?letterId=${link.letter_id}`)}
+                    >
+                      {link.letter_subject}
+                    </span>
+                  </div>
+                  <button
+                    onClick={() => handleUnlinkLetter(link.letter_id)}
+                    className="p-1 rounded text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors opacity-0 group-hover:opacity-100 flex-shrink-0"
+                    title="Unlink letter"
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+              )
             ))}
           </div>
         ) : (

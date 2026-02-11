@@ -1,53 +1,79 @@
 import React from 'react'
-import type { WeekInfo } from '../../types'
+import { format, parseISO } from 'date-fns'
 
 interface HandoverDatePickerProps {
-  weekInfo: WeekInfo
-  onPrevWeek: () => void
-  onNextWeek: () => void
-  isCurrentWeek: boolean
+  startDate: string
+  endDate: string
+  weekNumber: number
+  onStartDateChange: (date: string) => void
+  onEndDateChange: (date: string) => void
 }
 
 export function HandoverDatePicker({
-  weekInfo,
-  onPrevWeek,
-  onNextWeek,
-  isCurrentWeek
+  startDate,
+  endDate,
+  weekNumber,
+  onStartDateChange,
+  onEndDateChange
 }: HandoverDatePickerProps) {
-  return (
-    <div className="flex items-center justify-center gap-4">
-      <button
-        onClick={onPrevWeek}
-        className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
-        title="Previous week"
-      >
-        <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-        </svg>
-      </button>
+  // Format date for input (YYYY-MM-DD)
+  const formatForInput = (isoDate: string) => {
+    try {
+      return format(parseISO(isoDate), 'yyyy-MM-dd')
+    } catch {
+      return ''
+    }
+  }
 
-      <div className="text-center">
-        <h3 className="text-lg font-semibold text-gray-900">{weekInfo.displayText}</h3>
-        {isCurrentWeek && (
-          <span className="text-xs text-primary-600 font-medium">Current Week</span>
-        )}
+  return (
+    <div className="flex items-center justify-between gap-6">
+      {/* Week Number */}
+      <div className="flex items-center gap-2">
+        <span className="text-sm text-gray-500">Week</span>
+        <span className="text-xl font-bold text-primary-600">{weekNumber}</span>
       </div>
 
-      <button
-        onClick={onNextWeek}
-        className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
-        title="Next week"
-        disabled={isCurrentWeek}
-      >
-        <svg
-          className={`w-5 h-5 ${isCurrentWeek ? 'text-gray-300' : 'text-gray-600'}`}
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
-        >
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+      {/* Date Range Picker */}
+      <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
+          <label className="text-xs text-gray-500">From</label>
+          <input
+            type="date"
+            value={formatForInput(startDate)}
+            onChange={(e) => {
+              if (e.target.value) {
+                const date = new Date(e.target.value)
+                date.setHours(0, 0, 0, 0)
+                onStartDateChange(date.toISOString())
+              }
+            }}
+            className="input text-sm py-1 px-2 w-36"
+          />
+        </div>
+
+        <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8l4 4m0 0l-4 4m4-4H3" />
         </svg>
-      </button>
+
+        <div className="flex items-center gap-2">
+          <label className="text-xs text-gray-500">To</label>
+          <input
+            type="date"
+            value={formatForInput(endDate)}
+            onChange={(e) => {
+              if (e.target.value) {
+                const date = new Date(e.target.value)
+                date.setHours(23, 59, 59, 999)
+                onEndDateChange(date.toISOString())
+              }
+            }}
+            className="input text-sm py-1 px-2 w-36"
+          />
+        </div>
+      </div>
+
+      {/* Spacer for balance */}
+      <div className="w-20"></div>
     </div>
   )
 }

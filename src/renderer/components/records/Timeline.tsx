@@ -7,7 +7,9 @@ import { SubcategoryManager } from './SubcategoryManager'
 import { TopicSummary } from '../topics/TopicSummary'
 import { useTopic } from '../../hooks/useTopics'
 import { useToast } from '../../context/ToastContext'
+import { useConfirm } from '../common/ConfirmDialog'
 import { useAuth } from '../../context/AuthContext'
+import { notifyDataChanged, onDataTypeChanged } from '../../utils/dataEvents'
 import type { Record, Subcategory } from '../../types'
 
 type RecordTypeFilter = 'all' | 'note' | 'email' | 'document' | 'event' | 'decision'
@@ -43,19 +45,22 @@ function groupRecordsByDate(records: Record[]): Map<string, Record[]> {
 function CopyIdCell({ id }: { id: string }) {
   const [copied, setCopied] = useState(false)
 
-  const handleCopy = useCallback(async () => {
+  const handleCopy = useCallback(async (e: React.MouseEvent) => {
+    e.stopPropagation()
     try {
       await navigator.clipboard.writeText(id)
       setCopied(true)
       setTimeout(() => setCopied(false), 1500)
-    } catch { /* ignore */ }
+    } catch (err) {
+      console.error('Failed to copy ID:', err)
+    }
   }, [id])
 
   return (
     <span className="inline-flex items-center gap-1">
       <span className="text-[11px] font-mono text-gray-400">{id.slice(0, 8)}</span>
       <button
-        onClick={handleCopy}
+        onClick={(e) => handleCopy(e)}
         className="p-0.5 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors"
         title="Copy record ID"
       >
@@ -80,10 +85,13 @@ export function Timeline() {
   const { topic, isLoading: topicLoading } = useTopic(topicId)
   const { user } = useAuth()
   const { success, error } = useToast()
+  const confirm = useConfirm()
 
   const [records, setRecords] = useState<Record[]>([])
   const [subcategories, setSubcategories] = useState<Subcategory[]>([])
   const [isLoading, setIsLoading] = useState(true)
+  const hasInitiallyLoadedRef = useRef(false)
+  const currentTopicIdRef = useRef<string | undefined>(undefined)
   const [showForm, setShowForm] = useState(false)
   const [editingRecord, setEditingRecord] = useState<Record | null>(null)
   const [filterType, setFilterType] = useState<RecordTypeFilter>('all')
@@ -104,10 +112,19 @@ export function Timeline() {
     }
   }
 
-  const loadRecords = async () => {
+  const loadRecords = async (showLoading = false) => {
     if (!topicId) return
 
-    setIsLoading(true)
+    // Check if topic changed - if so, reset the initial load flag
+    if (currentTopicIdRef.current !== topicId) {
+      hasInitiallyLoadedRef.current = false
+      currentTopicIdRef.current = topicId
+    }
+
+    // Only show loading spinner on initial load, not on refreshes
+    if (showLoading || !hasInitiallyLoadedRef.current) {
+      setIsLoading(true)
+    }
     try {
       // Pass subcategory filter to backend if not 'all'
       let subcategoryId: string | null | undefined = undefined
@@ -119,6 +136,7 @@ export function Timeline() {
 
       const data = await window.electronAPI.records.getByTopic(topicId, subcategoryId)
       setRecords(data as Record[])
+      hasInitiallyLoadedRef.current = true
     } catch (err) {
       console.error('Error loading records:', err)
       error('Failed to load records')
@@ -133,6 +151,21 @@ export function Timeline() {
 
   useEffect(() => {
     loadRecords()
+  }, [topicId, filterSubcategory])
+
+  // Listen for external data changes (from other components)
+  useEffect(() => {
+    const unsubscribe = onDataTypeChanged(['record', 'topic', 'all'], (event) => {
+      // Only refresh if it's relevant to this topic or if it's a general refresh
+      if (event.type === 'all' || event.type === 'record') {
+        loadRecords()
+      }
+      if (event.type === 'topic' && event.action === 'update') {
+        // Topic was updated, might need to reload subcategories
+        loadSubcategories()
+      }
+    })
+    return unsubscribe
   }, [topicId, filterSubcategory])
 
   // Scroll to and highlight a specific record when navigated with ?recordId=
@@ -158,7 +191,8 @@ export function Timeline() {
   }, [isLoading, records, searchParams])
 
   const filteredRecords = records.filter(record => {
-    if (filterType !== 'all' && record.type !== filterType) {
+    // Support multi-type records (comma-separated)
+    if (filterType !== 'all' && !record.type.includes(filterType)) {
       return false
     }
     if (searchQuery.trim()) {
@@ -191,6 +225,7 @@ export function Timeline() {
       success('Record created', `"${data.title}" has been added to the timeline`)
       setShowForm(false)
       loadRecords()
+      notifyDataChanged('record', 'create', (result.record as any)?.id)
       return { recordId: (result.record as any)?.id }
     } else {
       error('Failed to create record', result.error)
@@ -217,6 +252,7 @@ export function Timeline() {
       setEditingRecord(null)
       loadRecords()
       loadSubcategories() // Refresh subcategory counts
+      notifyDataChanged('record', 'update', editingRecord.id)
       return { recordId: editingRecord.id }
     } else {
       error('Failed to update record', result.error)
@@ -227,15 +263,20 @@ export function Timeline() {
   const handleDelete = async (record: Record) => {
     if (!user) return
 
-    if (!confirm(`Are you sure you want to delete "${record.title}"?`)) {
-      return
-    }
+    const confirmed = await confirm({
+      title: 'Delete Record',
+      message: `Are you sure you want to delete "${record.title}"?`,
+      confirmText: 'Delete',
+      danger: true
+    })
+    if (!confirmed) return
 
     const result = await window.electronAPI.records.delete(record.id, user.id)
 
     if (result.success) {
       success('Record deleted')
       loadRecords()
+      notifyDataChanged('record', 'delete', record.id)
     } else {
       error('Failed to delete record', result.error)
     }
@@ -573,8 +614,10 @@ export function Timeline() {
       {/* Record Form Modal */}
       {(showForm || editingRecord) && (
         <RecordForm
+          key={editingRecord?.id || 'new'}
           record={editingRecord || undefined}
           topicId={topicId}
+          topicTitle={topic?.title}
           subcategories={subcategories}
           defaultSubcategoryId={
             filterSubcategory !== 'all' && filterSubcategory !== 'general'

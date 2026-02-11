@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { format, parseISO } from 'date-fns'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
+import { useToast } from '../../context/ToastContext'
 import type { IssueHistory, IssueHistoryAction, CommentEdit } from '../../types'
 
 interface IssueTimelineProps {
@@ -124,6 +125,7 @@ type LinkSearchResult = { id: string; title: string; topic_title: string; topic_
 export function IssueTimeline({ history, onHistoryChanged }: IssueTimelineProps) {
   const navigate = useNavigate()
   const { user } = useAuth()
+  const toast = useToast()
 
   // Edit mode state
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -235,7 +237,7 @@ export function IssueTimeline({ history, onHistoryChanged }: IssueTimelineProps)
         cancelEdit()
         onHistoryChanged?.()
       } else {
-        alert(result.error || 'Failed to update comment')
+        toast.error('Error', result.error || 'Failed to update comment')
       }
     } catch (err) {
       console.error('Error updating comment:', err)
@@ -273,7 +275,7 @@ export function IssueTimeline({ history, onHistoryChanged }: IssueTimelineProps)
         cancelAddLinks()
         onHistoryChanged?.()
       } else {
-        alert(result.error || 'Failed to add linked records')
+        toast.error('Error', result.error || 'Failed to add linked records')
       }
     } catch (err) {
       console.error('Error adding linked records:', err)
@@ -446,15 +448,31 @@ export function IssueTimeline({ history, onHistoryChanged }: IssueTimelineProps)
                 <div className="mt-2 flex flex-wrap gap-1.5">
                   <span className="text-xs text-gray-400">Linked:</span>
                   {entry.linked_records.map(lr => (
-                    <span
-                      key={lr.record_id}
-                      className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-50 text-blue-700 rounded text-xs cursor-pointer hover:bg-blue-100 transition-colors"
-                      onClick={() => lr.topic_id && navigate(`/topics/${lr.topic_id}?recordId=${lr.record_id}`)}
-                      title="Go to record"
-                    >
-                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" /></svg>
-                      <span className="text-blue-400">{lr.topic_title} /</span> {lr.record_title}
-                    </span>
+                    lr.deleted_reason ? (
+                      // Deleted/broken link
+                      <span
+                        key={lr.record_id}
+                        className="inline-flex items-center gap-1 px-2 py-0.5 bg-gray-100 text-gray-400 rounded text-xs line-through cursor-not-allowed"
+                        title={lr.deleted_reason === 'topic_deleted' ? 'Topic was deleted' : 'Record was deleted'}
+                      >
+                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" /></svg>
+                        <span>{lr.record_title || 'Deleted record'}</span>
+                        <span className="text-[10px] text-gray-400 ml-1">
+                          ({lr.deleted_reason === 'topic_deleted' ? 'topic deleted' : 'record deleted'})
+                        </span>
+                      </span>
+                    ) : (
+                      // Active link
+                      <span
+                        key={lr.record_id}
+                        className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-50 text-blue-700 rounded text-xs cursor-pointer hover:bg-blue-100 transition-colors"
+                        onClick={() => lr.topic_id && navigate(`/topics/${lr.topic_id}?recordId=${lr.record_id}`)}
+                        title="Go to record"
+                      >
+                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" /></svg>
+                        <span className="text-blue-400">{lr.topic_title} /</span> {lr.record_title}
+                      </span>
+                    )
                   ))}
                 </div>
               )}

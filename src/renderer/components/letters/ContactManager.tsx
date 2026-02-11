@@ -1,10 +1,14 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { useAuth } from '../../context/AuthContext'
+import { useToast } from '../../context/ToastContext'
+import { useConfirm } from '../common/ConfirmDialog'
 import { Contact, Authority } from '../../types'
 import { Modal } from '../common/Modal'
 
 export function ContactManager() {
   const { user } = useAuth()
+  const toast = useToast()
+  const confirm = useConfirm()
   const [contacts, setContacts] = useState<Contact[]>([])
   const [authorities, setAuthorities] = useState<Authority[]>([])
   const [loading, setLoading] = useState(true)
@@ -62,7 +66,7 @@ export function ContactManager() {
         setShowCreateModal(false)
         loadContacts()
       } else {
-        alert(result.error || 'Failed to create contact')
+        toast.error('Error', result.error || 'Failed to create contact')
       }
     } catch (error) {
       console.error('Error creating contact:', error)
@@ -78,7 +82,7 @@ export function ContactManager() {
         setEditingContact(null)
         loadContacts()
       } else {
-        alert(result.error || 'Failed to update contact')
+        toast.error('Error', result.error || 'Failed to update contact')
       }
     } catch (error) {
       console.error('Error updating contact:', error)
@@ -86,14 +90,21 @@ export function ContactManager() {
   }
 
   const handleDelete = async (id: string) => {
-    if (!user || !confirm('Are you sure you want to delete this contact?')) return
+    if (!user) return
+    const confirmed = await confirm({
+      title: 'Delete Contact',
+      message: 'Are you sure you want to delete this contact?',
+      confirmText: 'Delete',
+      danger: true
+    })
+    if (!confirmed) return
 
     try {
       const result = await window.electronAPI.contacts.delete(id, user.id)
       if (result.success) {
         loadContacts()
       } else {
-        alert(result.error || 'Failed to delete contact')
+        toast.error('Error', result.error || 'Failed to delete contact')
       }
     } catch (error) {
       console.error('Error deleting contact:', error)

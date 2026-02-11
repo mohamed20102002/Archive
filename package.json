@@ -12,9 +12,14 @@
     "package": "electron-builder",
     "package:win": "electron-builder --win",
     "typecheck": "tsc --noEmit",
-    "postinstall": "electron-builder install-app-deps"
+    "postinstall": "electron-builder install-app-deps",
+    "seed": "node scripts/seed-data.js",
+    "seed:small": "node scripts/seed-data.js 5 10",
+    "seed:large": "node scripts/seed-data.js 50 100"
   },
   "dependencies": {
+    "@react-three/drei": "^9.88.0",
+    "@react-three/fiber": "^8.15.19",
     "archiver": "^7.0.1",
     "argon2": "^0.31.0",
     "better-sqlite3": "^9.2.0",
@@ -25,6 +30,7 @@
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-router-dom": "^6.21.0",
+    "three": "^0.152.0",
     "uuid": "^9.0.0",
     "winax": "^3.4.2",
     "yauzl": "^3.2.0"
@@ -37,6 +43,7 @@
     "@types/node": "^20.10.0",
     "@types/react": "^18.2.0",
     "@types/react-dom": "^18.2.0",
+    "@types/three": "^0.182.0",
     "@types/uuid": "^9.0.0",
     "@types/yauzl": "^2.10.3",
     "@vitejs/plugin-react": "^4.2.0",
@@ -64,7 +71,9 @@
         "from": "data",
         "to": "data",
         "filter": [
-          "**/*"
+          "**/*",
+          "!system/rollback/**",
+          "!system/backups/**"
         ]
       },
       {

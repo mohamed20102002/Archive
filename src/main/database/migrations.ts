@@ -1154,6 +1154,48 @@ const migrations: Migration[] = [
         db.exec(`ALTER TABLE attendance_conditions ADD COLUMN is_ignored INTEGER DEFAULT 0`)
       }
     }
+  },
+  {
+    version: 21,
+    name: 'add_login_animation_speed_setting',
+    up: (db) => {
+      // Add login_animation_speed setting (default: 4x speed)
+      db.prepare(
+        'INSERT OR IGNORE INTO app_settings (key, value) VALUES (?, ?)'
+      ).run('login_animation_speed', '4')
+    }
+  },
+  {
+    version: 22,
+    name: 'add_login_background_style_setting',
+    up: (db) => {
+      // Add login_background_style setting (default: atom)
+      db.prepare(
+        'INSERT OR IGNORE INTO app_settings (key, value) VALUES (?, ?)'
+      ).run('login_background_style', 'atom')
+    }
+  },
+  {
+    version: 23,
+    name: 'add_user_deleted_at',
+    up: (db) => {
+      // Add deleted_at column to users table for soft deletion
+      const tableInfo = db.prepare("PRAGMA table_info(users)").all() as { name: string }[]
+      if (!tableInfo.some(c => c.name === 'deleted_at')) {
+        db.exec(`ALTER TABLE users ADD COLUMN deleted_at TEXT`)
+      }
+      db.exec(`CREATE INDEX IF NOT EXISTS idx_users_deleted ON users(deleted_at)`)
+    }
+  },
+  {
+    version: 24,
+    name: 'add_shift_duration_setting',
+    up: (db) => {
+      // Add shift_duration setting (default: 7 days per shift)
+      db.prepare(
+        'INSERT OR IGNORE INTO app_settings (key, value) VALUES (?, ?)'
+      ).run('shift_duration', '7')
+    }
   }
 ]
 

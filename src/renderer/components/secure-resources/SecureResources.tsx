@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { useAuth } from '../../context/AuthContext'
+import { useToast } from '../../context/ToastContext'
 import { Modal } from '../common/Modal'
 import { CredentialCard } from './CredentialCard'
 import { CredentialForm } from './CredentialForm'
@@ -24,6 +25,7 @@ const REFERENCE_CATEGORIES: ReferenceCategory[] = ['General', 'Policy', 'Procedu
 
 export function SecureResources() {
   const { user } = useAuth()
+  const toast = useToast()
 
   // Data state
   const [credentials, setCredentials] = useState<Credential[]>([])
@@ -115,7 +117,7 @@ export function SecureResources() {
         loadCredentials()
         loadStats()
       } else {
-        alert(result.error || 'Failed to create credential')
+        toast.error('Error', result.error || 'Failed to create credential')
       }
     } catch (err) {
       console.error('Error creating credential:', err)
@@ -131,7 +133,7 @@ export function SecureResources() {
         loadReferences()
         loadStats()
       } else {
-        alert(result.error || 'Failed to create reference')
+        toast.error('Error', result.error || 'Failed to create reference')
       }
     } catch (err) {
       console.error('Error creating reference:', err)

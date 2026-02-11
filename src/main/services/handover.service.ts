@@ -2,7 +2,6 @@ import { getDatabase, getAuditDatabase, getDataPath } from '../database/connecti
 import { logAudit } from '../database/audit'
 import { generateId } from '../utils/crypto'
 import { getUsername } from './auth.service'
-import { getSetting } from './settings.service'
 import { Document, Packer, Table, TableRow, TableCell, Paragraph, TextRun, WidthType, AlignmentType, HeadingLevel, ExternalHyperlink } from 'docx'
 import { getEmailsPath } from '../database/connection'
 import * as fs from 'fs'
@@ -46,48 +45,16 @@ export interface WeekInfo {
   displayText: string
 }
 
-// Get the configured week start day (0 = Sunday, 1 = Monday, etc.)
-function getConfiguredStartDay(): number {
-  const setting = getSetting('handover_start_day')
-  return setting !== null ? Number(setting) : 1 // Default to Monday
-}
-
-// Get the week number for a given date based on configured start day
-function getShiftNumber(date: Date): number {
-  const startDay = getConfiguredStartDay()
-  const startOfYear = new Date(date.getFullYear(), 0, 1)
-  let weekCount = 0
-  const current = new Date(startOfYear)
-
-  while (current <= date) {
-    if (current.getDay() === startDay) weekCount++
-    current.setDate(current.getDate() + 1)
-  }
-  return weekCount
-}
-
-// Get the start day of the week containing the given date (based on configured start day)
-function getWeekStart(date: Date): Date {
-  const startDay = getConfiguredStartDay()
-  const d = new Date(date)
-  const currentDay = d.getDay()
-
-  // Calculate days to go back to reach the start day
-  let daysToGoBack = currentDay - startDay
-  if (daysToGoBack < 0) daysToGoBack += 7
-
-  d.setDate(d.getDate() - daysToGoBack)
-  d.setHours(0, 0, 0, 0)
-  return d
-}
-
-// Get the end day of the week containing the given date (day before the next week start)
-function getWeekEnd(date: Date): Date {
-  const weekStart = getWeekStart(date)
-  const weekEnd = new Date(weekStart)
-  weekEnd.setDate(weekStart.getDate() + 6)
-  weekEnd.setHours(23, 59, 59, 999)
-  return weekEnd
+// Get ISO week number (Monday-based, standard week numbering)
+export function getWeekNumber(date: Date): number {
+  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()))
+  // Set to nearest Thursday (ISO week starts Monday)
+  d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay() || 7))
+  // Get first day of the year
+  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1))
+  // Calculate week number
+  const weekNumber = Math.ceil((((d.getTime() - yearStart.getTime()) / 86400000) + 1) / 7)
+  return weekNumber
 }
 
 // Format date for display
@@ -96,21 +63,31 @@ function formatDate(date: Date): string {
   return `${months[date.getMonth()]} ${date.getDate()}`
 }
 
-export function getWeekInfo(offsetWeeks: number = 0): WeekInfo {
+// Get default date range info (current week Monday-Sunday)
+export function getWeekInfo(): WeekInfo {
   const now = new Date()
-  now.setDate(now.getDate() + (offsetWeeks * 7))
 
-  const weekStart = getWeekStart(now)
-  const weekEnd = getWeekEnd(now)
-  const weekNumber = getShiftNumber(weekStart)
-  const year = weekStart.getFullYear()
+  // Get Monday of current week
+  const monday = new Date(now)
+  const day = monday.getDay()
+  const diff = day === 0 ? -6 : 1 - day // Adjust for Sunday
+  monday.setDate(monday.getDate() + diff)
+  monday.setHours(0, 0, 0, 0)
+
+  // Get Sunday of current week
+  const sunday = new Date(monday)
+  sunday.setDate(monday.getDate() + 6)
+  sunday.setHours(23, 59, 59, 999)
+
+  const weekNumber = getWeekNumber(monday)
+  const year = monday.getFullYear()
 
   return {
     weekNumber,
     year,
-    startDate: weekStart.toISOString(),
-    endDate: weekEnd.toISOString(),
-    displayText: `Week ${weekNumber}: ${formatDate(weekStart)} - ${formatDate(weekEnd)}, ${year}`
+    startDate: monday.toISOString(),
+    endDate: sunday.toISOString(),
+    displayText: `Week ${weekNumber}: ${formatDate(monday)} - ${formatDate(sunday)}, ${year}`
   }
 }
 
@@ -312,7 +289,17 @@ export async function exportToWord(
   if (existing && replaceExisting) {
     // Delete old file
     if (fs.existsSync(existing.file_path)) {
-      fs.unlinkSync(existing.file_path)
+      try {
+        fs.unlinkSync(existing.file_path)
+      } catch (err: any) {
+        if (err.code === 'EBUSY') {
+          return {
+            success: false,
+            error: 'The existing handover file is open in another program. Please close it and try again.'
+          }
+        }
+        throw err
+      }
     }
     // Delete from database
     db.prepare('DELETE FROM handovers WHERE id = ?').run(existing.id)
@@ -320,7 +307,16 @@ export async function exportToWord(
 
   try {
     const handoversDir = ensureHandoversDirectory()
-    const fileName = `Shift ${weekInfo.weekNumber} - ${weekInfo.year}.docx`
+    // Format dates for filename: YYMMDD_YYMMDD
+    const startDate = new Date(weekInfo.startDate)
+    const endDate = new Date(weekInfo.endDate)
+    const formatDateForFilename = (d: Date) => {
+      const yy = String(d.getFullYear()).slice(-2)
+      const mm = String(d.getMonth() + 1).padStart(2, '0')
+      const dd = String(d.getDate()).padStart(2, '0')
+      return `${yy}${mm}${dd}`
+    }
+    const fileName = `shift_handover_${formatDateForFilename(startDate)}_${formatDateForFilename(endDate)}.docx`
     const filePath = path.join(handoversDir, fileName)
 
     // Create table rows
@@ -400,12 +396,12 @@ export async function exportToWord(
         properties: {},
         children: [
           new Paragraph({
-            text: `Shift Handover - Shift ${weekInfo.weekNumber}`,
+            text: 'Shift Handover Report',
             heading: HeadingLevel.HEADING_1,
             alignment: AlignmentType.CENTER
           }),
           new Paragraph({
-            text: weekInfo.displayText,
+            text: `${formatDate(startDate)} - ${formatDate(endDate)}, ${startDate.getFullYear()}`,
             alignment: AlignmentType.CENTER,
             spacing: { after: 400 }
           }),

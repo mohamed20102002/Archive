@@ -43,6 +43,18 @@ export function OutlookBrowser() {
       const connected = await checkConnection()
       loadArchivedEmailIds()
 
+      // Check if we should skip Outlook refresh (set by database refresh)
+      const skipRefresh = sessionStorage.getItem('skipOutlookRefresh')
+      if (skipRefresh) {
+        sessionStorage.removeItem('skipOutlookRefresh')
+        // Still restore UI state from localStorage but don't fetch new data
+        const savedMailboxId = localStorage.getItem(STORAGE_KEYS.selectedMailboxId)
+        const savedFolderId = localStorage.getItem(STORAGE_KEYS.selectedFolderId)
+        // Keep existing state, user can manually refresh if needed
+        console.log('Skipping Outlook refresh after database refresh')
+        return
+      }
+
       if (connected) {
         setIsRestoring(true)
         try {
@@ -139,6 +151,41 @@ export function OutlookBrowser() {
     localStorage.removeItem(STORAGE_KEYS.selectedMailboxId)
     localStorage.removeItem(STORAGE_KEYS.selectedFolderId)
     success('Disconnected', 'Outlook connection closed')
+  }
+
+  const [isRefreshingOutlook, setIsRefreshingOutlook] = useState(false)
+
+  const handleRefreshOutlook = async () => {
+    if (isRefreshingOutlook) return
+    setIsRefreshingOutlook(true)
+    try {
+      // Clear cache to force fresh fetch
+      await window.electronAPI.outlook.clearCache()
+
+      // Reload current data
+      const mailboxData = await window.electronAPI.outlook.getMailboxes()
+      const loadedMailboxes = mailboxData as OutlookMailbox[]
+      setMailboxes(loadedMailboxes)
+
+      if (selectedMailbox) {
+        const folderData = await window.electronAPI.outlook.getFolders(selectedMailbox.id)
+        setFolders(folderData as OutlookFolder[])
+
+        if (selectedFolder) {
+          setIsLoadingEmails(true)
+          const emailData = await window.electronAPI.outlook.getEmails(selectedFolder.id, selectedFolder.storeId, 50)
+          setEmails(emailData as OutlookEmail[])
+          setIsLoadingEmails(false)
+        }
+      }
+
+      loadArchivedEmailIds()
+      success('Outlook refreshed', 'Email data updated')
+    } catch (err: any) {
+      error('Refresh failed', err.message)
+    } finally {
+      setIsRefreshingOutlook(false)
+    }
   }
 
   const handleSelectMailbox = async (mailbox: OutlookMailbox) => {
@@ -261,12 +308,30 @@ export function OutlookBrowser() {
             <span>Connected to Outlook</span>
           </div>
         </div>
-        <button
-          onClick={handleDisconnect}
-          className="btn-secondary text-sm"
-        >
-          Disconnect
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleRefreshOutlook}
+            disabled={isRefreshingOutlook}
+            className="btn-secondary text-sm flex items-center gap-1.5"
+            title="Refresh Outlook data"
+          >
+            <svg
+              className={`w-4 h-4 ${isRefreshingOutlook ? 'animate-spin' : ''}`}
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+            {isRefreshingOutlook ? 'Refreshing...' : 'Refresh'}
+          </button>
+          <button
+            onClick={handleDisconnect}
+            className="btn-secondary text-sm"
+          >
+            Disconnect
+          </button>
+        </div>
       </div>
 
       {/* Main Content */}

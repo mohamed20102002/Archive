@@ -3,8 +3,10 @@ import * as path from 'path'
 import archiver from 'archiver'
 import yauzl from 'yauzl'
 import { BrowserWindow } from 'electron'
-import { getDatabase, getAuditDatabase, getDataPath, getEmailsPath, closeDatabase, checkpointDatabases } from '../database/connection'
-import { getCurrentVersion } from '../database/migrations'
+import { getDatabase, getAuditDatabase, getDataPath, getEmailsPath, closeDatabase, checkpointDatabases, setRestoreInProgress } from '../database/connection'
+import { getCurrentVersion, runMigrations } from '../database/migrations'
+import { initializeSchema } from '../database/schema'
+import { initializeAuditSchema } from '../database/audit'
 import { logAudit } from '../database/audit'
 
 // ── Types ──
@@ -670,28 +672,113 @@ async function createRollbackBackup(): Promise<string> {
     archive.finalize()
   })
 
+  // Clean up old rollback files - keep only the latest one
+  cleanupOldRollbacks(rollbackPath)
+
   return rollbackPath
+}
+
+// Clean up old rollback files, keeping only the most recent one
+function cleanupOldRollbacks(keepPath: string): void {
+  try {
+    const rollbackDir = getRollbackDir()
+    const files = fs.readdirSync(rollbackDir)
+      .filter(f => f.startsWith('Rollback_') && f.endsWith('.zip'))
+      .map(f => path.join(rollbackDir, f))
+      .filter(f => f !== keepPath)
+
+    for (const file of files) {
+      try {
+        fs.unlinkSync(file)
+        console.log(`[Rollback] Cleaned up old rollback: ${path.basename(file)}`)
+      } catch (err) {
+        console.warn(`[Rollback] Failed to delete old rollback ${file}:`, err)
+      }
+    }
+  } catch (err) {
+    console.warn('[Rollback] Failed to cleanup old rollbacks:', err)
+  }
 }
 
 // ── Delete Data Directory Contents ──
 
-function clearDataDirectory(dataPath: string): void {
+// Helper to delete a file with retries (handles Windows file locking)
+async function unlinkWithRetry(filePath: string, maxRetries: number = 10, delayMs: number = 1000): Promise<void> {
+  console.log(`[unlinkWithRetry] Attempting to delete: ${filePath}`)
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      fs.unlinkSync(filePath)
+      console.log(`[unlinkWithRetry] Successfully deleted: ${filePath}`)
+      return
+    } catch (error: any) {
+      console.log(`[unlinkWithRetry] Attempt ${attempt}/${maxRetries} failed for ${filePath}: ${error.code} - ${error.message}`)
+      if (error.code === 'EBUSY' || error.code === 'EPERM' || error.code === 'EACCES') {
+        if (attempt < maxRetries) {
+          console.log(`[unlinkWithRetry] Waiting ${delayMs}ms before retry...`)
+          await new Promise(resolve => setTimeout(resolve, delayMs))
+          delayMs *= 1.5 // Increase delay for each retry
+        } else {
+          console.log(`[unlinkWithRetry] All ${maxRetries} attempts failed for: ${filePath}`)
+          throw new Error(`Failed to delete file after ${maxRetries} attempts: ${filePath}`)
+        }
+      } else {
+        throw error
+      }
+    }
+  }
+}
+
+// Helper to delete a directory with retries
+async function rmDirWithRetry(dirPath: string, maxRetries: number = 5, delayMs: number = 500): Promise<void> {
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      fs.rmSync(dirPath, { recursive: true, force: true })
+      return
+    } catch (error: any) {
+      if (error.code === 'EBUSY' || error.code === 'EPERM' || error.code === 'EACCES') {
+        if (attempt < maxRetries) {
+          console.log(`Directory locked, retrying in ${delayMs}ms (attempt ${attempt}/${maxRetries}): ${dirPath}`)
+          await new Promise(resolve => setTimeout(resolve, delayMs))
+          delayMs *= 1.5
+        } else {
+          throw new Error(`Failed to delete directory after ${maxRetries} attempts: ${dirPath}`)
+        }
+      } else {
+        throw error
+      }
+    }
+  }
+}
+
+async function clearDataDirectory(dataPath: string): Promise<void> {
+  console.log(`[clearDataDirectory] Starting to clear: ${dataPath}`)
   const entries = fs.readdirSync(dataPath, { withFileTypes: true })
+  console.log(`[clearDataDirectory] Found ${entries.length} entries: ${entries.map(e => e.name).join(', ')}`)
+
   for (const entry of entries) {
     const fullPath = path.join(dataPath, entry.name)
     const relPath = entry.name
 
     // Never touch these directories
-    if (relPath === 'secure-resources' || relPath === 'system') continue
+    if (relPath === 'secure-resources' || relPath === 'system') {
+      console.log(`[clearDataDirectory] Skipping protected: ${relPath}`)
+      continue
+    }
 
     if (entry.isDirectory()) {
-      fs.rmSync(fullPath, { recursive: true, force: true })
+      console.log(`[clearDataDirectory] Removing directory: ${relPath}`)
+      await rmDirWithRetry(fullPath)
     } else {
       // Skip WAL/SHM (shouldn't exist after checkpoint, but just in case)
-      if (relPath.endsWith('.db-wal') || relPath.endsWith('.db-shm')) continue
-      fs.unlinkSync(fullPath)
+      if (relPath.endsWith('.db-wal') || relPath.endsWith('.db-shm')) {
+        console.log(`[clearDataDirectory] Skipping WAL/SHM file: ${relPath}`)
+        continue
+      }
+      console.log(`[clearDataDirectory] Removing file: ${relPath}`)
+      await unlinkWithRetry(fullPath)
     }
   }
+  console.log(`[clearDataDirectory] Completed clearing: ${dataPath}`)
 }
 
 // ── Restore Backup ──
@@ -719,7 +806,17 @@ export async function restoreBackup(
     checkpointDatabases()
 
     sendProgress({ phase: 'closing_db', percentage: 15, message: 'Closing database connections...' })
+    console.log('[restoreBackup] Setting restoreInProgress flag...')
+    setRestoreInProgress(true)
+
+    console.log('[restoreBackup] Calling closeDatabase()...')
     closeDatabase()
+    console.log('[restoreBackup] closeDatabase() completed')
+
+    // Wait for Windows to release file handles
+    console.log('[restoreBackup] Waiting 2 seconds for file handles to be released...')
+    await new Promise(resolve => setTimeout(resolve, 2000))
+    console.log('[restoreBackup] Wait completed, proceeding with restore...')
 
     try {
       // Create rollback
@@ -728,7 +825,7 @@ export async function restoreBackup(
 
       // Clear data directory
       sendProgress({ phase: 'replacing', percentage: 40, message: 'Removing current data...' })
-      clearDataDirectory(dataPath)
+      await clearDataDirectory(dataPath)
 
       // If backup includes emails, clear the emails directory too
       const emailsPath = getEmailsPath()
@@ -739,9 +836,9 @@ export async function restoreBackup(
           for (const entry of emailEntries) {
             const fullPath = path.join(emailsPath, entry.name)
             if (entry.isDirectory()) {
-              fs.rmSync(fullPath, { recursive: true, force: true })
+              await rmDirWithRetry(fullPath)
             } else {
-              fs.unlinkSync(fullPath)
+              await unlinkWithRetry(fullPath)
             }
           }
         }
@@ -759,10 +856,27 @@ export async function restoreBackup(
         })
       })
     } finally {
+      // Clear the restore flag before reopening databases
+      console.log('[restoreBackup] Clearing restoreInProgress flag...')
+      setRestoreInProgress(false)
+
       // Always reopen databases
-      sendProgress({ phase: 'reopening_db', percentage: 90, message: 'Reopening database connections...' })
+      sendProgress({ phase: 'reopening_db', percentage: 85, message: 'Reopening database connections...' })
       getDatabase()
       getAuditDatabase()
+
+      // Run migrations to update restored database to current schema
+      sendProgress({ phase: 'migrating', percentage: 90, message: 'Applying schema migrations...' })
+      try {
+        initializeSchema()
+        initializeAuditSchema()
+        const migrationResult = runMigrations()
+        console.log('[restoreBackup] Migrations applied:', migrationResult.applied)
+        console.log('[restoreBackup] Current schema version:', migrationResult.currentVersion)
+      } catch (migrationError: any) {
+        console.error('[restoreBackup] Migration error:', migrationError)
+        // Continue anyway - the restore might still work
+      }
     }
 
     // Verify databases are working
@@ -775,7 +889,8 @@ export async function restoreBackup(
       if (rollbackPath) {
         try {
           closeDatabase()
-          clearDataDirectory(getDataPath())
+          await new Promise(resolve => setTimeout(resolve, 1000))
+          await clearDataDirectory(getDataPath())
           await extractZipStreaming(rollbackPath, getDataPath(), getEmailsPath(), () => {})
           getDatabase()
           getAuditDatabase()
@@ -808,6 +923,9 @@ export async function restoreBackup(
   } catch (error: any) {
     console.error('Restore failed:', error)
 
+    // Clear the restore flag before any recovery
+    setRestoreInProgress(false)
+
     // Ensure DB is open
     try { getDatabase() } catch { /* ignore */ }
     try { getAuditDatabase() } catch { /* ignore */ }
@@ -817,7 +935,8 @@ export async function restoreBackup(
       try {
         sendProgress({ phase: 'replacing', percentage: 50, message: 'Restore failed. Rolling back...' })
         closeDatabase()
-        clearDataDirectory(getDataPath())
+        await new Promise(resolve => setTimeout(resolve, 1000))
+        await clearDataDirectory(getDataPath())
         await extractZipStreaming(rollbackPath, getDataPath(), getEmailsPath(), () => {})
         getDatabase()
         getAuditDatabase()

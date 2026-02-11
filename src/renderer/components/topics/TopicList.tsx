@@ -3,7 +3,9 @@ import { useNavigate } from 'react-router-dom'
 import { TopicCard } from './TopicCard'
 import { TopicForm } from './TopicForm'
 import { useToast } from '../../context/ToastContext'
+import { useConfirm } from '../common/ConfirmDialog'
 import { useAuth } from '../../context/AuthContext'
+import { onDataTypeChanged } from '../../utils/dataEvents'
 import type { Topic } from '../../types'
 
 type FilterStatus = 'all' | 'active' | 'archived' | 'closed'
@@ -22,6 +24,7 @@ export function TopicList() {
   const [viewMode, setViewMode] = useState<ViewMode>('card')
 
   const { success, error } = useToast()
+  const confirm = useConfirm()
   const { user } = useAuth()
   const navigate = useNavigate()
 
@@ -39,6 +42,14 @@ export function TopicList() {
 
   useEffect(() => {
     loadTopics()
+  }, [])
+
+  // Listen for data changes (record create/delete affects topic record counts)
+  useEffect(() => {
+    const unsubscribe = onDataTypeChanged(['record', 'topic', 'all'], () => {
+      loadTopics()
+    })
+    return unsubscribe
   }, [])
 
   useEffect(() => {
@@ -108,9 +119,13 @@ export function TopicList() {
   const handleDelete = async (topic: Topic) => {
     if (!user) return
 
-    if (!confirm(`Are you sure you want to delete "${topic.title}"? This will also delete all associated records.`)) {
-      return
-    }
+    const confirmed = await confirm({
+      title: 'Delete Topic',
+      message: `Are you sure you want to delete "${topic.title}"? This will also delete all associated records.`,
+      confirmText: 'Delete',
+      danger: true
+    })
+    if (!confirmed) return
 
     const result = await window.electronAPI.topics.delete(topic.id, user.id)
     if (result.success) {

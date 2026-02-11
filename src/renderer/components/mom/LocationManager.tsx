@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { useAuth } from '../../context/AuthContext'
+import { useToast } from '../../context/ToastContext'
+import { useConfirm } from '../common/ConfirmDialog'
 import type { MomLocation } from '../../types'
 
 interface LocationManagerProps {
@@ -9,6 +11,8 @@ interface LocationManagerProps {
 
 export function LocationManager({ onClose, onLocationCreated }: LocationManagerProps) {
   const { user } = useAuth()
+  const toast = useToast()
+  const confirm = useConfirm()
   const [locations, setLocations] = useState<MomLocation[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -64,7 +68,7 @@ export function LocationManager({ onClose, onLocationCreated }: LocationManagerP
           sort_order: sortOrder
         }, user.id)
         if (!result.success) {
-          alert(result.error || 'Failed to update location')
+          toast.error('Failed to update location', result.error)
           return
         }
       } else {
@@ -76,7 +80,7 @@ export function LocationManager({ onClose, onLocationCreated }: LocationManagerP
         if (result.success && result.location) {
           onLocationCreated?.(result.location as MomLocation)
         } else {
-          alert(result.error || 'Failed to create location')
+          toast.error('Failed to create location', result.error)
           return
         }
       }
@@ -91,12 +95,18 @@ export function LocationManager({ onClose, onLocationCreated }: LocationManagerP
 
   const handleDelete = async (loc: MomLocation) => {
     if (!user) return
-    if (!confirm(`Delete location "${loc.name}"?`)) return
+    const confirmed = await confirm({
+      title: 'Delete Location',
+      message: `Delete location "${loc.name}"?`,
+      confirmText: 'Delete',
+      danger: true
+    })
+    if (!confirmed) return
 
     try {
       const result = await window.electronAPI.momLocations.delete(loc.id, user.id)
       if (!result.success) {
-        alert(result.error || 'Failed to delete location')
+        toast.error('Failed to delete location', result.error)
         return
       }
       loadLocations()

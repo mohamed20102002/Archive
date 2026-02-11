@@ -1,8 +1,12 @@
+import * as fs from 'fs'
+import * as path from 'path'
 import { getDatabase } from '../database/connection'
+import { getEmailsPath } from '../database/connection'
 import { logAudit } from '../database/audit'
 import { generateId } from '../utils/crypto'
 import { getUsername } from './auth.service'
 import { getTopicById } from './topic.service'
+import { getAttachmentsByRecordId, deleteAttachment } from './record-attachment.service'
 
 export interface Record {
   id: string
@@ -244,6 +248,46 @@ export function updateRecord(
   }
 }
 
+// Helper function to clean up empty timeline folders after email deletion
+function cleanupEmptyTimelineFolders(emailStoragePath: string): void {
+  const emailsBasePath = getEmailsPath()
+
+  try {
+    // The email storage path is like: Emails/2026/02/02/email-id
+    // After deleting the email folder, check if day/month/year folders are empty
+    const dayFolder = path.dirname(emailStoragePath)
+    const monthFolder = path.dirname(dayFolder)
+    const yearFolder = path.dirname(monthFolder)
+
+    // Check and remove empty day folder
+    if (fs.existsSync(dayFolder) && dayFolder !== emailsBasePath) {
+      const dayContents = fs.readdirSync(dayFolder)
+      if (dayContents.length === 0) {
+        fs.rmdirSync(dayFolder)
+
+        // Check and remove empty month folder
+        if (fs.existsSync(monthFolder) && monthFolder !== emailsBasePath) {
+          const monthContents = fs.readdirSync(monthFolder)
+          if (monthContents.length === 0) {
+            fs.rmdirSync(monthFolder)
+
+            // Check and remove empty year folder
+            if (fs.existsSync(yearFolder) && yearFolder !== emailsBasePath) {
+              const yearContents = fs.readdirSync(yearFolder)
+              if (yearContents.length === 0) {
+                fs.rmdirSync(yearFolder)
+              }
+            }
+          }
+        }
+      }
+    }
+  } catch (error) {
+    console.error('Error cleaning up empty timeline folders:', error)
+    // Non-critical error, don't throw
+  }
+}
+
 export function deleteRecord(
   id: string,
   userId: string
@@ -258,6 +302,42 @@ export function deleteRecord(
   const now = new Date().toISOString()
 
   try {
+    // 1. Delete all attachments (files + DB records)
+    const attachments = getAttachmentsByRecordId(id)
+    for (const attachment of attachments) {
+      deleteAttachment(attachment.id, userId)
+    }
+
+    // 2. Delete any reminders associated with this record
+    db.prepare('DELETE FROM reminders WHERE record_id = ?').run(id)
+
+    // 3. Delete linked email storage if exists
+    let emailDeleted = false
+    if (existing.email_id) {
+      // Get the email storage path from the database
+      const email = db.prepare('SELECT storage_path FROM emails WHERE id = ?').get(existing.email_id) as { storage_path: string } | undefined
+
+      if (email && email.storage_path) {
+        const emailStoragePath = path.join(getEmailsPath(), email.storage_path)
+
+        if (fs.existsSync(emailStoragePath)) {
+          // Delete the email folder and its contents
+          fs.rmSync(emailStoragePath, { recursive: true, force: true })
+          emailDeleted = true
+
+          // Clean up empty timeline folders (day/month/year)
+          cleanupEmptyTimelineFolders(emailStoragePath)
+        }
+
+        // Clear the email_id foreign key reference first to avoid constraint violation
+        db.prepare('UPDATE records SET email_id = NULL WHERE id = ?').run(id)
+
+        // Now delete the email record from the database
+        db.prepare('DELETE FROM emails WHERE id = ?').run(existing.email_id)
+      }
+    }
+
+    // 4. Soft delete the record
     db.prepare('UPDATE records SET deleted_at = ?, updated_at = ? WHERE id = ?')
       .run(now, now, id)
 
@@ -267,7 +347,13 @@ export function deleteRecord(
       getUsername(userId),
       'record',
       id,
-      { record_title: existing.title, topic_id: existing.topic_id }
+      {
+        record_title: existing.title,
+        topic_id: existing.topic_id,
+        attachments_deleted: attachments.length,
+        had_email: existing.email_id ? true : false,
+        email_deleted: emailDeleted
+      }
     )
 
     return { success: true }

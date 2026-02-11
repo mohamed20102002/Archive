@@ -18,6 +18,7 @@ export interface User {
   created_at: string
   updated_at: string
   last_login_at: string | null
+  deleted_at: string | null
 }
 
 export interface UserWithPassword extends User {
@@ -41,6 +42,18 @@ export interface TokenPayload {
 
 // In-memory session store for active tokens
 const activeSessions = new Map<string, { userId: string; expiresAt: number }>()
+
+export function checkUsernameExists(username: string): { exists: boolean; isActive: boolean } {
+  const db = getDatabase()
+  const user = db.prepare(
+    'SELECT id, is_active FROM users WHERE LOWER(username) = LOWER(?) AND deleted_at IS NULL'
+  ).get(username) as { id: string; is_active: number } | undefined
+
+  if (!user) {
+    return { exists: false, isActive: false }
+  }
+  return { exists: true, isActive: !!user.is_active }
+}
 
 export async function createUser(
   username: string,
@@ -106,11 +119,11 @@ export async function login(username: string, password: string): Promise<AuthRes
   const db = getDatabase()
 
   const user = db.prepare(`
-    SELECT * FROM users WHERE username = ? AND is_active = 1
+    SELECT * FROM users WHERE username = ? AND is_active = 1 AND deleted_at IS NULL
   `).get(username) as UserWithPassword | undefined
 
   if (!user) {
-    logAudit('USER_LOGIN_FAILED', null, username, 'user', null, { reason: 'User not found' })
+    logAudit('USER_LOGIN_FAILED', null, username, 'user', null, { reason: 'User not found or deleted' })
     return { success: false, error: 'Invalid username or password' }
   }
 
@@ -199,7 +212,7 @@ export function verifyToken(token: string): { valid: boolean; payload?: TokenPay
 export function getUserById(id: string): User | null {
   const db = getDatabase()
   const user = db.prepare(`
-    SELECT id, username, display_name, role, is_active, employee_number, shift_id, created_at, updated_at, last_login_at
+    SELECT id, username, display_name, role, is_active, employee_number, shift_id, created_at, updated_at, last_login_at, deleted_at
     FROM users WHERE id = ?
   `).get(id) as User | undefined
 
@@ -214,9 +227,9 @@ export function getUsername(userId: string): string | null {
 export function getAllUsers(): User[] {
   const db = getDatabase()
   return db.prepare(`
-    SELECT id, username, display_name, role, is_active, employee_number, shift_id, created_at, updated_at, last_login_at
+    SELECT id, username, display_name, role, is_active, employee_number, shift_id, created_at, updated_at, last_login_at, deleted_at
     FROM users
-    ORDER BY created_at ASC
+    ORDER BY deleted_at IS NOT NULL, created_at ASC
   `).all() as User[]
 }
 
@@ -389,9 +402,70 @@ export async function resetPassword(
 export function hasAdminUser(): boolean {
   const db = getDatabase()
   const result = db.prepare(
-    "SELECT COUNT(*) as count FROM users WHERE role = 'admin' AND is_active = 1"
+    "SELECT COUNT(*) as count FROM users WHERE role = 'admin' AND is_active = 1 AND deleted_at IS NULL"
   ).get() as { count: number }
   return result.count > 0
+}
+
+export function deleteUser(
+  userId: string,
+  adminId: string
+): { success: boolean; error?: string } {
+  const db = getDatabase()
+
+  // Verify admin is actually an admin
+  const admin = getUserById(adminId)
+  if (!admin || admin.role !== 'admin') {
+    return { success: false, error: 'Unauthorized' }
+  }
+
+  // Cannot delete yourself
+  if (userId === adminId) {
+    return { success: false, error: 'You cannot delete your own account' }
+  }
+
+  const user = getUserById(userId)
+  if (!user) {
+    return { success: false, error: 'User not found' }
+  }
+
+  // Check if already deleted
+  if (user.deleted_at) {
+    return { success: false, error: 'User is already deleted' }
+  }
+
+  // Check if this is the last active admin
+  const adminCount = db.prepare(
+    "SELECT COUNT(*) as count FROM users WHERE role = 'admin' AND is_active = 1 AND deleted_at IS NULL AND id != ?"
+  ).get(userId) as { count: number }
+
+  if (user.role === 'admin' && adminCount.count === 0) {
+    return { success: false, error: 'Cannot delete the last admin user' }
+  }
+
+  const now = new Date().toISOString()
+
+  try {
+    db.prepare(`
+      UPDATE users
+      SET deleted_at = ?, is_active = 0, updated_at = ?
+      WHERE id = ?
+    `).run(now, now, userId)
+
+    logAudit(
+      'USER_DELETE',
+      adminId,
+      admin.username,
+      'user',
+      userId,
+      { deleted_user: user.username, deleted_display_name: user.display_name }
+    )
+
+    return { success: true }
+  } catch (error) {
+    console.error('Error deleting user:', error)
+    return { success: false, error: 'Failed to delete user' }
+  }
 }
 
 // Clean up expired sessions periodically

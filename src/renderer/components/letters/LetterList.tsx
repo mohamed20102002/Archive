@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
+import { useToast } from '../../context/ToastContext'
+import { useConfirm } from '../common/ConfirmDialog'
 import { Letter, LetterType, LetterStatus, LetterPriority, Topic, Authority, LetterReference, ReferenceType } from '../../types'
 import { LetterCard } from './LetterCard'
 import { LetterForm } from './LetterForm'
@@ -20,6 +22,8 @@ type TabMode = 'all' | 'pending' | 'overdue' | 'authorities' | 'contacts'
 
 export function LetterList() {
   const { user } = useAuth()
+  const toast = useToast()
+  const confirm = useConfirm()
   const [searchParams, setSearchParams] = useSearchParams()
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const [highlightedLetterId, setHighlightedLetterId] = useState<string | null>(null)
@@ -165,11 +169,11 @@ export function LetterList() {
         setShowCreateModal(false)
         loadData()
       } else {
-        alert(result.error || 'Failed to create letter')
+        toast.error('Error', result.error || 'Failed to create letter')
       }
     } catch (error) {
       console.error('Error creating letter:', error)
-      alert('Failed to create letter')
+      toast.error('Error', 'Failed to create letter')
     }
   }
 
@@ -209,11 +213,11 @@ export function LetterList() {
           setSelectedLetter(updated as Letter)
         }
       } else {
-        alert(result.error || 'Failed to update letter')
+        toast.error('Error', result.error || 'Failed to update letter')
       }
     } catch (error) {
       console.error('Error updating letter:', error)
-      alert('Failed to update letter')
+      toast.error('Error', 'Failed to update letter')
     }
   }
 
@@ -231,7 +235,14 @@ export function LetterList() {
   }
 
   const handleDeleteLetter = async (id: string) => {
-    if (!user || !confirm('Are you sure you want to delete this letter?')) return
+    if (!user) return
+    const confirmed = await confirm({
+      title: 'Delete Letter',
+      message: 'Are you sure you want to delete this letter?',
+      confirmText: 'Delete',
+      danger: true
+    })
+    if (!confirmed) return
 
     try {
       const result = await window.electronAPI.letters.delete(id, user.id)
@@ -239,11 +250,11 @@ export function LetterList() {
         setSelectedLetter(null)
         loadData()
       } else {
-        alert(result.error || 'Failed to delete letter')
+        toast.error('Error', result.error || 'Failed to delete letter')
       }
     } catch (error) {
       console.error('Error deleting letter:', error)
-      alert('Failed to delete letter')
+      toast.error('Error', 'Failed to delete letter')
     }
   }
 

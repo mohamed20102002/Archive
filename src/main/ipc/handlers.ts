@@ -1,5 +1,6 @@
 import { ipcMain, dialog, shell, BrowserWindow } from 'electron'
 import * as fs from 'fs'
+import * as path from 'path'
 import * as authService from '../services/auth.service'
 import * as topicService from '../services/topic.service'
 import * as recordService from '../services/record.service'
@@ -24,6 +25,9 @@ import * as attendanceService from '../services/attendance.service'
 import * as attendancePdfService from '../services/attendance-pdf.service'
 import * as momService from '../services/mom.service'
 import * as backupService from '../services/backup.service'
+import * as seedService from '../services/seed.service'
+import * as recordAttachmentService from '../services/record-attachment.service'
+import * as loggerService from '../services/logger.service'
 import { refreshDatabase } from '../database/connection'
 
 export function registerIpcHandlers(): void {
@@ -63,6 +67,14 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle('auth:resetPassword', async (_event, userId: string, newPassword: string, adminId: string) => {
     return authService.resetPassword(userId, newPassword, adminId)
+  })
+
+  ipcMain.handle('auth:deleteUser', async (_event, userId: string, adminId: string) => {
+    return authService.deleteUser(userId, adminId)
+  })
+
+  ipcMain.handle('auth:checkUsername', async (_event, username: string) => {
+    return authService.checkUsernameExists(username)
   })
 
   // ===== Topic Handlers =====
@@ -115,6 +127,56 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle('records:search', async (_event, query: string, topicId?: string) => {
     return recordService.searchRecords(query, topicId)
+  })
+
+  // ===== Record Attachment Handlers =====
+
+  ipcMain.handle('recordAttachments:getByRecord', async (_event, recordId: string) => {
+    return recordAttachmentService.getAttachmentsByRecordId(recordId)
+  })
+
+  ipcMain.handle('recordAttachments:add', async (_event, data: { recordId: string; filename: string; buffer: string; topicTitle: string }, userId: string) => {
+    const fileBuffer = Buffer.from(data.buffer, 'base64')
+    return recordAttachmentService.addAttachment({
+      recordId: data.recordId,
+      filename: data.filename,
+      buffer: fileBuffer,
+      topicTitle: data.topicTitle
+    }, userId)
+  })
+
+  ipcMain.handle('recordAttachments:delete', async (_event, attachmentId: string, userId: string) => {
+    return recordAttachmentService.deleteAttachment(attachmentId, userId)
+  })
+
+  ipcMain.handle('recordAttachments:open', async (_event, attachmentId: string) => {
+    const fullPath = recordAttachmentService.getAttachmentFullPath(attachmentId)
+    if (!fullPath) {
+      return { success: false, error: 'Attachment not found' }
+    }
+    try {
+      await shell.openPath(fullPath)
+      return { success: true }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  ipcMain.handle('recordAttachments:getFilePath', async (_event, attachmentId: string) => {
+    return recordAttachmentService.getAttachmentFullPath(attachmentId)
+  })
+
+  ipcMain.handle('recordAttachments:showInFolder', async (_event, attachmentId: string) => {
+    const fullPath = recordAttachmentService.getAttachmentFullPath(attachmentId)
+    if (!fullPath) {
+      return { success: false, error: 'Attachment not found' }
+    }
+    try {
+      shell.showItemInFolder(fullPath)
+      return { success: true }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
   })
 
   // ===== Subcategory Handlers =====
@@ -173,6 +235,21 @@ export function registerIpcHandlers(): void {
     return emailService.getEmailArchiveInfo(outlookEntryId)
   })
 
+  ipcMain.handle('emails:showInFolder', async (_event, emailId: string) => {
+    const email = emailService.getEmailById(emailId)
+    if (!email) {
+      return { success: false, error: 'Email not found' }
+    }
+    try {
+      // getEmailStoragePath returns the email's folder directly
+      const emailFolder = emailService.getEmailStoragePath(email)
+      await shell.openPath(emailFolder)
+      return { success: true }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
   // ===== Outlook Handlers =====
 
   ipcMain.handle('outlook:connect', async () => {
@@ -187,9 +264,14 @@ export function registerIpcHandlers(): void {
     return outlookService.getIsConnected()
   })
 
+  ipcMain.handle('outlook:clearCache', async () => {
+    outlookService.clearCache()
+    return { success: true }
+  })
+
   ipcMain.handle('outlook:getMailboxes', async () => {
     try {
-      return outlookService.getMailboxes()
+      return await outlookService.getMailboxes()
     } catch (error: any) {
       console.error('Error getting mailboxes:', error)
       throw error
@@ -200,7 +282,7 @@ export function registerIpcHandlers(): void {
     console.log('=== outlook:getFolders called ===')
     console.log('storeId:', storeId)
     try {
-      const folders = outlookService.getFolders(storeId)
+      const folders = await outlookService.getFolders(storeId)
       console.log('Folders loaded:', folders.length)
       if (folders.length > 0) {
         console.log('First folder:', JSON.stringify(folders[0], null, 2))
@@ -232,7 +314,7 @@ export function registerIpcHandlers(): void {
     console.log('entryId:', entryId)
     console.log('storeId:', storeId)
     try {
-      const email = outlookService.getEmailDetails(entryId, storeId)
+      const email = await outlookService.getEmailDetails(entryId, storeId)
       console.log('Email details loaded:', email?.subject)
       return email
     } catch (error: any) {
@@ -283,8 +365,8 @@ export function registerIpcHandlers(): void {
 
   // ===== Handover Handlers =====
 
-  ipcMain.handle('handover:getWeekInfo', async (_event, offsetWeeks?: number) => {
-    return handoverService.getWeekInfo(offsetWeeks)
+  ipcMain.handle('handover:getWeekInfo', async () => {
+    return handoverService.getWeekInfo()
   })
 
   ipcMain.handle('handover:getRecords', async (_event, startDate: string, endDate: string) => {
@@ -504,6 +586,19 @@ export function registerIpcHandlers(): void {
     return letterDraftService.getDraftFilePath(draftId)
   })
 
+  ipcMain.handle('letterDrafts:showInFolder', async (_event, draftId: string) => {
+    const filePath = letterDraftService.getDraftFilePath(draftId)
+    if (!filePath) {
+      return { success: false, error: 'Draft file not found' }
+    }
+    try {
+      shell.showItemInFolder(filePath)
+      return { success: true }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
   // ===== Letter Reference Handlers =====
 
   ipcMain.handle('letterReferences:create', async (_event, data: unknown, userId: string) => {
@@ -591,6 +686,19 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle('letterAttachments:getFilePath', async (_event, id: string) => {
     return letterAttachmentService.getAttachmentFilePath(id)
+  })
+
+  ipcMain.handle('letterAttachments:showInFolder', async (_event, id: string) => {
+    const filePath = letterAttachmentService.getAttachmentFilePath(id)
+    if (!filePath) {
+      return { success: false, error: 'Attachment not found' }
+    }
+    try {
+      shell.showItemInFolder(filePath)
+      return { success: true }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
   })
 
   ipcMain.handle('letterAttachments:getDataDirectory', async () => {
@@ -940,6 +1048,10 @@ export function registerIpcHandlers(): void {
     return momService.deleteMom(id, userId)
   })
 
+  ipcMain.handle('moms:deleteAll', async (_event, userId: string) => {
+    return momService.deleteAllMoms(userId)
+  })
+
   ipcMain.handle('moms:close', async (_event, id: string, userId: string) => {
     return momService.closeMom(id, userId)
   })
@@ -955,6 +1067,19 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle('moms:getFilePath', async (_event, momId: string) => {
     return momService.getMomFilePath(momId)
+  })
+
+  ipcMain.handle('moms:showInFolder', async (_event, momId: string) => {
+    const filePath = momService.getMomFilePath(momId)
+    if (!filePath) {
+      return { success: false, error: 'MOM file not found' }
+    }
+    try {
+      shell.showItemInFolder(filePath)
+      return { success: true }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
   })
 
   ipcMain.handle('moms:getStats', async () => {
@@ -1088,6 +1213,19 @@ export function registerIpcHandlers(): void {
     return momService.getDraftFilePath(draftId)
   })
 
+  ipcMain.handle('momDrafts:showInFolder', async (_event, draftId: string) => {
+    const filePath = momService.getDraftFilePath(draftId)
+    if (!filePath) {
+      return { success: false, error: 'Draft file not found' }
+    }
+    try {
+      shell.showItemInFolder(filePath)
+      return { success: true }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
   ipcMain.handle('momDrafts:delete', async (_event, id: string, userId: string) => {
     return momService.deleteDraft(id, userId)
   })
@@ -1194,7 +1332,6 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle('backup:analyze', async (_event, zipPath: string) => {
     console.log('[IPC backup:analyze] Called with path:', zipPath)
-    console.error('[IPC backup:analyze] Called with path:', zipPath) // Also log to stderr
     try {
       // Check file exists
       if (!fs.existsSync(zipPath)) {
@@ -1234,6 +1371,31 @@ export function registerIpcHandlers(): void {
       console.error('Database refresh failed:', err)
       return { success: false, error: err.message }
     }
+  })
+
+  // ===== Seed Handlers =====
+
+  ipcMain.handle('seed:run', async (_event, userId: string, options?: seedService.SeedOptions) => {
+    return seedService.seedDatabase(userId, options)
+  })
+
+  ipcMain.handle('seed:clear', async (_event, userId: string) => {
+    return seedService.clearAllData(userId)
+  })
+
+  // ===== Logger Handlers =====
+
+  ipcMain.handle('logger:getLogs', async (_event, filter?: { level?: string; limit?: number }) => {
+    return loggerService.getLogs(filter as any)
+  })
+
+  ipcMain.handle('logger:clearLogs', async () => {
+    loggerService.clearLogs()
+    return { success: true }
+  })
+
+  ipcMain.handle('logger:getStats', async () => {
+    return loggerService.getLogStats()
   })
 
   console.log('IPC handlers registered')

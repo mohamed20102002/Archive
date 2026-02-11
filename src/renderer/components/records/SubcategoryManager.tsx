@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react'
 import { Modal } from '../common/Modal'
 import { useAuth } from '../../context/AuthContext'
 import { useToast } from '../../context/ToastContext'
+import { useConfirm } from '../common/ConfirmDialog'
 import type { Subcategory } from '../../types'
 
 interface SubcategoryManagerProps {
@@ -14,6 +15,7 @@ interface SubcategoryManagerProps {
 export function SubcategoryManager({ topicId, subcategories, onClose, onUpdate }: SubcategoryManagerProps) {
   const { user } = useAuth()
   const { success, error } = useToast()
+  const confirm = useConfirm()
   const [newTitle, setNewTitle] = useState('')
   const [newDescription, setNewDescription] = useState('')
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -109,7 +111,13 @@ export function SubcategoryManager({ topicId, subcategories, onClose, onUpdate }
       ? `Are you sure you want to delete "${subcategory.title}"? ${recordCount} record(s) will be moved to General.`
       : `Are you sure you want to delete "${subcategory.title}"?`
 
-    if (!confirm(confirmMessage)) return
+    const confirmed = await confirm({
+      title: 'Delete Subcategory',
+      message: confirmMessage,
+      confirmText: 'Delete',
+      danger: true
+    })
+    if (!confirmed) return
 
     setIsSubmitting(true)
     try {

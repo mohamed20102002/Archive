@@ -66,6 +66,34 @@ export function App() {
     checkFirstRun()
   }, [])
 
+  // Fix: Global focus restoration for Electron window focus issues
+  // This ensures inputs become clickable after window regains focus
+  useEffect(() => {
+    const handleWindowFocus = () => {
+      // Small delay to let Electron's focus handling complete
+      setTimeout(() => {
+        // If no element is focused, focus the document body to restore click handling
+        if (!document.activeElement || document.activeElement === document.body) {
+          document.body.focus()
+        }
+      }, 50)
+    }
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        handleWindowFocus()
+      }
+    }
+
+    window.addEventListener('focus', handleWindowFocus)
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+
+    return () => {
+      window.removeEventListener('focus', handleWindowFocus)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+    }
+  }, [])
+
   if (checkingFirstRun || isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-archive-light">
@@ -89,7 +117,7 @@ export function App() {
   }
 
   return (
-    <HashRouter>
+    <HashRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
       <Routes>
         {/* Public routes */}
         <Route

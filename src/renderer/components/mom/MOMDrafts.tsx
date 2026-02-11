@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { format, parseISO } from 'date-fns'
 import { useAuth } from '../../context/AuthContext'
+import { useToast } from '../../context/ToastContext'
+import { useConfirm } from '../common/ConfirmDialog'
 import type { MomDraft } from '../../types'
 
 interface MOMDraftsProps {
@@ -10,6 +12,8 @@ interface MOMDraftsProps {
 
 export function MOMDrafts({ momInternalId, onDraftChanged }: MOMDraftsProps) {
   const { user } = useAuth()
+  const toast = useToast()
+  const confirm = useConfirm()
   const [drafts, setDrafts] = useState<MomDraft[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -52,7 +56,7 @@ export function MOMDrafts({ momInternalId, onDraftChanged }: MOMDraftsProps) {
         loadDrafts()
         onDraftChanged?.()
       } else {
-        alert(result.error || 'Failed to create draft')
+        toast.error('Failed to create draft', result.error)
       }
     } catch (err) {
       console.error('Error creating draft:', err)
@@ -70,20 +74,17 @@ export function MOMDrafts({ momInternalId, onDraftChanged }: MOMDraftsProps) {
         filters: [{ name: 'All Files', extensions: ['*'] }]
       })
 
-      if (!result || result.canceled || !result.filePaths?.length) return
+      if (!result || result.canceled || !result.files?.length) return
 
-      const filePath = result.filePaths[0]
-      const fileData = await window.electronAPI.files.readAsBase64(filePath)
-      const filename = filePath.split(/[\\/]/).pop() || 'file'
-
+      const file = result.files[0]
       const uploadResult = await window.electronAPI.momDrafts.saveFile(
-        draftId, fileData, filename, user.id
+        draftId, file.buffer, file.filename, user.id
       )
 
       if (uploadResult.success) {
         loadDrafts()
       } else {
-        alert(uploadResult.error || 'Failed to upload file')
+        toast.error('Failed to upload file', uploadResult.error)
       }
     } catch (err) {
       console.error('Error uploading draft file:', err)
@@ -94,7 +95,7 @@ export function MOMDrafts({ momInternalId, onDraftChanged }: MOMDraftsProps) {
     try {
       const filePath = await window.electronAPI.momDrafts.getFilePath(draftId)
       if (filePath) {
-        await window.electronAPI.files.openPath(filePath)
+        await window.electronAPI.file.openExternal(filePath)
       }
     } catch (err) {
       console.error('Error opening file:', err)
@@ -103,7 +104,13 @@ export function MOMDrafts({ momInternalId, onDraftChanged }: MOMDraftsProps) {
 
   const handleDelete = async (draft: MomDraft) => {
     if (!user) return
-    if (!confirm(`Delete draft v${draft.version}: "${draft.title}"?`)) return
+    const confirmed = await confirm({
+      title: 'Delete Draft',
+      message: `Delete draft v${draft.version}: "${draft.title}"?`,
+      confirmText: 'Delete',
+      danger: true
+    })
+    if (!confirmed) return
 
     try {
       const result = await window.electronAPI.momDrafts.delete(draft.id, user.id)
@@ -111,7 +118,7 @@ export function MOMDrafts({ momInternalId, onDraftChanged }: MOMDraftsProps) {
         loadDrafts()
         onDraftChanged?.()
       } else {
-        alert(result.error || 'Failed to delete draft')
+        toast.error('Failed to delete draft', result.error)
       }
     } catch (err) {
       console.error('Error deleting draft:', err)
@@ -200,13 +207,24 @@ export function MOMDrafts({ momInternalId, onDraftChanged }: MOMDraftsProps) {
                     <span>{draft.creator_name || 'Unknown'}</span>
                     <span>{format(parseISO(draft.created_at), 'MMM d, yyyy')}</span>
                     {draft.original_filename && (
-                      <span className="inline-flex items-center gap-1 text-blue-600 cursor-pointer hover:text-blue-700"
-                        onClick={() => handleOpenFile(draft.id)}>
-                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
-                        </svg>
-                        {draft.original_filename}
-                      </span>
+                      <>
+                        <span className="inline-flex items-center gap-1 text-blue-600 cursor-pointer hover:text-blue-700"
+                          onClick={() => handleOpenFile(draft.id)}>
+                          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
+                          </svg>
+                          {draft.original_filename}
+                        </span>
+                        <button
+                          onClick={() => window.electronAPI.momDrafts.showInFolder(draft.id)}
+                          className="p-0.5 rounded hover:bg-gray-200 text-gray-400 hover:text-gray-600"
+                          title="Open folder"
+                        >
+                          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+                          </svg>
+                        </button>
+                      </>
                     )}
                   </div>
                 </div>

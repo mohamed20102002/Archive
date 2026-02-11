@@ -64,7 +64,23 @@ export async function archiveEmail(
 
   const id = generateId()
   const now = new Date()
-  const dateFolder = `${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, '0')}/${String(now.getDate()).padStart(2, '0')}`
+
+  // Use the email's sent date for folder organization, not the archive date
+  // Fall back to received date, then to current date if neither is available
+  let emailDate = now
+  if (emailData.sentAt) {
+    const parsed = new Date(emailData.sentAt)
+    if (!isNaN(parsed.getTime())) {
+      emailDate = parsed
+    }
+  } else if (emailData.receivedAt) {
+    const parsed = new Date(emailData.receivedAt)
+    if (!isNaN(parsed.getTime())) {
+      emailDate = parsed
+    }
+  }
+
+  const dateFolder = `${emailDate.getFullYear()}/${String(emailDate.getMonth() + 1).padStart(2, '0')}/${String(emailDate.getDate()).padStart(2, '0')}`
 
   // Create storage directory
   const storagePath = path.join(getEmailsPath(), dateFolder, id)
@@ -297,10 +313,11 @@ export function getEmailAttachmentsPath(email: ArchivedEmail): string {
 export function isEmailArchived(outlookEntryId: string): { archived: boolean; emailId?: string; topicId?: string } {
   const db = getDatabase()
 
+  // Check if email exists AND has a non-deleted record linked to it
   const result = db.prepare(`
     SELECT e.id as email_id, r.topic_id
     FROM emails e
-    LEFT JOIN records r ON r.email_id = e.id
+    INNER JOIN records r ON r.email_id = e.id AND r.deleted_at IS NULL
     WHERE e.outlook_entry_id = ?
     LIMIT 1
   `).get(outlookEntryId) as { email_id: string; topic_id: string } | undefined
@@ -313,7 +330,13 @@ export function isEmailArchived(outlookEntryId: string): { archived: boolean; em
 
 export function getArchivedEmailIds(): string[] {
   const db = getDatabase()
-  const results = db.prepare('SELECT outlook_entry_id FROM emails WHERE outlook_entry_id IS NOT NULL').all() as { outlook_entry_id: string }[]
+  // Only return emails that have a non-deleted record linked to them
+  const results = db.prepare(`
+    SELECT e.outlook_entry_id
+    FROM emails e
+    INNER JOIN records r ON r.email_id = e.id AND r.deleted_at IS NULL
+    WHERE e.outlook_entry_id IS NOT NULL
+  `).all() as { outlook_entry_id: string }[]
   return results.map(r => r.outlook_entry_id)
 }
 
@@ -340,7 +363,7 @@ export function getEmailArchiveInfo(outlookEntryId: string): EmailArchiveInfo | 
       s.title as subcategory_title,
       e.archived_at
     FROM emails e
-    JOIN records r ON r.email_id = e.id
+    JOIN records r ON r.email_id = e.id AND r.deleted_at IS NULL
     JOIN topics t ON r.topic_id = t.id
     LEFT JOIN subcategories s ON r.subcategory_id = s.id
     WHERE e.outlook_entry_id = ?

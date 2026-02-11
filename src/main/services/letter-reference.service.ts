@@ -194,11 +194,16 @@ export function getReferencesFrom(letterId: string): LetterReference[] {
            tl.subject as target_subject,
            tl.reference_number as target_reference_number,
            tl.letter_type as target_letter_type,
-           tl.status as target_status
+           tl.status as target_status,
+           CASE
+             WHEN tl.id IS NULL THEN 'letter_deleted'
+             WHEN tl.deleted_at IS NOT NULL THEN 'letter_deleted'
+             ELSE NULL
+           END as deleted_reason
     FROM letter_references r
     LEFT JOIN users u ON r.created_by = u.id
     LEFT JOIN letters tl ON r.target_letter_id = tl.id
-    WHERE r.source_letter_id = ? AND tl.deleted_at IS NULL
+    WHERE r.source_letter_id = ?
     ORDER BY r.created_at DESC
   `).all(letterId) as LetterReference[]
 }
@@ -213,11 +218,16 @@ export function getReferencesTo(letterId: string): LetterReference[] {
            sl.subject as source_subject,
            sl.reference_number as source_reference_number,
            sl.letter_type as source_letter_type,
-           sl.status as source_status
+           sl.status as source_status,
+           CASE
+             WHEN sl.id IS NULL THEN 'letter_deleted'
+             WHEN sl.deleted_at IS NOT NULL THEN 'letter_deleted'
+             ELSE NULL
+           END as deleted_reason
     FROM letter_references r
     LEFT JOIN users u ON r.created_by = u.id
     LEFT JOIN letters sl ON r.source_letter_id = sl.id
-    WHERE r.target_letter_id = ? AND sl.deleted_at IS NULL
+    WHERE r.target_letter_id = ?
     ORDER BY r.created_at DESC
   `).all(letterId) as LetterReference[]
 }

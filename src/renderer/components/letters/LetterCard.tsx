@@ -9,6 +9,7 @@ interface LetterCardProps {
 
 export function LetterCard({ letter, onClick, highlighted }: LetterCardProps) {
   const [copied, setCopied] = useState(false)
+  const [copiedRef, setCopiedRef] = useState(false)
 
   const handleCopyId = async (e: React.MouseEvent) => {
     e.stopPropagation()
@@ -16,6 +17,17 @@ export function LetterCard({ letter, onClick, highlighted }: LetterCardProps) {
       await navigator.clipboard.writeText(letter.id)
       setCopied(true)
       setTimeout(() => setCopied(false), 1500)
+    } catch { /* ignore */ }
+  }
+
+  const handleCopyRef = async (e: React.MouseEvent) => {
+    e.stopPropagation()
+    const refValue = letter.reference_number || letter.incoming_number || letter.outgoing_number
+    if (!refValue) return
+    try {
+      await navigator.clipboard.writeText(refValue)
+      setCopiedRef(true)
+      setTimeout(() => setCopiedRef(false), 1500)
     } catch { /* ignore */ }
   }
 
@@ -105,8 +117,23 @@ export function LetterCard({ letter, onClick, highlighted }: LetterCardProps) {
             </span>
           )}
           {(letter.reference_number || letter.incoming_number || letter.outgoing_number) && (
-            <span className="text-xs font-mono text-gray-500 bg-gray-100 px-2 py-0.5 rounded">
+            <span className="inline-flex items-center gap-1 text-xs font-mono text-gray-500 bg-gray-100 px-2 py-0.5 rounded">
               {letter.reference_number || letter.incoming_number || letter.outgoing_number}
+              <button
+                onClick={handleCopyRef}
+                className="p-0.5 rounded hover:bg-gray-200 transition-colors"
+                title="Copy reference number"
+              >
+                {copiedRef ? (
+                  <svg className="w-3 h-3 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                ) : (
+                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                  </svg>
+                )}
+              </button>
             </span>
           )}
         </div>

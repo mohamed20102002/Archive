@@ -2,6 +2,7 @@ import React from 'react'
 import { Outlet, useLocation } from 'react-router-dom'
 import { Sidebar } from './Sidebar'
 import { Header } from './Header'
+import { FloatingConsole } from '../common/FloatingConsole'
 import { OutlookBrowser } from '../outlook/OutlookBrowser'
 import { TopicList } from '../topics/TopicList'
 import { LetterList } from '../letters/LetterList'
@@ -48,7 +49,7 @@ export function MainLayout() {
         <Header />
 
         {/* Page content - each page handles its own scroll */}
-        <main className="flex-1 overflow-hidden">
+        <main className="flex-1 overflow-hidden relative">
           {/* Always render OutlookBrowser, hide when not active */}
           <div className={isOutlookRoute ? 'h-full' : 'hidden'}>
             <OutlookBrowser />
@@ -69,8 +70,18 @@ export function MainLayout() {
               </div>
             </div>
           )}
+
+          {/* Developer Credit Footer */}
+          <div className="absolute bottom-0 right-0 px-4 py-2">
+            <p className="text-[10px] text-gray-400 dark:text-gray-600">
+              Developed by Mohamed Darwish
+            </p>
+          </div>
         </main>
       </div>
+
+      {/* Floating Console - Admin only */}
+      <FloatingConsole />
     </div>
   )
 }

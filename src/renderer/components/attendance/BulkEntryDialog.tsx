@@ -53,11 +53,11 @@ export function BulkEntryDialog({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={handleClose}>
       <div
-        className="bg-white dark:bg-gray-800 rounded-xl shadow-xl w-full max-w-md mx-4 flex flex-col"
+        className="bg-white dark:bg-gray-800 rounded-xl shadow-xl w-full max-w-md mx-4 flex flex-col max-h-[85vh]"
         onClick={e => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+        <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
           <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Bulk Entry</h3>
           <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
             Set attendance for all users in a shift at once
@@ -65,7 +65,7 @@ export function BulkEntryDialog({
         </div>
 
         {/* Body */}
-        <div className="px-6 py-4 space-y-4">
+        <div className="px-6 py-4 space-y-4 overflow-y-auto flex-1 min-h-0">
           {/* Date */}
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Date</label>
@@ -95,7 +95,7 @@ export function BulkEntryDialog({
           {/* Conditions */}
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Conditions</label>
-            <div className="space-y-2">
+            <div className="space-y-1 max-h-48 overflow-y-auto border border-gray-200 dark:border-gray-600 rounded-lg p-2">
               {conditions.map(cond => (
                 <label
                   key={cond.id}
@@ -133,7 +133,7 @@ export function BulkEntryDialog({
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-4 border-t border-gray-200 dark:border-gray-700 flex justify-between items-center">
+        <div className="px-6 py-4 border-t border-gray-200 dark:border-gray-700 flex justify-between items-center flex-shrink-0">
           <p className="text-xs text-gray-400 dark:text-gray-500">
             Applies to all users in the selected shift. You can edit individual entries afterward.
           </p>

@@ -1,7 +1,12 @@
+import * as fs from 'fs'
+import * as path from 'path'
 import { getDatabase } from '../database/connection'
+import { getEmailsPath } from '../database/connection'
 import { logAudit } from '../database/audit'
 import { generateId } from '../utils/crypto'
 import { getUsername } from './auth.service'
+import { getAttachmentsByRecordId, deleteAttachment } from './record-attachment.service'
+import { getBasePath, sanitizeFilename } from '../utils/fileSystem'
 
 export interface Topic {
   id: string
@@ -15,6 +20,7 @@ export interface Topic {
   deleted_at: string | null
   record_count?: number
   last_activity?: string
+  creator_name?: string
 }
 
 export interface CreateTopicData {
@@ -93,9 +99,11 @@ export function getAllTopics(): Topic[] {
   const topics = db.prepare(`
     SELECT
       t.*,
+      u.display_name as creator_name,
       (SELECT COUNT(*) FROM records r WHERE r.topic_id = t.id AND r.deleted_at IS NULL) as record_count,
       (SELECT MAX(r.created_at) FROM records r WHERE r.topic_id = t.id AND r.deleted_at IS NULL) as last_activity
     FROM topics t
+    LEFT JOIN users u ON t.created_by = u.id
     WHERE t.deleted_at IS NULL
     ORDER BY t.updated_at DESC
   `).all() as Topic[]
@@ -109,9 +117,11 @@ export function getTopicById(id: string): Topic | null {
   const topic = db.prepare(`
     SELECT
       t.*,
+      u.display_name as creator_name,
       (SELECT COUNT(*) FROM records r WHERE r.topic_id = t.id AND r.deleted_at IS NULL) as record_count,
       (SELECT MAX(r.created_at) FROM records r WHERE r.topic_id = t.id AND r.deleted_at IS NULL) as last_activity
     FROM topics t
+    LEFT JOIN users u ON t.created_by = u.id
     WHERE t.id = ? AND t.deleted_at IS NULL
   `).get(id) as Topic | undefined
 
@@ -202,13 +212,156 @@ export function deleteTopic(
   const now = new Date().toISOString()
 
   try {
-    // Soft delete the topic
+    // Get all records for this topic (including already soft-deleted ones for full cleanup)
+    const records = db.prepare(`
+      SELECT r.id, r.email_id, e.storage_path
+      FROM records r
+      LEFT JOIN emails e ON r.email_id = e.id
+      WHERE r.topic_id = ?
+    `).all(id) as { id: string; email_id: string | null; storage_path: string | null }[]
+
+    let attachmentsDeleted = 0
+    let emailsDeleted = 0
+
+    // Clean up each record's associated files
+    for (const record of records) {
+      // 1. Delete all record attachments (files + DB entries)
+      const attachments = getAttachmentsByRecordId(record.id)
+      for (const attachment of attachments) {
+        deleteAttachment(attachment.id, userId)
+        attachmentsDeleted++
+      }
+
+      // 2. Delete archived email files and DB entry if exists
+      if (record.email_id && record.storage_path) {
+        // Delete email storage files
+        const emailStoragePath = path.join(getEmailsPath(), record.storage_path)
+        if (fs.existsSync(emailStoragePath)) {
+          fs.rmSync(emailStoragePath, { recursive: true, force: true })
+
+          // Clean up empty parent date folders (day -> month -> year)
+          let parentPath = path.dirname(emailStoragePath)
+          for (let i = 0; i < 3; i++) { // day, month, year
+            if (fs.existsSync(parentPath) && parentPath !== getEmailsPath()) {
+              const items = fs.readdirSync(parentPath)
+              if (items.length === 0) {
+                fs.rmdirSync(parentPath)
+                parentPath = path.dirname(parentPath)
+              } else {
+                break
+              }
+            } else {
+              break
+            }
+          }
+        }
+        // Clear references to this email from records, letters and issues
+        db.prepare('UPDATE records SET email_id = NULL WHERE email_id = ?').run(record.email_id)
+        db.prepare('UPDATE letters SET email_id = NULL WHERE email_id = ?').run(record.email_id)
+        db.prepare('UPDATE issues SET linked_email_id = NULL WHERE linked_email_id = ?').run(record.email_id)
+
+        // Delete email DB record
+        db.prepare('DELETE FROM emails WHERE id = ?').run(record.email_id)
+        emailsDeleted++
+      }
+
+      // 3. Delete reminders associated with this record
+      db.prepare('DELETE FROM reminders WHERE record_id = ?').run(record.id)
+    }
+
+    // 4. Delete all reminders directly linked to this topic (not via record)
+    db.prepare('DELETE FROM reminders WHERE topic_id = ? AND record_id IS NULL').run(id)
+
+    // 5. Keep MOM record links - they will show as "deleted" in the MOM view
+    // The LEFT JOIN in getLinkedRecords will return NULL for deleted records
+
+    // 6. Clear issue links to records from this topic (set to NULL instead of delete)
+    for (const record of records) {
+      db.prepare('UPDATE issues SET linked_record_id = NULL WHERE linked_record_id = ?').run(record.id)
+    }
+
+    // 7. Get subcategories FIRST, then clear ALL references to them before any deletions
+    const topicSubcategories = db.prepare('SELECT id FROM subcategories WHERE topic_id = ?').all(id) as { id: string }[]
+    for (const sub of topicSubcategories) {
+      db.prepare('UPDATE records SET subcategory_id = NULL WHERE subcategory_id = ?').run(sub.id)
+      db.prepare('UPDATE letters SET subcategory_id = NULL WHERE subcategory_id = ?').run(sub.id)
+      db.prepare('UPDATE issues SET subcategory_id = NULL WHERE subcategory_id = ?').run(sub.id)
+    }
+
+    // 8. Hard delete all records
+    // Disable FK checks to handle edge cases from restored backups
+    db.pragma('foreign_keys = OFF')
+    try {
+      db.prepare('DELETE FROM records WHERE topic_id = ?').run(id)
+    } finally {
+      db.pragma('foreign_keys = ON')
+    }
+
+    // 9. Delete issue history, history records, comment edits, then issues
+    const topicIssues = db.prepare('SELECT id FROM issues WHERE topic_id = ?').all(id) as { id: string }[]
+    for (const issue of topicIssues) {
+      const historyEntries = db.prepare('SELECT id FROM issue_history WHERE issue_id = ?').all(issue.id) as { id: string }[]
+      for (const history of historyEntries) {
+        db.prepare('DELETE FROM issue_history_records WHERE history_id = ?').run(history.id)
+        db.prepare('DELETE FROM comment_edits WHERE history_id = ?').run(history.id)
+      }
+      db.prepare('DELETE FROM issue_history WHERE issue_id = ?').run(issue.id)
+    }
+
+    // Delete issues - disable FK checks for edge cases
+    db.pragma('foreign_keys = OFF')
+    try {
+      db.prepare('DELETE FROM issues WHERE topic_id = ?').run(id)
+    } finally {
+      db.pragma('foreign_keys = ON')
+    }
+
+    // 10. Soft-delete letters linked to this topic
+    const now2 = new Date().toISOString()
+    db.prepare('UPDATE letters SET deleted_at = ?, updated_at = ? WHERE topic_id = ? AND deleted_at IS NULL').run(now2, now2, id)
+
+    // 11. Delete MOM topic links
+    db.prepare('DELETE FROM mom_topic_links WHERE topic_id = ?').run(id)
+
+    // 12. Delete all subcategories - disable FK checks for edge cases
+    db.pragma('foreign_keys = OFF')
+    try {
+      db.prepare('DELETE FROM subcategories WHERE topic_id = ?').run(id)
+    } finally {
+      db.pragma('foreign_keys = ON')
+    }
+
+    // 13. Soft delete the topic (keep for audit trail)
     db.prepare('UPDATE topics SET deleted_at = ?, updated_at = ? WHERE id = ?')
       .run(now, now, id)
 
-    // Soft delete all associated records
-    db.prepare('UPDATE records SET deleted_at = ?, updated_at = ? WHERE topic_id = ? AND deleted_at IS NULL')
-      .run(now, now, id)
+    // 14. Clean up topic folder in data/topics/ if it exists and is empty
+    const sanitizedTopicTitle = sanitizeFilename(existing.title)
+    const topicFolderPath = path.join(getBasePath(), 'data', 'topics', sanitizedTopicTitle)
+    if (fs.existsSync(topicFolderPath)) {
+      try {
+        // Check if folder is empty or only has empty subfolders
+        const isEmpty = (dir: string): boolean => {
+          const items = fs.readdirSync(dir)
+          for (const item of items) {
+            const itemPath = path.join(dir, item)
+            const stat = fs.statSync(itemPath)
+            if (stat.isDirectory()) {
+              if (!isEmpty(itemPath)) return false
+            } else {
+              return false // Has a file
+            }
+          }
+          return true
+        }
+
+        if (isEmpty(topicFolderPath)) {
+          fs.rmSync(topicFolderPath, { recursive: true, force: true })
+        }
+      } catch (err) {
+        console.warn('Could not clean up topic folder:', err)
+      }
+    }
 
     logAudit(
       'TOPIC_DELETE',
@@ -216,13 +369,27 @@ export function deleteTopic(
       getUsername(userId),
       'topic',
       id,
-      { topic_title: existing.title }
+      {
+        topic_title: existing.title,
+        records_deleted: records.length,
+        attachments_deleted: attachmentsDeleted,
+        emails_deleted: emailsDeleted
+      }
     )
 
     return { success: true }
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error deleting topic:', error)
-    return { success: false, error: 'Failed to delete topic' }
+    // Provide more specific error message
+    let errorMessage = 'Failed to delete topic'
+    if (error.code === 'SQLITE_CONSTRAINT') {
+      errorMessage = `Database constraint error: ${error.message}`
+    } else if (error.code === 'EBUSY' || error.code === 'EPERM' || error.code === 'EACCES') {
+      errorMessage = `File access error: ${error.message}. Some files may be in use.`
+    } else if (error.message) {
+      errorMessage = `Error: ${error.message}`
+    }
+    return { success: false, error: errorMessage }
   }
 }
 
@@ -236,9 +403,11 @@ export function searchTopics(query: string): Topic[] {
   const topics = db.prepare(`
     SELECT
       t.*,
+      u.display_name as creator_name,
       (SELECT COUNT(*) FROM records r WHERE r.topic_id = t.id AND r.deleted_at IS NULL) as record_count,
       (SELECT MAX(r.created_at) FROM records r WHERE r.topic_id = t.id AND r.deleted_at IS NULL) as last_activity
     FROM topics t
+    LEFT JOIN users u ON t.created_by = u.id
     WHERE t.deleted_at IS NULL
       AND t.id IN (
         SELECT rowid FROM topics_fts WHERE topics_fts MATCH ?
@@ -255,9 +424,11 @@ export function getTopicsByStatus(status: string): Topic[] {
   const topics = db.prepare(`
     SELECT
       t.*,
+      u.display_name as creator_name,
       (SELECT COUNT(*) FROM records r WHERE r.topic_id = t.id AND r.deleted_at IS NULL) as record_count,
       (SELECT MAX(r.created_at) FROM records r WHERE r.topic_id = t.id AND r.deleted_at IS NULL) as last_activity
     FROM topics t
+    LEFT JOIN users u ON t.created_by = u.id
     WHERE t.status = ? AND t.deleted_at IS NULL
     ORDER BY t.updated_at DESC
   `).all(status) as Topic[]

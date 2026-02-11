@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom'
 import { ReminderForm } from './ReminderForm'
 import { notifyReminderDataChanged } from './ReminderBadge'
 import { useToast } from '../../context/ToastContext'
+import { useConfirm } from '../common/ConfirmDialog'
 import { useAuth } from '../../context/AuthContext'
 import type { Reminder, Issue, MomAction } from '../../types'
 
@@ -39,6 +40,7 @@ export function ReminderList() {
   const [viewMode, setViewMode] = useState<ViewMode>('card')
 
   const { success, error } = useToast()
+  const confirm = useConfirm()
   const { user } = useAuth()
   const navigate = useNavigate()
 
@@ -158,9 +160,13 @@ export function ReminderList() {
   const handleDelete = async (id: string, title: string) => {
     if (!user) return
 
-    if (!confirm(`Are you sure you want to delete "${title}"?`)) {
-      return
-    }
+    const confirmed = await confirm({
+      title: 'Delete Reminder',
+      message: `Are you sure you want to delete "${title}"?`,
+      confirmText: 'Delete',
+      danger: true
+    })
+    if (!confirmed) return
 
     const result = await window.electronAPI.reminders.delete(id, user.id)
     if (result.success) {

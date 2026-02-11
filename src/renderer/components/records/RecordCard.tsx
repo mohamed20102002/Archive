@@ -1,6 +1,6 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect, memo } from 'react'
 import { format } from 'date-fns'
-import type { Record } from '../../types'
+import type { Record, RecordAttachment } from '../../types'
 
 interface RecordCardProps {
   record: Record
@@ -54,31 +54,67 @@ const typeDotColors: globalThis.Record<string, string> = {
   decision: 'bg-orange-500'
 }
 
-export function RecordCard({ record, highlighted, onEdit, onDelete, onOpenEmail }: RecordCardProps) {
-  const [copied, setCopied] = useState(false)
+// Helper to parse types (stored as comma-separated string)
+const parseTypes = (typeStr: string): string[] => typeStr.split(',').filter(Boolean)
 
-  const handleCopyId = async () => {
+export const RecordCard = memo(function RecordCard({ record, highlighted, onEdit, onDelete, onOpenEmail }: RecordCardProps) {
+  // Parse multiple types
+  const types = parseTypes(record.type)
+  const primaryType = types[0] || 'note'
+  const [copied, setCopied] = useState(false)
+  const [attachments, setAttachments] = useState<RecordAttachment[]>([])
+  const [showAttachments, setShowAttachments] = useState(false)
+
+  // Load attachments for all records
+  useEffect(() => {
+    window.electronAPI.recordAttachments.getByRecord(record.id).then(atts => {
+      setAttachments(atts as RecordAttachment[])
+    })
+  }, [record.id])
+
+  const handleOpenAttachment = async (attachmentId: string) => {
+    const result = await window.electronAPI.recordAttachments.open(attachmentId)
+    if (!result.success) {
+      console.error('Failed to open attachment:', result.error)
+    }
+  }
+
+  const formatFileSize = (bytes: number | null): string => {
+    if (!bytes || bytes === 0) return '0 B'
+    const k = 1024
+    const sizes = ['B', 'KB', 'MB', 'GB']
+    const i = Math.floor(Math.log(bytes) / Math.log(k))
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i]
+  }
+
+  const handleCopyId = async (e: React.MouseEvent) => {
+    e.stopPropagation()
     try {
       await navigator.clipboard.writeText(record.id)
       setCopied(true)
       setTimeout(() => setCopied(false), 1500)
-    } catch { /* ignore */ }
+    } catch (err) {
+      console.error('Failed to copy ID:', err)
+    }
   }
 
   return (
     <div className="relative pl-10 group" data-record-id={record.id}>
-      {/* Timeline dot */}
-      <div className={`absolute left-2.5 top-4 w-3 h-3 rounded-full border-2 border-white shadow ${typeDotColors[record.type] || typeDotColors.note}`} />
+      {/* Timeline dot - uses primary type color */}
+      <div className={`absolute left-2.5 top-4 w-3 h-3 rounded-full border-2 border-white shadow ${typeDotColors[primaryType] || typeDotColors.note}`} />
 
       {/* Card */}
       <div className={`card-hover transition-colors duration-700 ${highlighted ? 'ring-2 ring-primary-400 bg-primary-50/50' : ''}`}>
         {/* Header */}
         <div className="flex items-start justify-between mb-2">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-medium ${typeColors[record.type] || typeColors.note}`}>
-              {typeIcons[record.type] || typeIcons.note}
-              {record.type.charAt(0).toUpperCase() + record.type.slice(1)}
-            </span>
+            {/* Show all type badges */}
+            {types.map((t) => (
+              <span key={t} className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-medium ${typeColors[t] || typeColors.note}`}>
+                {typeIcons[t] || typeIcons.note}
+                {t.charAt(0).toUpperCase() + t.slice(1)}
+              </span>
+            ))}
             {record.subcategory_title && (
               <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium bg-indigo-50 text-indigo-600">
                 <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -125,8 +161,8 @@ export function RecordCard({ record, highlighted, onEdit, onDelete, onOpenEmail 
           </p>
         )}
 
-        {/* Email indicator with Open button */}
-        {record.type === 'email' && record.email_id && (
+        {/* Email indicator with Open button - shown when email type is included */}
+        {types.includes('email') && record.email_id && (
           <div className="mt-3 pt-3 border-t border-gray-100">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2 text-sm text-gray-500">
@@ -135,16 +171,86 @@ export function RecordCard({ record, highlighted, onEdit, onDelete, onOpenEmail 
                 </svg>
                 <span>Archived email attached</span>
               </div>
-              <button
-                onClick={() => onOpenEmail?.(record.email_id!)}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-blue-600 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                </svg>
-                Open Email
-              </button>
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => window.electronAPI.emails.showInFolder(record.email_id!)}
+                  className="p-1.5 rounded hover:bg-gray-100 text-gray-500 transition-colors"
+                  title="Open email folder"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+                  </svg>
+                </button>
+                <button
+                  onClick={() => onOpenEmail?.(record.email_id!)}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-blue-600 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                  </svg>
+                  Open Email
+                </button>
+              </div>
             </div>
+          </div>
+        )}
+
+        {/* File attachments */}
+        {attachments.length > 0 && (
+          <div className="mt-3 pt-3 border-t border-gray-100">
+            <button
+              onClick={() => setShowAttachments(!showAttachments)}
+              className="flex items-center justify-between w-full text-sm text-gray-500 hover:text-gray-700 transition-colors"
+            >
+              <div className="flex items-center gap-2">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
+                </svg>
+                <span>{attachments.length} attachment{attachments.length !== 1 ? 's' : ''}</span>
+              </div>
+              <svg className={`w-4 h-4 transition-transform ${showAttachments ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+
+            {showAttachments && (
+              <div className="mt-2 space-y-1">
+                {attachments.map((att) => (
+                  <div
+                    key={att.id}
+                    className="flex items-center justify-between p-2 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
+                  >
+                    <div className="flex items-center gap-2 min-w-0 flex-1">
+                      <svg className="w-4 h-4 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                      </svg>
+                      <span className="text-sm text-gray-700 truncate">{att.filename}</span>
+                      <span className="text-xs text-gray-400 flex-shrink-0">({formatFileSize(att.file_size)})</span>
+                    </div>
+                    <div className="flex items-center gap-1 flex-shrink-0">
+                      <button
+                        onClick={() => window.electronAPI.recordAttachments.showInFolder(att.id)}
+                        className="p-1.5 rounded hover:bg-gray-200 text-gray-500 transition-colors"
+                        title="Open folder"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+                        </svg>
+                      </button>
+                      <button
+                        onClick={() => handleOpenAttachment(att.id)}
+                        className="p-1.5 rounded hover:bg-purple-100 text-purple-600 transition-colors"
+                        title="Open file"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
 
@@ -156,7 +262,7 @@ export function RecordCard({ record, highlighted, onEdit, onDelete, onOpenEmail 
           <span className="flex items-center gap-1">
             <span className="text-[11px] font-mono text-gray-400">{record.id.slice(0, 8)}</span>
             <button
-              onClick={handleCopyId}
+              onClick={(e) => handleCopyId(e)}
               className="relative p-0.5 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors"
               title="Copy record ID"
             >
@@ -175,4 +281,4 @@ export function RecordCard({ record, highlighted, onEdit, onDelete, onOpenEmail 
       </div>
     </div>
   )
-}
+})

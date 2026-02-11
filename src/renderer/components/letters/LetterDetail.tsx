@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
+import { useToast } from '../../context/ToastContext'
+import { useConfirm } from '../common/ConfirmDialog'
 import { Letter, LetterDraft, LetterReference, LetterAttachment, LetterStatus, LetterPriority, DraftStatus, ReferenceType, LetterMomLink, Mom } from '../../types'
 import { ProcessFlowGraph } from './ProcessFlowGraph'
 
@@ -17,6 +19,8 @@ type TabMode = 'details' | 'drafts' | 'references' | 'moms' | 'flow'
 export function LetterDetail({ letter, onEdit, onDelete, onClose, onRefresh }: LetterDetailProps) {
   const { user } = useAuth()
   const navigate = useNavigate()
+  const toast = useToast()
+  const confirm = useConfirm()
   const [tabMode, setTabMode] = useState<TabMode>('details')
   const [drafts, setDrafts] = useState<LetterDraft[]>([])
   const [attachments, setAttachments] = useState<LetterAttachment[]>([])
@@ -40,6 +44,7 @@ export function LetterDetail({ letter, onEdit, onDelete, onClose, onRefresh }: L
 
   // Copyable ID state
   const [copied, setCopied] = useState(false)
+  const [copiedRef, setCopiedRef] = useState(false)
 
   // MOM linking state
   const [linkedMoms, setLinkedMoms] = useState<LetterMomLink[]>([])
@@ -52,6 +57,16 @@ export function LetterDetail({ letter, onEdit, onDelete, onClose, onRefresh }: L
       await navigator.clipboard.writeText(letter.id)
       setCopied(true)
       setTimeout(() => setCopied(false), 1500)
+    } catch { /* ignore */ }
+  }
+
+  const handleCopyRef = async () => {
+    const refValue = letter.reference_number || letter.incoming_number || letter.outgoing_number
+    if (!refValue) return
+    try {
+      await navigator.clipboard.writeText(refValue)
+      setCopiedRef(true)
+      setTimeout(() => setCopiedRef(false), 1500)
     } catch { /* ignore */ }
   }
 
@@ -85,7 +100,13 @@ export function LetterDetail({ letter, onEdit, onDelete, onClose, onRefresh }: L
 
   const handleDeleteAttachment = async (attachmentId: string) => {
     if (!user) return
-    if (!confirm('Are you sure you want to delete this attachment?')) return
+    const confirmed = await confirm({
+      title: 'Delete Attachment',
+      message: 'Are you sure you want to delete this attachment?',
+      confirmText: 'Delete',
+      danger: true
+    })
+    if (!confirmed) return
 
     try {
       const result = await window.electronAPI.letterAttachments.delete(attachmentId, user.id)
@@ -93,7 +114,7 @@ export function LetterDetail({ letter, onEdit, onDelete, onClose, onRefresh }: L
         loadDraftsAndReferences()
         onRefresh()
       } else {
-        alert(result.error || 'Failed to delete attachment')
+        toast.error('Error', result.error || 'Failed to delete attachment')
       }
     } catch (error) {
       console.error('Error deleting attachment:', error)
@@ -149,7 +170,7 @@ export function LetterDetail({ letter, onEdit, onDelete, onClose, onRefresh }: L
         loadDraftsAndReferences()
         onRefresh()
       } else {
-        alert(result.error || 'Failed to create draft')
+        toast.error('Error', result.error || 'Failed to create draft')
       }
     } catch (error) {
       console.error('Error creating draft:', error)
@@ -207,7 +228,13 @@ export function LetterDetail({ letter, onEdit, onDelete, onClose, onRefresh }: L
           result = await window.electronAPI.letterDrafts.markAsSent(draftId, user.id)
           break
         case 'delete':
-          if (!confirm('Are you sure you want to delete this draft?')) return
+          const confirmed = await confirm({
+            title: 'Delete Draft',
+            message: 'Are you sure you want to delete this draft?',
+            confirmText: 'Delete',
+            danger: true
+          })
+          if (!confirmed) return
           result = await window.electronAPI.letterDrafts.delete(draftId, user.id)
           break
       }
@@ -216,7 +243,7 @@ export function LetterDetail({ letter, onEdit, onDelete, onClose, onRefresh }: L
         loadDraftsAndReferences()
         onRefresh()
       } else {
-        alert(result?.error || `Failed to ${action} draft`)
+        toast.error('Error', result?.error || `Failed to ${action} draft`)
       }
     } catch (error) {
       console.error(`Error ${action} draft:`, error)
@@ -286,7 +313,14 @@ export function LetterDetail({ letter, onEdit, onDelete, onClose, onRefresh }: L
 
   // Delete reference
   const handleDeleteReference = async (refId: string) => {
-    if (!user || !confirm('Are you sure you want to remove this reference?')) return
+    if (!user) return
+    const confirmed = await confirm({
+      title: 'Remove Reference',
+      message: 'Are you sure you want to remove this reference?',
+      confirmText: 'Remove',
+      danger: true
+    })
+    if (!confirmed) return
 
     try {
       const result = await window.electronAPI.letterReferences.delete(refId, user.id)
@@ -294,7 +328,7 @@ export function LetterDetail({ letter, onEdit, onDelete, onClose, onRefresh }: L
         loadDraftsAndReferences()
         onRefresh()
       } else {
-        alert(result.error || 'Failed to delete reference')
+        toast.error('Error', result.error || 'Failed to delete reference')
       }
     } catch (error) {
       console.error('Error deleting reference:', error)
@@ -350,7 +384,7 @@ export function LetterDetail({ letter, onEdit, onDelete, onClose, onRefresh }: L
       if (result.success) {
         loadDraftsAndReferences()
       } else {
-        alert(result.error || 'Failed to unlink MOM')
+        toast.error('Error', result.error || 'Failed to unlink MOM')
       }
     } catch (err) {
       console.error('Error unlinking MOM:', err)
@@ -407,8 +441,23 @@ export function LetterDetail({ letter, onEdit, onDelete, onClose, onRefresh }: L
               </button>
             </span>
             {(letter.reference_number || letter.incoming_number || letter.outgoing_number) && (
-              <span className="text-sm font-mono text-gray-500">
+              <span className="inline-flex items-center gap-1 text-sm font-mono text-gray-500">
                 Ref: {letter.reference_number || letter.incoming_number || letter.outgoing_number}
+                <button
+                  onClick={handleCopyRef}
+                  className="p-0.5 rounded hover:bg-gray-200 transition-colors"
+                  title="Copy reference number"
+                >
+                  {copiedRef ? (
+                    <svg className="w-3.5 h-3.5 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                  ) : (
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                    </svg>
+                  )}
+                </button>
               </span>
             )}
           </div>
@@ -481,6 +530,15 @@ export function LetterDetail({ letter, onEdit, onDelete, onClose, onRefresh }: L
                         )}
                       </div>
                       <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => window.electronAPI.letterAttachments.showInFolder(attachment.id)}
+                          className="p-1 rounded hover:bg-gray-200 text-gray-500"
+                          title="Open folder"
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+                          </svg>
+                        </button>
                         <button
                           onClick={async () => {
                             const path = await window.electronAPI.letterAttachments.getFilePath(attachment.id)
@@ -671,6 +729,15 @@ export function LetterDetail({ letter, onEdit, onDelete, onClose, onRefresh }: L
                               className="text-sm text-blue-600 hover:text-blue-700 underline"
                             >
                               {draft.original_filename}
+                            </button>
+                            <button
+                              onClick={() => window.electronAPI.letterDrafts.showInFolder(draft.id)}
+                              className="p-1 rounded hover:bg-gray-200 text-gray-500"
+                              title="Open folder"
+                            >
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+                              </svg>
                             </button>
                           </div>
                         )}

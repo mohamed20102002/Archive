@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { format, parseISO } from 'date-fns'
 import { useAuth } from '../../context/AuthContext'
+import { useToast } from '../../context/ToastContext'
+import { notifyReminderDataChanged } from '../reminders/ReminderBadge'
 import type { MomAction } from '../../types'
 
 interface MOMActionsProps {
@@ -16,6 +18,7 @@ function isOverdue(deadline: string | null): boolean {
 
 export function MOMActions({ momInternalId, momId, onActionsChanged }: MOMActionsProps) {
   const { user } = useAuth()
+  const toast = useToast()
   const [actions, setActions] = useState<MomAction[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -38,6 +41,9 @@ export function MOMActions({ momInternalId, momId, onActionsChanged }: MOMAction
   const [resolvingId, setResolvingId] = useState<string | null>(null)
   const [resolveNote, setResolveNote] = useState('')
   const [resolving, setResolving] = useState(false)
+
+  // Search state
+  const [searchQuery, setSearchQuery] = useState('')
 
   const loadActions = useCallback(async () => {
     try {
@@ -75,8 +81,9 @@ export function MOMActions({ momInternalId, momId, onActionsChanged }: MOMAction
         setShowCreateForm(false)
         loadActions()
         onActionsChanged?.()
+        notifyReminderDataChanged()
       } else {
-        alert(result.error || 'Failed to create action')
+        toast.error('Failed to create action', result.error)
       }
     } catch (err) {
       console.error('Error creating action:', err)
@@ -115,8 +122,9 @@ export function MOMActions({ momInternalId, momId, onActionsChanged }: MOMAction
         cancelEdit()
         loadActions()
         onActionsChanged?.()
+        notifyReminderDataChanged()
       } else {
-        alert(result.error || 'Failed to update action')
+        toast.error('Failed to update action', result.error)
       }
     } catch (err) {
       console.error('Error updating action:', err)
@@ -136,8 +144,9 @@ export function MOMActions({ momInternalId, momId, onActionsChanged }: MOMAction
         setResolveNote('')
         loadActions()
         onActionsChanged?.()
+        notifyReminderDataChanged()
       } else {
-        alert(result.error || 'Failed to resolve action')
+        toast.error('Failed to resolve action', result.error)
       }
     } catch (err) {
       console.error('Error resolving action:', err)
@@ -153,8 +162,9 @@ export function MOMActions({ momInternalId, momId, onActionsChanged }: MOMAction
       if (result.success) {
         loadActions()
         onActionsChanged?.()
+        notifyReminderDataChanged()
       } else {
-        alert(result.error || 'Failed to reopen action')
+        toast.error('Failed to reopen action', result.error)
       }
     } catch (err) {
       console.error('Error reopening action:', err)
@@ -170,20 +180,17 @@ export function MOMActions({ momInternalId, momId, onActionsChanged }: MOMAction
         filters: [{ name: 'All Files', extensions: ['*'] }]
       })
 
-      if (!result || result.canceled || !result.filePaths?.length) return
+      if (!result || result.canceled || !result.files?.length) return
 
-      const filePath = result.filePaths[0]
-      const fileData = await window.electronAPI.files.readAsBase64(filePath)
-      const filename = filePath.split(/[\\/]/).pop() || 'file'
-
+      const file = result.files[0]
       const uploadResult = await window.electronAPI.momActions.saveResolutionFile(
-        actionId, fileData, filename, user.id
+        actionId, file.buffer, file.filename, user.id
       )
 
       if (uploadResult.success) {
         loadActions()
       } else {
-        alert(uploadResult.error || 'Failed to upload file')
+        toast.error('Failed to upload file', uploadResult.error)
       }
     } catch (err) {
       console.error('Error uploading resolution file:', err)
@@ -204,6 +211,7 @@ export function MOMActions({ momInternalId, momId, onActionsChanged }: MOMAction
       if (result.success) {
         loadActions()
         onActionsChanged?.()
+        notifyReminderDataChanged()
       }
     } catch (err) {
       console.error('Error setting reminder:', err)
@@ -286,16 +294,64 @@ export function MOMActions({ momInternalId, momId, onActionsChanged }: MOMAction
         </button>
       )}
 
-      {/* Actions List */}
-      {loading ? (
-        <div className="flex justify-center py-4">
-          <div className="animate-spin w-5 h-5 border-2 border-primary-600 border-t-transparent rounded-full" />
+      {/* Search Box */}
+      {actions.length > 0 && (
+        <div className="relative">
+          <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+          </svg>
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search actions..."
+            className="w-full pl-9 pr-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+          />
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery('')}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          )}
         </div>
-      ) : actions.length === 0 ? (
-        <p className="text-sm text-gray-500 text-center py-4">No actions yet</p>
-      ) : (
-        <div className="space-y-2">
-          {actions.map((action) => {
+      )}
+
+      {/* Actions List */}
+      {(() => {
+        const filteredActions = actions.filter(action => {
+          if (!searchQuery.trim()) return true
+          const query = searchQuery.toLowerCase()
+          return (
+            action.description.toLowerCase().includes(query) ||
+            action.responsible_party?.toLowerCase().includes(query) ||
+            action.resolution_note?.toLowerCase().includes(query) ||
+            action.status.toLowerCase().includes(query)
+          )
+        })
+
+        if (loading) {
+          return (
+            <div className="flex justify-center py-4">
+              <div className="animate-spin w-5 h-5 border-2 border-primary-600 border-t-transparent rounded-full" />
+            </div>
+          )
+        }
+
+        if (actions.length === 0) {
+          return <p className="text-sm text-gray-500 text-center py-4">No actions yet</p>
+        }
+
+        if (filteredActions.length === 0) {
+          return <p className="text-sm text-gray-500 text-center py-4">No actions match "{searchQuery}"</p>
+        }
+
+        return (
+          <div className="space-y-2">
+            {filteredActions.map((action) => {
             const isEditing = editingId === action.id
             const isResolving = resolvingId === action.id
             const overdue = action.status === 'open' && isOverdue(action.deadline)
@@ -507,8 +563,9 @@ export function MOMActions({ momInternalId, momId, onActionsChanged }: MOMAction
               </div>
             )
           })}
-        </div>
-      )}
+          </div>
+        )
+      })()}
     </div>
   )
 }
