@@ -1,12 +1,15 @@
 import React from 'react'
 import { useNavigate } from 'react-router-dom'
 import { formatDistanceToNow } from 'date-fns'
+import { PinButton } from '../common/PinButton'
 import type { Topic } from '../../types'
 
 interface TopicCardProps {
   topic: Topic
+  isPinned?: boolean
   onEdit: () => void
   onDelete: () => void
+  onTogglePin?: () => void
 }
 
 const statusColors: Record<string, string> = {
@@ -45,7 +48,7 @@ const priorityIcons: Record<string, React.ReactNode> = {
   )
 }
 
-export function TopicCard({ topic, onEdit, onDelete }: TopicCardProps) {
+export function TopicCard({ topic, isPinned = false, onEdit, onDelete, onTogglePin }: TopicCardProps) {
   const navigate = useNavigate()
 
   const handleClick = () => {
@@ -65,11 +68,16 @@ export function TopicCard({ topic, onEdit, onDelete }: TopicCardProps) {
   return (
     <div
       onClick={handleClick}
-      className="card-hover cursor-pointer group"
+      className={`card-hover cursor-pointer group ${isPinned ? 'ring-2 ring-amber-200 bg-amber-50/30' : ''}`}
     >
       {/* Header */}
       <div className="flex items-start justify-between mb-3">
         <div className="flex items-center gap-2">
+          {isPinned && (
+            <svg className="w-4 h-4 text-amber-500" fill="currentColor" viewBox="0 0 24 24">
+              <path d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
+            </svg>
+          )}
           <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${statusColors[topic.status] || statusColors.active}`}>
             {topic.status}
           </span>
@@ -80,6 +88,9 @@ export function TopicCard({ topic, onEdit, onDelete }: TopicCardProps) {
 
         {/* Actions */}
         <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+          {onTogglePin && (
+            <PinButton isPinned={isPinned} onToggle={onTogglePin} />
+          )}
           <button
             onClick={handleEdit}
             className="p-1.5 rounded hover:bg-gray-100 text-gray-500 hover:text-gray-700"

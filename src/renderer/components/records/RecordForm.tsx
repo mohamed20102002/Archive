@@ -1,8 +1,20 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { Modal } from '../common/Modal'
 import { useAuth } from '../../context/AuthContext'
 import { notifyReminderDataChanged } from '../reminders/ReminderBadge'
-import type { Record, Subcategory, RecordAttachment } from '../../types'
+import type { Record, Subcategory, RecordAttachment, LinkedMomInfo, LinkedLetterInfo } from '../../types'
+
+// Extended types for lookup with status
+interface LinkedMomLookup extends LinkedMomInfo {
+  date?: string
+  status?: string
+}
+
+interface LinkedLetterLookup extends LinkedLetterInfo {
+  type?: string
+  status?: string
+}
 
 interface RecordFormProps {
   record?: Record
@@ -10,7 +22,7 @@ interface RecordFormProps {
   topicTitle?: string
   subcategories?: Subcategory[]
   defaultSubcategoryId?: string
-  onSubmit: (data: { type: string; title: string; content?: string; subcategory_id?: string }) => Promise<{ recordId?: string }>
+  onSubmit: (data: { type: string; title: string; content?: string; subcategory_id?: string; linked_mom_ids?: string[]; linked_letter_ids?: string[]; record_date?: string }) => Promise<{ recordId?: string }>
   onClose: () => void
 }
 
@@ -46,8 +58,36 @@ export function RecordForm({ record, topicId, topicTitle, subcategories = [], de
   const [subcategoryId, setSubcategoryId] = useState<string>(
     record?.subcategory_id || defaultSubcategoryId || ''
   )
+  // Multiple linked MOMs and Letters
+  const [linkedMoms, setLinkedMoms] = useState<LinkedMomLookup[]>(() => {
+    return record?.linked_moms?.map(m => ({ ...m, status: m.deleted ? 'deleted' : 'active' })) || []
+  })
+  const [linkedLetters, setLinkedLetters] = useState<LinkedLetterLookup[]>(() => {
+    return record?.linked_letters?.map(l => ({ ...l, status: l.deleted ? 'deleted' : 'active' })) || []
+  })
+
+  // Input fields for adding new links
+  const [newMomId, setNewMomId] = useState<string>('')
+  const [newLetterId, setNewLetterId] = useState<string>('')
+
+  // Record date - defaults to today for new records, or existing record_date when editing
+  const [recordDate, setRecordDate] = useState<string>(() => {
+    if (record?.record_date) {
+      return record.record_date
+    }
+    return new Date().toISOString().split('T')[0] // Today's date in YYYY-MM-DD format
+  })
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState('')
+
+  // Linked item lookup state
+  const navigate = useNavigate()
+  const [pendingMom, setPendingMom] = useState<LinkedMomLookup | null>(null)
+  const [pendingLetter, setPendingLetter] = useState<LinkedLetterLookup | null>(null)
+  const [momLookupLoading, setMomLookupLoading] = useState(false)
+  const [letterLookupLoading, setLetterLookupLoading] = useState(false)
+  const [momLookupError, setMomLookupError] = useState<string | null>(null)
+  const [letterLookupError, setLetterLookupError] = useState<string | null>(null)
 
   // File attachments state
   const [pendingFiles, setPendingFiles] = useState<PendingFile[]>([])
@@ -62,6 +102,120 @@ export function RecordForm({ record, topicId, topicTitle, subcategories = [], de
       })
     }
   }, [record?.id])
+
+  // Lookup MOM when new ID is entered (with debounce)
+  useEffect(() => {
+    if (!newMomId.trim()) {
+      setPendingMom(null)
+      setMomLookupError(null)
+      return
+    }
+
+    // Check if already linked
+    if (linkedMoms.some(m => m.id === newMomId.trim())) {
+      setMomLookupError('MOM already linked')
+      setPendingMom(null)
+      return
+    }
+
+    const timeoutId = setTimeout(async () => {
+      setMomLookupLoading(true)
+      setMomLookupError(null)
+      try {
+        const mom = await window.electronAPI.moms.getById(newMomId.trim())
+        if (mom) {
+          setPendingMom({
+            id: (mom as any).id,
+            mom_id: (mom as any).mom_id,
+            title: (mom as any).title,
+            status: (mom as any).deleted_at ? 'deleted' : 'active'
+          })
+          setMomLookupError(null)
+        } else {
+          setPendingMom(null)
+          setMomLookupError('MOM not found')
+        }
+      } catch (err) {
+        setPendingMom(null)
+        setMomLookupError('Failed to lookup MOM')
+      } finally {
+        setMomLookupLoading(false)
+      }
+    }, 500)
+
+    return () => clearTimeout(timeoutId)
+  }, [newMomId, linkedMoms])
+
+  // Lookup Letter when new ID is entered (with debounce)
+  useEffect(() => {
+    if (!newLetterId.trim()) {
+      setPendingLetter(null)
+      setLetterLookupError(null)
+      return
+    }
+
+    // Check if already linked
+    if (linkedLetters.some(l => l.id === newLetterId.trim())) {
+      setLetterLookupError('Letter already linked')
+      setPendingLetter(null)
+      return
+    }
+
+    const timeoutId = setTimeout(async () => {
+      setLetterLookupLoading(true)
+      setLetterLookupError(null)
+      try {
+        const letter = await window.electronAPI.letters.getById(newLetterId.trim())
+        if (letter) {
+          setPendingLetter({
+            id: (letter as any).id,
+            reference_number: (letter as any).reference_number,
+            subject: (letter as any).subject,
+            status: (letter as any).deleted_at ? 'deleted' : 'active'
+          })
+          setLetterLookupError(null)
+        } else {
+          setPendingLetter(null)
+          setLetterLookupError('Letter not found')
+        }
+      } catch (err) {
+        setPendingLetter(null)
+        setLetterLookupError('Failed to lookup Letter')
+      } finally {
+        setLetterLookupLoading(false)
+      }
+    }, 500)
+
+    return () => clearTimeout(timeoutId)
+  }, [newLetterId, linkedLetters])
+
+  // Add pending MOM to linked list
+  const addMomLink = useCallback(() => {
+    if (pendingMom && !linkedMoms.some(m => m.id === pendingMom.id)) {
+      setLinkedMoms(prev => [...prev, pendingMom])
+      setNewMomId('')
+      setPendingMom(null)
+    }
+  }, [pendingMom, linkedMoms])
+
+  // Add pending Letter to linked list
+  const addLetterLink = useCallback(() => {
+    if (pendingLetter && !linkedLetters.some(l => l.id === pendingLetter.id)) {
+      setLinkedLetters(prev => [...prev, pendingLetter])
+      setNewLetterId('')
+      setPendingLetter(null)
+    }
+  }, [pendingLetter, linkedLetters])
+
+  // Remove MOM from linked list
+  const removeMomLink = useCallback((momId: string) => {
+    setLinkedMoms(prev => prev.filter(m => m.id !== momId))
+  }, [])
+
+  // Remove Letter from linked list
+  const removeLetterLink = useCallback((letterId: string) => {
+    setLinkedLetters(prev => prev.filter(l => l.id !== letterId))
+  }, [])
 
   // Reminder state
   const [setReminder, setSetReminder] = useState(false)
@@ -194,7 +348,10 @@ export function RecordForm({ record, topicId, topicTitle, subcategories = [], de
         type: joinTypes(selectedTypes),
         title: title.trim(),
         content: content.trim() || undefined,
-        subcategory_id: subcategoryId || undefined
+        subcategory_id: subcategoryId || undefined,
+        linked_mom_ids: linkedMoms.map(m => m.id),
+        linked_letter_ids: linkedLetters.map(l => l.id),
+        record_date: recordDate
       })
 
       const recordId = isEditing ? record?.id : result?.recordId
@@ -307,21 +464,37 @@ export function RecordForm({ record, topicId, topicTitle, subcategories = [], de
           </div>
         )}
 
-        {/* Title */}
-        <div>
-          <label htmlFor="title" className="label">
-            Title <span className="text-red-500">*</span>
-          </label>
-          <input
-            id="title"
-            type="text"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            className="input"
-            placeholder="Enter record title"
-            autoFocus
-            disabled={isSubmitting}
-          />
+        {/* Title and Date */}
+        <div className="grid grid-cols-3 gap-4">
+          <div className="col-span-2">
+            <label htmlFor="title" className="label">
+              Title <span className="text-red-500">*</span>
+            </label>
+            <input
+              id="title"
+              type="text"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              className="input"
+              placeholder="Enter record title"
+              autoFocus
+              disabled={isSubmitting}
+            />
+          </div>
+          <div>
+            <label htmlFor="recordDate" className="label">
+              Record Date
+            </label>
+            <input
+              id="recordDate"
+              type="date"
+              value={recordDate}
+              onChange={(e) => setRecordDate(e.target.value)}
+              className="input"
+              disabled={isSubmitting}
+            />
+            <p className="text-xs text-gray-400 mt-1">For shift handover</p>
+          </div>
         </div>
 
         {/* Content */}
@@ -337,6 +510,216 @@ export function RecordForm({ record, topicId, topicTitle, subcategories = [], de
             placeholder="Add details, notes, or description..."
             disabled={isSubmitting}
           />
+        </div>
+
+        {/* Link to MOMs and Letters - Multiple */}
+        <div className="border border-gray-200 rounded-lg p-4 space-y-4">
+          <div className="flex items-center gap-2 text-sm font-medium text-gray-700">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+            </svg>
+            Link to MOMs and Letters
+          </div>
+
+          {/* MOM Links Section */}
+          <div className="space-y-2">
+            <label className="label text-xs flex items-center gap-2">
+              <svg className="w-4 h-4 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+              MOMs ({linkedMoms.length})
+            </label>
+
+            {/* Linked MOMs List */}
+            {linkedMoms.length > 0 && (
+              <div className="space-y-1 mb-2">
+                {linkedMoms.map(mom => (
+                  <div key={mom.id} className={`flex items-center justify-between p-2 rounded-lg ${
+                    mom.deleted ? 'bg-gray-100' : 'bg-amber-50'
+                  }`}>
+                    <div className="flex items-center gap-2 min-w-0 flex-1">
+                      <svg className="w-4 h-4 text-amber-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                      </svg>
+                      <div className="min-w-0">
+                        <div className={`text-sm font-medium truncate ${mom.deleted ? 'text-gray-400 line-through' : 'text-gray-900'}`}>
+                          {mom.mom_id}
+                        </div>
+                        <div className={`text-xs truncate ${mom.deleted ? 'text-gray-400' : 'text-gray-600'}`}>
+                          {mom.title}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      {!mom.deleted && (
+                        <button
+                          type="button"
+                          onClick={() => navigate('/mom', { state: { highlightType: 'mom', highlightId: mom.id } })}
+                          className="p-1 text-amber-600 hover:text-amber-800"
+                          title="View MOM"
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                          </svg>
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => removeMomLink(mom.id)}
+                        className="p-1 text-gray-400 hover:text-red-500"
+                        title="Remove link"
+                        disabled={isSubmitting}
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Add new MOM link */}
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={newMomId}
+                onChange={(e) => setNewMomId(e.target.value)}
+                className={`input font-mono text-sm flex-1 ${
+                  momLookupError ? 'border-red-300 focus:ring-red-500' :
+                  pendingMom ? 'border-green-300 focus:ring-green-500' : ''
+                }`}
+                placeholder="Paste MOM ID to add..."
+                disabled={isSubmitting}
+              />
+              <button
+                type="button"
+                onClick={addMomLink}
+                disabled={!pendingMom || isSubmitting}
+                className="px-3 py-2 text-sm font-medium rounded-lg bg-amber-100 text-amber-700 hover:bg-amber-200 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Add
+              </button>
+            </div>
+
+            {/* MOM Lookup feedback */}
+            {momLookupLoading && (
+              <div className="flex items-center gap-2 text-xs text-gray-500">
+                <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                </svg>
+                Looking up MOM...
+              </div>
+            )}
+            {momLookupError && !momLookupLoading && (
+              <div className="text-xs text-red-600">{momLookupError}</div>
+            )}
+            {pendingMom && !momLookupLoading && (
+              <div className="text-xs text-green-600">Found: {pendingMom.mom_id} - {pendingMom.title}</div>
+            )}
+          </div>
+
+          {/* Letter Links Section */}
+          <div className="space-y-2">
+            <label className="label text-xs flex items-center gap-2">
+              <svg className="w-4 h-4 text-cyan-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+              </svg>
+              Letters ({linkedLetters.length})
+            </label>
+
+            {/* Linked Letters List */}
+            {linkedLetters.length > 0 && (
+              <div className="space-y-1 mb-2">
+                {linkedLetters.map(letter => (
+                  <div key={letter.id} className={`flex items-center justify-between p-2 rounded-lg ${
+                    letter.deleted ? 'bg-gray-100' : 'bg-cyan-50'
+                  }`}>
+                    <div className="flex items-center gap-2 min-w-0 flex-1">
+                      <svg className="w-4 h-4 text-cyan-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                      </svg>
+                      <div className="min-w-0">
+                        <div className={`text-sm font-medium truncate ${letter.deleted ? 'text-gray-400 line-through' : 'text-gray-900'}`}>
+                          {letter.reference_number}
+                        </div>
+                        <div className={`text-xs truncate ${letter.deleted ? 'text-gray-400' : 'text-gray-600'}`}>
+                          {letter.subject}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      {!letter.deleted && (
+                        <button
+                          type="button"
+                          onClick={() => navigate('/letters', { state: { highlightType: 'letter', highlightId: letter.id } })}
+                          className="p-1 text-cyan-600 hover:text-cyan-800"
+                          title="View Letter"
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                          </svg>
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => removeLetterLink(letter.id)}
+                        className="p-1 text-gray-400 hover:text-red-500"
+                        title="Remove link"
+                        disabled={isSubmitting}
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Add new Letter link */}
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={newLetterId}
+                onChange={(e) => setNewLetterId(e.target.value)}
+                className={`input font-mono text-sm flex-1 ${
+                  letterLookupError ? 'border-red-300 focus:ring-red-500' :
+                  pendingLetter ? 'border-green-300 focus:ring-green-500' : ''
+                }`}
+                placeholder="Paste Letter ID to add..."
+                disabled={isSubmitting}
+              />
+              <button
+                type="button"
+                onClick={addLetterLink}
+                disabled={!pendingLetter || isSubmitting}
+                className="px-3 py-2 text-sm font-medium rounded-lg bg-cyan-100 text-cyan-700 hover:bg-cyan-200 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Add
+              </button>
+            </div>
+
+            {/* Letter Lookup feedback */}
+            {letterLookupLoading && (
+              <div className="flex items-center gap-2 text-xs text-gray-500">
+                <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                </svg>
+                Looking up Letter...
+              </div>
+            )}
+            {letterLookupError && !letterLookupLoading && (
+              <div className="text-xs text-red-600">{letterLookupError}</div>
+            )}
+            {pendingLetter && !letterLookupLoading && (
+              <div className="text-xs text-green-600">Found: {pendingLetter.reference_number} - {pendingLetter.subject}</div>
+            )}
+          </div>
         </div>
 
         {/* File Attachments - available for all record types */}

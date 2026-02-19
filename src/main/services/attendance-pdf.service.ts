@@ -1,7 +1,65 @@
 import { logAudit } from '../database/audit'
-import { getUsername } from './auth.service'
+import { getDataPath } from '../database/connection'
+import { getUsername, getUserDisplayName } from './auth.service'
 import * as attendanceService from './attendance.service'
-import { BrowserWindow } from 'electron'
+import * as settingsService from './settings.service'
+import { BrowserWindow, shell } from 'electron'
+import * as fs from 'fs'
+import * as path from 'path'
+
+// Get the path for a department report based on date
+export function getDepartmentReportPath(date: string): string {
+  const [year, month, day] = date.split('-')
+  const dataDir = getDataPath()
+  // Format: attendance_report_YYMMDD.pdf (e.g., attendance_report_260130.pdf)
+  const filename = `attendance_report_${year.slice(2)}${month}${day}.pdf`
+  return path.join(dataDir, 'AttendanceReports', year, month, day, filename)
+}
+
+// Check if a department report exists for a given date
+export function departmentReportExists(date: string): boolean {
+  const reportPath = getDepartmentReportPath(date)
+  return fs.existsSync(reportPath)
+}
+
+// Get report info for a given date
+export function getDepartmentReportInfo(date: string): { exists: boolean; path: string | null; size: number | null; createdAt: string | null } {
+  const reportPath = getDepartmentReportPath(date)
+  if (fs.existsSync(reportPath)) {
+    const stats = fs.statSync(reportPath)
+    return {
+      exists: true,
+      path: reportPath,
+      size: stats.size,
+      createdAt: stats.mtime.toISOString()
+    }
+  }
+  return { exists: false, path: null, size: null, createdAt: null }
+}
+
+// Open a report file in the default PDF viewer
+export function openDepartmentReport(date: string): { success: boolean; error?: string } {
+  const reportPath = getDepartmentReportPath(date)
+  if (!fs.existsSync(reportPath)) {
+    return { success: false, error: 'Report file not found' }
+  }
+  shell.openPath(reportPath)
+  return { success: true }
+}
+
+// Save a report buffer to the archive folder
+function saveReportToArchive(date: string, buffer: Buffer): void {
+  const reportPath = getDepartmentReportPath(date)
+  const reportDir = path.dirname(reportPath)
+
+  // Create directory structure if it doesn't exist
+  if (!fs.existsSync(reportDir)) {
+    fs.mkdirSync(reportDir, { recursive: true })
+  }
+
+  // Write the PDF file
+  fs.writeFileSync(reportPath, buffer)
+}
 
 const MONTH_NAMES = [
   'January', 'February', 'March', 'April', 'May', 'June',
@@ -37,6 +95,23 @@ function darkenColor(hex: string, percent: number = 40): string {
 
   // Convert back to hex
   return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`
+}
+
+// Get contrasting text color (black or white) based on background color luminance
+function getContrastColor(hex: string): string {
+  // Remove # if present
+  hex = hex.replace('#', '')
+
+  // Parse RGB
+  const r = parseInt(hex.substring(0, 2), 16)
+  const g = parseInt(hex.substring(2, 4), 16)
+  const b = parseInt(hex.substring(4, 6), 16)
+
+  // Calculate relative luminance
+  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255
+
+  // Return black for light backgrounds, white for dark backgrounds
+  return luminance > 0.5 ? '#000000' : '#ffffff'
 }
 
 function buildCalendarHtml(
@@ -485,5 +560,314 @@ export async function exportUserPdf(
   } catch (error: any) {
     console.error('Error exporting user attendance PDF:', error)
     return { success: false, error: error.message }
+  }
+}
+
+// ===== Department Report PDF =====
+
+function formatTimeTo12Hour(time: string | null): string {
+  if (!time) return ''
+  // time is in HH:MM format (24-hour)
+  const [hours, minutes] = time.split(':').map(Number)
+  const period = hours >= 12 ? 'PM' : 'AM'
+  const hour12 = hours % 12 || 12 // Convert 0 to 12 for midnight
+  return `${hour12}:${minutes.toString().padStart(2, '0')} ${period}`
+}
+
+interface DepartmentReportOptions {
+  departmentNameArabic?: string
+  generatorName?: string
+}
+
+function buildDepartmentReportHtml(
+  data: attendanceService.DepartmentReportData,
+  options: DepartmentReportOptions = {}
+): string {
+  const { departmentNameArabic, generatorName } = options
+
+  const formattedDate = new Date(data.date).toLocaleDateString('ar-EG', {
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric'
+  })
+
+  // Build title with optional Arabic department name
+  let titleHtml = 'سجل الحضور والانصراف'
+  if (departmentNameArabic?.trim()) {
+    titleHtml = `سجل الحضور والانصراف - ${escapeHtml(departmentNameArabic.trim())}`
+  }
+
+  let tablesHtml = ''
+
+  for (const shift of data.shifts) {
+    tablesHtml += `
+      <div class="shift-section">
+        <h2 class="shift-title">${escapeHtml(shift.shift_name)}</h2>
+        <table class="attendance-table">
+          <thead>
+            <tr>
+              <th class="num-col" rowspan="2">م</th>
+              <th class="name-col" rowspan="2">الاسم</th>
+              <th class="time-col" colspan="2">توقيت البصمة</th>
+              <th class="condition-col" rowspan="2">الحالة</th>
+              <th class="notes-col" rowspan="2">ملاحظات</th>
+            </tr>
+            <tr>
+              <th class="time-sub">حضور</th>
+              <th class="time-sub">انصراف</th>
+            </tr>
+          </thead>
+          <tbody>
+    `
+
+    let rowNum = 1
+    for (const user of shift.users) {
+      const name = user.arabic_name || user.display_name
+      // If hides_times is true, show dashes instead of times
+      const signIn = user.hides_times ? '—' : formatTimeTo12Hour(user.sign_in_time)
+      const signOut = user.hides_times ? '—' : formatTimeTo12Hour(user.sign_out_time)
+      const note = user.note || ''
+
+      // Build condition tags HTML
+      let conditionTagsHtml = ''
+      if (user.conditions && user.conditions.length > 0) {
+        conditionTagsHtml = user.conditions.map(c =>
+          `<span class="condition-tag" style="background-color: ${c.color}; color: ${getContrastColor(c.color)}">${escapeHtml(c.name)}</span>`
+        ).join(' ')
+      }
+
+      tablesHtml += `
+        <tr>
+          <td class="num-cell">${rowNum}</td>
+          <td class="name-cell">${escapeHtml(name)}</td>
+          <td class="time-cell">${escapeHtml(signIn)}</td>
+          <td class="time-cell">${escapeHtml(signOut)}</td>
+          <td class="condition-cell">${conditionTagsHtml}</td>
+          <td class="notes-cell">${escapeHtml(note)}</td>
+        </tr>
+      `
+      rowNum++
+    }
+
+    tablesHtml += `
+          </tbody>
+        </table>
+      </div>
+    `
+  }
+
+  // Build footer with generator name
+  let footerText = 'تم إنشاء هذا التقرير'
+  if (generatorName?.trim()) {
+    footerText = `تم إنشاء هذا التقرير بواسطة: ${escapeHtml(generatorName.trim())}`
+  }
+
+  return `<!DOCTYPE html>
+<html dir="rtl" lang="ar">
+<head>
+<meta charset="utf-8">
+<style>
+  @page { margin: 10mm; size: A4 portrait; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Segoe UI', 'Arial', 'Tahoma', sans-serif;
+    font-size: 9pt;
+    color: #1f2937;
+    direction: rtl;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .header {
+    text-align: center;
+    margin-bottom: 12px;
+    padding-bottom: 10px;
+    border-bottom: 2px solid #3b82f6;
+  }
+  .header h1 {
+    font-size: 14pt;
+    font-weight: 700;
+    color: #1e40af;
+    margin-bottom: 4px;
+  }
+  .header .date {
+    font-size: 10pt;
+    color: #4b5563;
+  }
+
+  .shift-section {
+    margin-bottom: 16px;
+    page-break-inside: avoid;
+  }
+  .shift-title {
+    font-size: 11pt;
+    font-weight: 600;
+    color: #1e40af;
+    background: #eff6ff;
+    padding: 5px 10px;
+    border-radius: 4px 4px 0 0;
+    border: 1px solid #bfdbfe;
+    border-bottom: none;
+    text-align: center;
+  }
+
+  .attendance-table {
+    width: 100%;
+    border-collapse: collapse;
+    background: #fff;
+  }
+  .attendance-table th,
+  .attendance-table td {
+    border: 1px solid #d1d5db;
+    padding: 4px 6px;
+    text-align: center;
+    vertical-align: middle;
+    font-size: 8pt;
+  }
+  .attendance-table thead th {
+    background: linear-gradient(180deg, #f9fafb 0%, #f3f4f6 100%);
+    font-weight: 600;
+    color: #374151;
+    font-size: 8pt;
+    padding: 5px 6px;
+  }
+  .attendance-table tbody tr:nth-child(even) {
+    background: #f9fafb;
+  }
+
+  .num-col { width: 5%; }
+  .name-col { width: 24%; }
+  .time-col { width: 18%; }
+  .time-sub { width: 9%; font-size: 7pt; }
+  .condition-col { width: 18%; }
+  .notes-col { width: 35%; }
+
+  .num-cell {
+    font-weight: 600;
+    color: #6b7280;
+    font-size: 8pt;
+  }
+  .name-cell {
+    text-align: right;
+    font-weight: 500;
+    padding-right: 8px;
+    font-size: 8pt;
+  }
+  .time-cell {
+    font-family: monospace;
+    font-size: 8pt;
+    direction: ltr;
+  }
+  .notes-cell {
+    text-align: right;
+    font-size: 7pt;
+    color: #6b7280;
+    padding-right: 6px;
+  }
+  .condition-cell {
+    text-align: center;
+    padding: 2px 4px;
+  }
+  .condition-tag {
+    display: inline-block;
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-size: 7pt;
+    font-weight: 500;
+    margin: 1px;
+    white-space: nowrap;
+  }
+
+  .footer {
+    margin-top: 20px;
+    text-align: center;
+    font-size: 8pt;
+    color: #9ca3af;
+    border-top: 1px solid #e5e7eb;
+    padding-top: 8px;
+  }
+</style>
+</head>
+<body>
+  <div class="header">
+    <h1>${titleHtml}</h1>
+    <div class="date">${formattedDate}</div>
+  </div>
+
+  ${tablesHtml}
+
+  <div class="footer">
+    ${footerText}
+  </div>
+</body>
+</html>`
+}
+
+export async function exportDepartmentReportPdf(
+  date: string,
+  userId: string
+): Promise<{ success: boolean; buffer?: Buffer; error?: string }> {
+  try {
+    const username = getUsername(userId)
+    const generatorName = getUserDisplayName(userId)
+    const reportData = attendanceService.getDepartmentReportData(date)
+
+    if (reportData.shifts.length === 0) {
+      return { success: false, error: 'No shifts found with assigned users' }
+    }
+
+    // Get Arabic department name from settings
+    const departmentNameArabic = settingsService.getSetting('department_name_arabic')
+
+    const html = buildDepartmentReportHtml(reportData, {
+      departmentNameArabic: departmentNameArabic || undefined,
+      generatorName: generatorName || undefined
+    })
+    const buffer = await renderHtmlToPdfPortrait(html)
+
+    // Save to archive folder (Year/Month/Day/report.pdf)
+    try {
+      saveReportToArchive(date, buffer)
+    } catch (archiveErr) {
+      console.error('Failed to save report to archive:', archiveErr)
+      // Don't fail the export if archiving fails
+    }
+
+    logAudit('ATTENDANCE_DEPT_REPORT_EXPORT', userId, username, 'attendance', null, {
+      date,
+      shifts_count: reportData.shifts.length
+    })
+
+    return { success: true, buffer }
+  } catch (error: any) {
+    console.error('Error exporting department report PDF:', error)
+    return { success: false, error: error.message }
+  }
+}
+
+async function renderHtmlToPdfPortrait(html: string): Promise<Buffer> {
+  const win = new BrowserWindow({
+    show: false,
+    width: 794,   // A4 portrait ~210mm
+    height: 1123, // A4 portrait ~297mm
+    webPreferences: {
+      offscreen: true
+    }
+  })
+
+  try {
+    await win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html))
+    // Small delay to ensure fonts load and rendering completes
+    await new Promise(r => setTimeout(r, 500))
+    const buffer = await win.webContents.printToPDF({
+      landscape: false,
+      pageSize: 'A4',
+      margins: { top: 0.4, bottom: 0.4, left: 0.4, right: 0.4 },
+      printBackground: true
+    })
+    return Buffer.from(buffer)
+  } finally {
+    win.destroy()
   }
 }

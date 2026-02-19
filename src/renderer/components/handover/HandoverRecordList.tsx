@@ -1,5 +1,5 @@
 import React from 'react'
-import { format, parseISO } from 'date-fns'
+import { useSettings } from '../../context/SettingsContext'
 import type { HandoverRecord } from '../../types'
 
 type ViewMode = 'card' | 'table'
@@ -33,6 +33,7 @@ export function HandoverRecordList({
   onToggleExclude,
   viewMode
 }: HandoverRecordListProps) {
+  const { formatDate } = useSettings()
   if (records.length === 0) {
     return (
       <div className="text-center py-12">
@@ -96,7 +97,7 @@ export function HandoverRecordList({
                   </td>
                   <td className="px-4 py-3">
                     <span className="text-sm text-gray-500">
-                      {format(parseISO(record.timestamp), 'MMM d, h:mm a')}
+                      {formatDate(record.timestamp, 'withTime')}
                     </span>
                   </td>
                 </tr>
@@ -162,7 +163,7 @@ export function HandoverRecordList({
                   </span>
                   <span className="text-gray-300">|</span>
                   <span>
-                    {format(parseISO(record.timestamp), 'MMM d, yyyy h:mm a')}
+                    {formatDate(record.timestamp, 'withTime')}
                   </span>
                 </div>
                 {record.content && (

@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react'
-import { format, parseISO } from 'date-fns'
 import { useAuth } from '../../context/AuthContext'
 import { useToast } from '../../context/ToastContext'
 import { useConfirm } from '../common/ConfirmDialog'
+import { useSettings } from '../../context/SettingsContext'
 import type { MomDraft } from '../../types'
 
 interface MOMDraftsProps {
@@ -14,6 +14,7 @@ export function MOMDrafts({ momInternalId, onDraftChanged }: MOMDraftsProps) {
   const { user } = useAuth()
   const toast = useToast()
   const confirm = useConfirm()
+  const { formatDate } = useSettings()
   const [drafts, setDrafts] = useState<MomDraft[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -205,7 +206,7 @@ export function MOMDrafts({ momInternalId, onDraftChanged }: MOMDraftsProps) {
                   )}
                   <div className="flex items-center gap-3 text-xs text-gray-400">
                     <span>{draft.creator_name || 'Unknown'}</span>
-                    <span>{format(parseISO(draft.created_at), 'MMM d, yyyy')}</span>
+                    <span>{formatDate(draft.created_at)}</span>
                     {draft.original_filename && (
                       <>
                         <span className="inline-flex items-center gap-1 text-blue-600 cursor-pointer hover:text-blue-700"

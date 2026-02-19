@@ -3,10 +3,12 @@ export interface User {
   id: string
   username: string
   display_name: string
+  arabic_name: string | null
   role: 'admin' | 'user'
   is_active: boolean
   employee_number: string | null
   shift_id: string | null
+  sort_order: number
   created_at: string
   updated_at: string
   last_login_at: string | null
@@ -73,6 +75,20 @@ export interface UpdateSubcategoryData {
 // Record types (email is created via Outlook archiving, not manually)
 export type RecordType = 'note' | 'email' | 'document' | 'event' | 'decision'
 
+export interface LinkedMomInfo {
+  id: string
+  mom_id: string
+  title: string
+  deleted?: boolean
+}
+
+export interface LinkedLetterInfo {
+  id: string
+  reference_number: string
+  subject: string
+  deleted?: boolean
+}
+
 export interface Record {
   id: string
   topic_id: string
@@ -81,6 +97,9 @@ export interface Record {
   title: string
   content: string | null
   email_id: string | null
+  linked_mom_id: string | null
+  linked_letter_id: string | null
+  record_date: string // The date the record is associated with (for display and shift handover)
   created_by: string
   created_at: string
   updated_at: string
@@ -90,6 +109,12 @@ export interface Record {
   creator_name?: string
   email?: Email
   subcategory_title?: string
+  // Legacy single link (backwards compatibility)
+  linked_mom?: LinkedMomInfo
+  linked_letter?: LinkedLetterInfo
+  // Multiple links
+  linked_moms?: LinkedMomInfo[]
+  linked_letters?: LinkedLetterInfo[]
 }
 
 export interface CreateRecordData {
@@ -99,6 +124,9 @@ export interface CreateRecordData {
   title: string
   content?: string
   email_id?: string
+  linked_mom_id?: string
+  linked_letter_id?: string
+  record_date?: string // Defaults to today if not provided
 }
 
 export interface UpdateRecordData {
@@ -106,6 +134,9 @@ export interface UpdateRecordData {
   content?: string
   type?: RecordType
   subcategory_id?: string | null
+  linked_mom_id?: string | null
+  linked_letter_id?: string | null
+  record_date?: string
 }
 
 // Record Attachment types
@@ -743,14 +774,37 @@ export interface AuditStats {
 // App Settings types
 export type LoginBackgroundStyle = 'atom' | 'particles' | 'dna' | 'wave' | 'galaxy' | 'fission' | 'neural' | 'matrix' | 'none'
 
+// Available sidebar tabs
+export const SIDEBAR_TABS = [
+  { path: '/dashboard', label: 'Dashboard' },
+  { path: '/topics', label: 'Topics' },
+  { path: '/issues', label: 'Open Issues' },
+  { path: '/reminders', label: 'Reminders' },
+  { path: '/calendar', label: 'Calendar' },
+  { path: '/search', label: 'Advanced Search' },
+  { path: '/mom', label: 'Minutes of Meeting' },
+  { path: '/letters', label: 'Letters' },
+  { path: '/outlook', label: 'Outlook' },
+  { path: '/scheduled-emails', label: 'Scheduled Emails' },
+  { path: '/handover', label: 'Shift Handover' },
+  { path: '/secure-resources', label: 'Secure Resources' },
+  { path: '/attendance', label: 'Attendance' },
+] as const
+
+export type SidebarTabPath = typeof SIDEBAR_TABS[number]['path']
+
 export interface AppSettings {
   department_name: string
+  department_name_arabic: string
   theme: 'light' | 'dark'
   default_view: string
   default_view_mode: 'card' | 'table'
   date_format: string
   login_animation_speed: number // Animation speed multiplier (1 = normal, 2 = 2x, etc.)
   login_background_style: LoginBackgroundStyle // Background animation style
+  show_floating_console: boolean // Show floating console for admins
+  backup_reminder_days: number // Days between backup reminders (0 = disabled)
+  visible_tabs: string[] // Array of tab paths that should be visible (empty = all visible)
 }
 
 // Tag types
@@ -853,7 +907,42 @@ export interface SearchResult {
   topicTitle?: string
 }
 
-// Credential types
+// Resource color labels
+export type ResourceColor = 'red' | 'orange' | 'yellow' | 'green' | 'blue' | 'purple' | null
+
+export const RESOURCE_COLORS = [
+  { value: null, label: 'None', class: '' },
+  { value: 'red', label: 'Red', class: 'bg-red-500' },
+  { value: 'orange', label: 'Orange', class: 'bg-orange-500' },
+  { value: 'yellow', label: 'Yellow', class: 'bg-yellow-500' },
+  { value: 'green', label: 'Green', class: 'bg-green-500' },
+  { value: 'blue', label: 'Blue', class: 'bg-blue-500' },
+  { value: 'purple', label: 'Purple', class: 'bg-purple-500' }
+] as const
+
+// Resource category types (dynamic categories from database)
+export interface ResourceCategory {
+  id: string
+  name: string
+  type: 'credential' | 'reference'
+  display_order: number
+  created_by: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface CreateResourceCategoryData {
+  name: string
+  type: 'credential' | 'reference'
+  display_order?: number
+}
+
+export interface UpdateResourceCategoryData {
+  name?: string
+  display_order?: number
+}
+
+// Credential types (legacy static categories for backwards compatibility)
 export type CredentialCategory = 'Software' | 'Desktop' | 'Server' | 'Network' | 'Other'
 export type ReferenceCategory = 'General' | 'Policy' | 'Procedure' | 'Template' | 'Guide' | 'Other'
 
@@ -861,9 +950,11 @@ export interface Credential {
   id: string
   system_name: string
   username: string
-  category: CredentialCategory
+  category: string // Now dynamic string instead of CredentialCategory
   description: string | null
   notes: string | null
+  admin_only: boolean
+  color: ResourceColor
   created_by: string
   created_at: string
   updated_at: string
@@ -874,25 +965,31 @@ export interface CreateCredentialData {
   system_name: string
   username: string
   password: string
-  category?: CredentialCategory
+  category?: string
   description?: string
   notes?: string
+  admin_only?: boolean
+  color?: ResourceColor
 }
 
 export interface UpdateCredentialData {
   system_name?: string
   username?: string
   password?: string
-  category?: CredentialCategory
+  category?: string
   description?: string
   notes?: string
+  admin_only?: boolean
+  color?: ResourceColor
 }
 
 export interface SecureReference {
   id: string
   name: string
   description: string | null
-  category: ReferenceCategory
+  category: string // Now dynamic string instead of ReferenceCategory
+  admin_only: boolean
+  color: ResourceColor
   created_by: string
   created_at: string
   updated_at: string
@@ -908,6 +1005,7 @@ export interface SecureReferenceFile {
   file_type: string | null
   file_size: number | null
   checksum: string | null
+  is_encrypted: boolean
   created_by: string
   created_at: string
   creator_name?: string
@@ -916,13 +1014,17 @@ export interface SecureReferenceFile {
 export interface CreateReferenceData {
   name: string
   description?: string
-  category?: ReferenceCategory
+  category?: string
+  admin_only?: boolean
+  color?: ResourceColor
 }
 
 export interface UpdateReferenceData {
   name?: string
   description?: string
-  category?: ReferenceCategory
+  category?: string
+  admin_only?: boolean
+  color?: ResourceColor
 }
 
 export interface SecureResourceStats {
@@ -930,22 +1032,6 @@ export interface SecureResourceStats {
   totalReferences: number
   credentialsByCategory: Record<string, number>
   referencesByCategory: Record<string, number>
-}
-
-// AI types
-export type AiSummaryMode = 'brief' | 'actions' | 'status' | 'full'
-
-export interface AiStatus {
-  available: boolean
-  modelLoaded: boolean
-  modelName: string | null
-  error?: string
-}
-
-export interface AiSummaryResult {
-  success: boolean
-  summary?: string
-  error?: string
 }
 
 // Shift types
@@ -977,6 +1063,8 @@ export interface AttendanceCondition {
   sort_order: number
   display_number: number
   is_ignored: boolean
+  hides_times: boolean
+  is_fallback: boolean
   created_by: string
   created_at: string
   updated_at: string
@@ -989,6 +1077,7 @@ export interface CreateAttendanceConditionData {
   sort_order?: number
   display_number?: number
   is_ignored?: boolean
+  hides_times?: boolean
 }
 
 export interface UpdateAttendanceConditionData {
@@ -997,6 +1086,7 @@ export interface UpdateAttendanceConditionData {
   sort_order?: number
   display_number?: number
   is_ignored?: boolean
+  hides_times?: boolean
 }
 
 export interface AttendanceEntry {
@@ -1008,6 +1098,8 @@ export interface AttendanceEntry {
   day: number
   shift_id: string | null
   shift_name: string | null
+  sign_in_time: string | null
+  sign_out_time: string | null
   note: string | null
   created_by: string
   created_by_name?: string
@@ -1022,6 +1114,8 @@ export interface SaveAttendanceEntryData {
   entry_date: string
   shift_id: string
   condition_ids: string[]
+  sign_in_time?: string
+  sign_out_time?: string
   note?: string
 }
 
@@ -1285,6 +1379,8 @@ export interface BackupModuleCounts {
   authorities: number
   credentials: number
   secure_references: number
+  secure_reference_files: number
+  scheduled_emails: number
   users: number
 }
 
@@ -1357,4 +1453,78 @@ export interface FilterState {
   }
   sortBy?: string
   sortOrder?: 'asc' | 'desc'
+}
+
+// Scheduled Email types
+export type EmailScheduleFrequency = 'daily' | 'weekly' | 'monthly'
+export type EmailScheduleLanguage = 'en' | 'ar'
+export type EmailInstanceStatus = 'pending' | 'sent' | 'dismissed' | 'overdue'
+
+export interface EmailSchedule {
+  id: string
+  name: string
+  description: string | null
+  to_emails: string
+  cc_emails: string | null
+  subject_template: string
+  body_template: string
+  frequency_type: EmailScheduleFrequency
+  frequency_days: string | null // JSON array of day numbers
+  send_time: string
+  language: EmailScheduleLanguage
+  is_active: boolean
+  last_generated_date: string | null
+  created_by: string
+  created_at: string
+  updated_at: string
+  deleted_at: string | null
+  created_by_name?: string
+}
+
+export interface EmailScheduleInstance {
+  id: string
+  schedule_id: string
+  scheduled_date: string
+  scheduled_time: string
+  status: EmailInstanceStatus
+  sent_at: string | null
+  dismissed_at: string | null
+  dismissed_by: string | null
+  notes: string | null
+  created_at: string
+  updated_at: string
+  schedule_name?: string
+  to_emails?: string
+  cc_emails?: string | null
+  subject_template?: string
+  body_template?: string
+  language?: string
+  dismissed_by_name?: string
+}
+
+export interface CreateEmailScheduleData {
+  name: string
+  description?: string
+  to_emails: string
+  cc_emails?: string
+  subject_template: string
+  body_template: string
+  frequency_type: EmailScheduleFrequency
+  frequency_days?: number[]
+  send_time: string
+  language: EmailScheduleLanguage
+}
+
+export interface UpdateEmailScheduleData {
+  name?: string
+  description?: string
+  to_emails?: string
+  cc_emails?: string
+  subject_template?: string
+  body_template?: string
+  frequency_type?: EmailScheduleFrequency
+  frequency_days?: number[]
+  send_time?: string
+  language?: EmailScheduleLanguage
+  is_active?: boolean
 }

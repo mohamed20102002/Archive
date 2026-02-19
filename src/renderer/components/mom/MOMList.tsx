@@ -1,19 +1,24 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react'
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { useSearchParams, useLocation } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { useToast } from '../../context/ToastContext'
+import { useUndoRedo } from '../../context/UndoRedoContext'
 import { Modal } from '../common/Modal'
 import { MOMCard } from './MOMCard'
 import { MOMForm } from './MOMForm'
 import { MOMDetail } from './MOMDetail'
+import { ExportButton } from '../common/ExportButton'
 import type { Mom, MomLocation, MomStats, MomFilters, Topic, CreateMomData } from '../../types'
 
 type TabMode = 'open' | 'closed'
 type ViewMode = 'card' | 'table'
 
+const PAGE_SIZE = 30
+
 export function MOMList() {
   const { user } = useAuth()
   const toast = useToast()
+  const { recordOperation } = useUndoRedo()
   const [searchParams, setSearchParams] = useSearchParams()
   const location = useLocation()
   const scrollContainerRef = useRef<HTMLDivElement>(null)
@@ -25,6 +30,9 @@ export function MOMList() {
   const [locations, setLocations] = useState<MomLocation[]>([])
   const [topics, setTopics] = useState<Topic[]>([])
   const [loading, setLoading] = useState(true)
+  const [isLoadingMore, setIsLoadingMore] = useState(false)
+  const [hasMore, setHasMore] = useState(false)
+  const [totalCount, setTotalCount] = useState(0)
 
   // UI state
   const [tabMode, setTabMode] = useState<TabMode>('open')
@@ -38,26 +46,66 @@ export function MOMList() {
   const [filterTopic, setFilterTopic] = useState('')
   const [filterDateFrom, setFilterDateFrom] = useState('')
   const [filterDateTo, setFilterDateTo] = useState('')
+  const [pinStatuses, setPinStatuses] = useState<Record<string, boolean>>({})
 
-  const buildFilters = useCallback((): MomFilters => {
+  // Load pin statuses when moms change
+  useEffect(() => {
+    const loadPinStatuses = async () => {
+      if (!user || moms.length === 0) return
+      const momIds = moms.map(m => m.id)
+      const statuses = await window.electronAPI.pins.getPinStatuses('mom', momIds, user.id)
+      setPinStatuses(statuses)
+    }
+    loadPinStatuses()
+  }, [moms, user])
+
+  const handleTogglePin = useCallback(async (momId: string) => {
+    if (!user) return
+    const result = await window.electronAPI.pins.toggle('mom', momId, user.id)
+    if (result.success) {
+      setPinStatuses(prev => ({ ...prev, [momId]: result.pinned }))
+    }
+  }, [user])
+
+  // Sort moms with pinned items first
+  const sortedMoms = useMemo(() => {
+    return [...moms].sort((a, b) => {
+      const aPinned = pinStatuses[a.id] ? 1 : 0
+      const bPinned = pinStatuses[b.id] ? 1 : 0
+      return bPinned - aPinned
+    })
+  }, [moms, pinStatuses])
+
+  const buildFilters = useCallback((currentOffset = 0): MomFilters => {
     const filters: MomFilters = { status: tabMode }
     if (searchQuery.trim()) filters.query = searchQuery.trim()
     if (filterLocation) filters.location_id = filterLocation
     if (filterTopic) filters.topic_id = filterTopic
     if (filterDateFrom) filters.date_from = filterDateFrom
     if (filterDateTo) filters.date_to = filterDateTo
+    filters.limit = PAGE_SIZE
+    filters.offset = currentOffset
     return filters
   }, [tabMode, searchQuery, filterLocation, filterTopic, filterDateFrom, filterDateTo])
 
-  const loadMoms = useCallback(async () => {
+  const loadMoms = useCallback(async (loadMore = false, currentLength = 0) => {
     try {
-      const filters = buildFilters()
-      const result = await window.electronAPI.moms.getAll(filters)
-      setMoms(result as Mom[])
+      if (loadMore) {
+        setIsLoadingMore(true)
+      }
+
+      const currentOffset = loadMore ? currentLength : 0
+      const filters = buildFilters(currentOffset)
+      const result = await window.electronAPI.moms.getAll(filters) as { data: Mom[]; total: number; hasMore: boolean }
+
+      setMoms(prev => loadMore ? [...prev, ...result.data] : result.data)
+      setHasMore(result.hasMore)
+      setTotalCount(result.total)
     } catch (err) {
       console.error('Error loading MOMs:', err)
     } finally {
       setLoading(false)
+      setIsLoadingMore(false)
     }
   }, [buildFilters])
 
@@ -72,12 +120,13 @@ export function MOMList() {
 
   const loadFilters = useCallback(async () => {
     try {
-      const [locs, allTopics] = await Promise.all([
+      const [locs, topicsResult] = await Promise.all([
         window.electronAPI.momLocations.getAll(),
-        window.electronAPI.topics.getAll()
+        window.electronAPI.topics.getAll({}) // No pagination for filter dropdown - get all
       ])
       setLocations(locs as MomLocation[])
-      setTopics((allTopics as Topic[]).filter(t => !t.deleted_at))
+      const topicsData = (topicsResult as { data: Topic[] }).data || topicsResult
+      setTopics((topicsData as Topic[]).filter(t => !t.deleted_at))
     } catch (err) {
       console.error('Error loading filter data:', err)
     }
@@ -121,12 +170,53 @@ export function MOMList() {
     return () => clearTimeout(timer)
   }, [loading, moms, searchParams])
 
+  // Handle search highlight from global search
+  useEffect(() => {
+    const state = location.state as any
+    if ((state?.highlightType === 'mom' || state?.highlightType === 'mom_action') && state?.highlightId) {
+      const momId = state.highlightId
+      setHighlightedMomId(momId)
+
+      // Scroll to the MOM after a short delay
+      setTimeout(() => {
+        const el = scrollContainerRef.current?.querySelector(`[data-mom-id="${momId}"]`)
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        }
+      }, 300)
+
+      // Clear highlight after 5 seconds
+      const timer = setTimeout(() => setHighlightedMomId(null), 5000)
+
+      // Clear the location state
+      window.history.replaceState({}, document.title)
+
+      return () => clearTimeout(timer)
+    }
+  }, [location.state])
+
   const handleCreateMom = async (data: CreateMomData) => {
     if (!user) return
     try {
       const result = await window.electronAPI.moms.create(data, user.id)
       if (result.success) {
         const newMom = result.mom as Mom
+
+        // Record operation for undo/redo
+        recordOperation({
+          operation: 'create',
+          entityType: 'mom',
+          entityId: newMom.id,
+          description: `Create MOM "${newMom.title}"`,
+          beforeState: null,
+          afterState: {
+            entityType: 'mom',
+            entityId: newMom.id,
+            data: newMom as unknown as globalThis.Record<string, unknown>
+          },
+          userId: user.id
+        })
+
         setShowCreateModal(false)
         loadMoms()
         loadStats()
@@ -175,15 +265,18 @@ export function MOMList() {
               <h1 className="text-2xl font-bold text-gray-900">Minutes of Meeting</h1>
               <p className="text-sm text-gray-500 mt-1">Manage meeting minutes, actions, and follow-ups</p>
             </div>
-            <button
-              onClick={() => setShowCreateModal(true)}
-              className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 transition-colors"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-              </svg>
-              New MOM
-            </button>
+            <div className="flex items-center gap-2">
+              <ExportButton exportType="moms" />
+              <button
+                onClick={() => setShowCreateModal(true)}
+                className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 transition-colors"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                </svg>
+                New MOM
+              </button>
+            </div>
           </div>
 
           {/* Stats */}
@@ -305,7 +398,7 @@ export function MOMList() {
               type="date"
               value={filterDateFrom}
               onChange={(e) => setFilterDateFrom(e.target.value)}
-              className="px-2 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+              className="min-w-[130px] px-2 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
               placeholder="From"
             />
             <span className="text-gray-400 text-xs">to</span>
@@ -313,7 +406,7 @@ export function MOMList() {
               type="date"
               value={filterDateTo}
               onChange={(e) => setFilterDateTo(e.target.value)}
-              className="px-2 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+              className="min-w-[130px] px-2 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
               placeholder="To"
             />
           </div>
@@ -367,16 +460,48 @@ export function MOMList() {
             )}
           </div>
         ) : viewMode === 'card' ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {moms.map((mom) => (
-              <MOMCard
-                key={mom.id}
-                mom={mom}
-                onClick={() => setSelectedMom(mom)}
-                highlighted={highlightedMomId === mom.id}
-              />
-            ))}
-          </div>
+          <>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {sortedMoms.map((mom) => (
+                <MOMCard
+                  key={mom.id}
+                  mom={mom}
+                  onClick={() => setSelectedMom(mom)}
+                  highlighted={highlightedMomId === mom.id}
+                  isPinned={pinStatuses[mom.id] || false}
+                  onTogglePin={() => handleTogglePin(mom.id)}
+                />
+              ))}
+            </div>
+            {!hasActiveFilters && (hasMore || moms.length > PAGE_SIZE) && (
+              <div className="flex justify-center gap-3 mt-6">
+                {hasMore && (
+                  <button
+                    onClick={() => loadMoms(true, moms.length)}
+                    disabled={isLoadingMore}
+                    className="px-6 py-2 text-sm font-medium text-primary-600 bg-primary-50 rounded-lg hover:bg-primary-100 transition-colors disabled:opacity-50"
+                  >
+                    {isLoadingMore ? (
+                      <span className="flex items-center gap-2">
+                        <div className="w-4 h-4 border-2 border-primary-600 border-t-transparent rounded-full animate-spin" />
+                        Loading...
+                      </span>
+                    ) : (
+                      `Load More (${moms.length} of ${totalCount})`
+                    )}
+                  </button>
+                )}
+                {moms.length > PAGE_SIZE && (
+                  <button
+                    onClick={() => loadMoms(false)}
+                    className="px-6 py-2 text-sm font-medium text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+                  >
+                    Show Less
+                  </button>
+                )}
+              </div>
+            )}
+          </>
         ) : (
           <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
             <table className="min-w-full divide-y divide-gray-200">

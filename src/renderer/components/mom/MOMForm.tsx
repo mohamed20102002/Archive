@@ -36,12 +36,13 @@ export function MOMForm({ mom, onSubmit, onCancel }: MOMFormProps) {
   // Load locations and topics
   const loadData = useCallback(async () => {
     try {
-      const [locs, allTopics] = await Promise.all([
+      const [locs, topicsResult] = await Promise.all([
         window.electronAPI.momLocations.getAll(),
-        window.electronAPI.topics.getAll()
+        window.electronAPI.topics.getAll({})
       ])
       setLocations(locs as MomLocation[])
-      setTopics((allTopics as Topic[]).filter(t => !t.deleted_at))
+      const topicsData = (topicsResult as { data: Topic[] }).data || topicsResult
+      setTopics((topicsData as Topic[]).filter(t => !t.deleted_at))
 
       // For edit mode, load linked topics
       if (mom) {

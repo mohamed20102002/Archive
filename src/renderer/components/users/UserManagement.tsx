@@ -21,9 +21,11 @@ interface UserFormData {
 interface EditUserData {
   username: string
   displayName: string
+  arabicName: string
   role: 'admin' | 'user'
   employeeNumber: string
   shiftId: string
+  sortOrder: string // stored as string to allow empty input while typing
 }
 
 const initialFormData: UserFormData = {
@@ -47,15 +49,21 @@ export function UserManagement({ isOpen, onClose }: UserManagementProps) {
   const [newPassword, setNewPassword] = useState('')
   const [confirmNewPassword, setConfirmNewPassword] = useState('')
   const [showEditUser, setShowEditUser] = useState<User | null>(null)
-  const [editUserData, setEditUserData] = useState<EditUserData>({ username: '', displayName: '', role: 'user', employeeNumber: '', shiftId: '' })
+  const [editUserData, setEditUserData] = useState<EditUserData>({ username: '', displayName: '', arabicName: '', role: 'user', employeeNumber: '', shiftId: '', sortOrder: '100' })
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
   const [showNewPassword, setShowNewPassword] = useState(false)
   const [showConfirmNewPassword, setShowConfirmNewPassword] = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<User | null>(null)
 
+  const [showDeletedUsers, setShowDeletedUsers] = useState(false)
+
   const { success, error } = useToast()
   const { user: currentUser } = useAuth()
+
+  // Separate active and deleted users
+  const activeUsers = users.filter(u => !u.deleted_at)
+  const deletedUsers = users.filter(u => !!u.deleted_at)
 
   const loadUsers = async () => {
     setIsLoading(true)
@@ -148,9 +156,11 @@ export function UserManagement({ isOpen, onClose }: UserManagementProps) {
     setEditUserData({
       username: user.username,
       displayName: user.display_name,
+      arabicName: user.arabic_name || '',
       role: user.role,
       employeeNumber: user.employee_number || '',
-      shiftId: user.shift_id || ''
+      shiftId: user.shift_id || '',
+      sortOrder: String(user.sort_order ?? 100)
     })
     setShowEditUser(user)
   }
@@ -174,6 +184,24 @@ export function UserManagement({ isOpen, onClose }: UserManagementProps) {
       return
     }
 
+    // Validate sort order
+    const sortOrderNum = parseInt(editUserData.sortOrder)
+    if (!editUserData.sortOrder || isNaN(sortOrderNum) || sortOrderNum < 1) {
+      error('Validation Error', 'Sort order must be a positive number')
+      return
+    }
+
+    // Check for duplicate sort order (excluding current user)
+    const duplicateUser = users.find(u =>
+      u.id !== showEditUser.id &&
+      u.sort_order === sortOrderNum &&
+      !u.deleted_at
+    )
+    if (duplicateUser) {
+      error('Duplicate Sort Order', `Sort order ${sortOrderNum} is already used by "${duplicateUser.display_name}"`)
+      return
+    }
+
     setIsSubmitting(true)
     try {
       const result = await window.electronAPI.auth.updateUser(
@@ -181,9 +209,11 @@ export function UserManagement({ isOpen, onClose }: UserManagementProps) {
         {
           username: editUserData.username.trim(),
           display_name: editUserData.displayName.trim(),
+          arabic_name: editUserData.arabicName.trim() || null,
           role: editUserData.role,
           employee_number: editUserData.employeeNumber.trim() || null,
-          shift_id: editUserData.shiftId || null
+          shift_id: editUserData.shiftId || null,
+          sort_order: sortOrderNum
         },
         currentUser.id
       )
@@ -311,109 +341,98 @@ export function UserManagement({ isOpen, onClose }: UserManagementProps) {
           <div className="flex items-center justify-center py-8">
             <div className="animate-spin w-6 h-6 border-2 border-primary-600 border-t-transparent rounded-full" />
           </div>
-        ) : users.length === 0 ? (
+        ) : activeUsers.length === 0 && deletedUsers.length === 0 ? (
           <div className="text-center py-8 text-gray-500">
             No users found
           </div>
         ) : (
-          <div className="border border-gray-200 rounded-lg overflow-x-auto">
-            <table className="w-full min-w-[700px]">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    User
-                  </th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Emp #
-                  </th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Role
-                  </th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Status
-                  </th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Last Login
-                  </th>
-                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Actions
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-200">
-                {users.map((user) => {
-                  const isDeleted = !!user.deleted_at
-                  return (
-                    <tr key={user.id} className={isDeleted ? 'bg-gray-100 opacity-60' : !user.is_active ? 'bg-gray-50' : ''}>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-3">
-                          <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${
-                            isDeleted ? 'bg-gray-200 text-gray-500' : 'bg-primary-100 text-primary-700'
-                          }`}>
-                            {user.display_name.charAt(0).toUpperCase()}
-                          </div>
-                          <div>
-                            <div className={`font-medium ${isDeleted ? 'text-gray-500 line-through' : 'text-gray-900'}`}>
-                              {user.display_name}
-                              {user.id === currentUser?.id && (
-                                <span className="ml-2 text-xs text-gray-400">(You)</span>
-                              )}
+          <>
+            {/* Active Users Table */}
+            {activeUsers.length > 0 && (
+              <div className="border border-gray-200 dark:border-gray-700 rounded-lg overflow-x-auto">
+                <table className="w-full min-w-[700px]">
+                  <thead className="bg-gray-50 dark:bg-gray-700">
+                    <tr>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                        #
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                        User
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                        Emp #
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                        Role
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                        Status
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                        Last Login
+                      </th>
+                      <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                        Actions
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+                    {activeUsers.map((user) => (
+                      <tr key={user.id} className={!user.is_active ? 'bg-gray-50 dark:bg-gray-800/50' : ''}>
+                        <td className="px-4 py-3 text-sm text-gray-500 dark:text-gray-400 font-mono">
+                          {user.sort_order ?? '-'}
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-3">
+                            <div className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300">
+                              {user.display_name.charAt(0).toUpperCase()}
                             </div>
-                            <div className={`text-sm ${isDeleted ? 'text-gray-400' : 'text-gray-500'}`}>@{user.username}</div>
+                            <div>
+                              <div className="font-medium text-gray-900 dark:text-gray-100">
+                                {user.display_name}
+                                {user.id === currentUser?.id && (
+                                  <span className="ml-2 text-xs text-gray-400">(You)</span>
+                                )}
+                              </div>
+                              <div className="text-sm text-gray-500 dark:text-gray-400">@{user.username}</div>
+                            </div>
                           </div>
-                        </div>
-                      </td>
-                      <td className="px-4 py-3 text-sm text-gray-600">
-                        {user.employee_number || '-'}
-                      </td>
-                      <td className="px-4 py-3">
-                        {isDeleted ? (
-                          <span className="text-sm text-gray-400">{user.role}</span>
-                        ) : (
+                        </td>
+                        <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-400">
+                          {user.employee_number || '-'}
+                        </td>
+                        <td className="px-4 py-3">
                           <select
                             value={user.role}
                             onChange={(e) => handleChangeRole(user, e.target.value as 'admin' | 'user')}
                             disabled={user.id === currentUser?.id}
-                            className="text-sm border border-gray-200 rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-primary-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                            className="text-sm border border-gray-200 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-primary-500 disabled:opacity-50 disabled:cursor-not-allowed"
                           >
                             <option value="admin">Admin</option>
                             <option value="user">User</option>
                           </select>
-                        )}
-                      </td>
-                      <td className="px-4 py-3">
-                        {isDeleted ? (
-                          <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-xs font-medium bg-gray-200 text-gray-600">
-                            <span className="w-1.5 h-1.5 rounded-full bg-gray-400" />
-                            Deleted
-                          </span>
-                        ) : (
+                        </td>
+                        <td className="px-4 py-3">
                           <span className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-xs font-medium ${
                             user.is_active
-                              ? 'bg-green-100 text-green-700'
-                              : 'bg-red-100 text-red-700'
+                              ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
+                              : 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400'
                           }`}>
                             <span className={`w-1.5 h-1.5 rounded-full ${user.is_active ? 'bg-green-500' : 'bg-red-500'}`} />
                             {user.is_active ? 'Active' : 'Inactive'}
                           </span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3 text-sm text-gray-500">
-                        {isDeleted
-                          ? `Deleted ${new Date(user.deleted_at!).toLocaleDateString()}`
-                          : user.last_login_at
+                        </td>
+                        <td className="px-4 py-3 text-sm text-gray-500 dark:text-gray-400">
+                          {user.last_login_at
                             ? new Date(user.last_login_at).toLocaleDateString()
                             : 'Never'
-                        }
-                      </td>
-                      <td className="px-4 py-3 text-right">
-                        {isDeleted ? (
-                          <span className="text-xs text-gray-400 italic">No actions available</span>
-                        ) : (
+                          }
+                        </td>
+                        <td className="px-4 py-3 text-right">
                           <div className="flex items-center justify-end gap-2">
                             <button
                               onClick={() => handleOpenEditUser(user)}
-                              className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded"
+                              className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded"
                               title="Edit User"
                             >
                               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -422,7 +441,7 @@ export function UserManagement({ isOpen, onClose }: UserManagementProps) {
                             </button>
                             <button
                               onClick={() => setShowResetPassword(user)}
-                              className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded"
+                              className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
                               title="Reset Password"
                             >
                               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -436,8 +455,8 @@ export function UserManagement({ isOpen, onClose }: UserManagementProps) {
                                 user.id === currentUser?.id
                                   ? 'text-gray-300 cursor-not-allowed'
                                   : user.is_active
-                                    ? 'text-red-400 hover:text-red-600 hover:bg-red-50'
-                                    : 'text-green-400 hover:text-green-600 hover:bg-green-50'
+                                    ? 'text-red-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30'
+                                    : 'text-green-400 hover:text-green-600 hover:bg-green-50 dark:hover:bg-green-900/30'
                               }`}
                               title={user.is_active ? 'Deactivate User' : 'Activate User'}
                             >
@@ -457,7 +476,7 @@ export function UserManagement({ isOpen, onClose }: UserManagementProps) {
                               className={`p-1.5 rounded ${
                                 user.id === currentUser?.id
                                   ? 'text-gray-300 cursor-not-allowed'
-                                  : 'text-red-400 hover:text-red-600 hover:bg-red-50'
+                                  : 'text-red-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30'
                               }`}
                               title="Delete User"
                             >
@@ -466,14 +485,85 @@ export function UserManagement({ isOpen, onClose }: UserManagementProps) {
                               </svg>
                             </button>
                           </div>
-                        )}
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {/* Deleted Users Collapsible Section */}
+            {deletedUsers.length > 0 && (
+              <div className="mt-4">
+                <button
+                  onClick={() => setShowDeletedUsers(!showDeletedUsers)}
+                  className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
+                >
+                  <svg
+                    className={`w-4 h-4 transition-transform ${showDeletedUsers ? 'rotate-90' : ''}`}
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                  </svg>
+                  <span>Deleted Users ({deletedUsers.length})</span>
+                </button>
+
+                {showDeletedUsers && (
+                  <div className="mt-2 border border-gray-200 dark:border-gray-700 rounded-lg overflow-x-auto bg-gray-50 dark:bg-gray-800/50">
+                    <table className="w-full min-w-[600px]">
+                      <thead className="bg-gray-100 dark:bg-gray-700/50">
+                        <tr>
+                          <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                            User
+                          </th>
+                          <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                            Emp #
+                          </th>
+                          <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                            Role
+                          </th>
+                          <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                            Deleted On
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+                        {deletedUsers.map((user) => (
+                          <tr key={user.id} className="opacity-60">
+                            <td className="px-4 py-2">
+                              <div className="flex items-center gap-3">
+                                <div className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-medium bg-gray-200 dark:bg-gray-600 text-gray-500 dark:text-gray-400">
+                                  {user.display_name.charAt(0).toUpperCase()}
+                                </div>
+                                <div>
+                                  <div className="font-medium text-gray-500 dark:text-gray-400 line-through text-sm">
+                                    {user.display_name}
+                                  </div>
+                                  <div className="text-xs text-gray-400 dark:text-gray-500">@{user.username}</div>
+                                </div>
+                              </div>
+                            </td>
+                            <td className="px-4 py-2 text-sm text-gray-500 dark:text-gray-400">
+                              {user.employee_number || '-'}
+                            </td>
+                            <td className="px-4 py-2 text-sm text-gray-500 dark:text-gray-400">
+                              {user.role}
+                            </td>
+                            <td className="px-4 py-2 text-sm text-gray-500 dark:text-gray-400">
+                              {new Date(user.deleted_at!).toLocaleDateString()}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )}
+          </>
         )}
       </div>
 
@@ -772,6 +862,20 @@ export function UserManagement({ isOpen, onClose }: UserManagementProps) {
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
+                Arabic Name (for reports)
+              </label>
+              <input
+                type="text"
+                value={editUserData.arabicName}
+                onChange={(e) => setEditUserData({ ...editUserData, arabicName: e.target.value })}
+                className="input text-right"
+                dir="rtl"
+                placeholder="أدخل الاسم بالعربية"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
                 Role
               </label>
               <select
@@ -801,20 +905,37 @@ export function UserManagement({ isOpen, onClose }: UserManagementProps) {
               />
             </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Shift
-              </label>
-              <select
-                value={editUserData.shiftId}
-                onChange={(e) => setEditUserData({ ...editUserData, shiftId: e.target.value })}
-                className="input"
-              >
-                <option value="">No shift assigned</option>
-                {shifts.map(s => (
-                  <option key={s.id} value={s.id}>{s.name}</option>
-                ))}
-              </select>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Shift
+                </label>
+                <select
+                  value={editUserData.shiftId}
+                  onChange={(e) => setEditUserData({ ...editUserData, shiftId: e.target.value })}
+                  className="input"
+                >
+                  <option value="">No shift assigned</option>
+                  {shifts.map(s => (
+                    <option key={s.id} value={s.id}>{s.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Sort Order
+                </label>
+                <input
+                  type="number"
+                  value={editUserData.sortOrder}
+                  onChange={(e) => setEditUserData({ ...editUserData, sortOrder: e.target.value })}
+                  className="input"
+                  min="1"
+                  placeholder="100"
+                />
+                <p className="text-xs text-gray-500 mt-1">Lower = higher in list (unique per user)</p>
+              </div>
             </div>
 
             <div className="bg-gray-50 rounded-lg p-3 space-y-2">

@@ -160,6 +160,14 @@ export interface MomFilters {
   topic_id?: string
   date_from?: string
   date_to?: string
+  limit?: number
+  offset?: number
+}
+
+export interface PaginatedMoms {
+  data: Mom[]
+  total: number
+  hasMore: boolean
 }
 
 // ===== Helpers =====
@@ -559,7 +567,7 @@ export function getMomByMomId(momId: string): Mom | null {
   return mom || null
 }
 
-export function getAllMoms(filters?: MomFilters): Mom[] {
+export function getAllMoms(filters?: MomFilters): PaginatedMoms {
   const db = getDatabase()
 
   const conditions: string[] = ['m.deleted_at IS NULL']
@@ -599,7 +607,14 @@ export function getAllMoms(filters?: MomFilters): Mom[] {
 
   const whereClause = conditions.join(' AND ')
 
-  return db.prepare(`
+  // Get total count first
+  const countResult = db.prepare(`
+    SELECT COUNT(*) as count FROM moms m WHERE ${whereClause}
+  `).get(...values) as { count: number }
+  const total = countResult.count
+
+  // Build main query with pagination
+  let query = `
     SELECT
       m.*,
       ml.name as location_name,
@@ -614,7 +629,24 @@ export function getAllMoms(filters?: MomFilters): Mom[] {
     LEFT JOIN users u ON m.created_by = u.id
     WHERE ${whereClause}
     ORDER BY m.meeting_date DESC, m.created_at DESC
-  `).all(...values) as Mom[]
+  `
+
+  const queryValues = [...values]
+
+  if (filters?.limit) {
+    query += ' LIMIT ?'
+    queryValues.push(filters.limit)
+    if (filters?.offset) {
+      query += ' OFFSET ?'
+      queryValues.push(filters.offset)
+    }
+  }
+
+  const moms = db.prepare(query).all(...queryValues) as Mom[]
+
+  const hasMore = filters?.limit ? (filters.offset || 0) + moms.length < total : false
+
+  return { data: moms, total, hasMore }
 }
 
 export function updateMom(

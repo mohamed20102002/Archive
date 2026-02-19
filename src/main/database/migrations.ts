@@ -1196,6 +1196,484 @@ const migrations: Migration[] = [
         'INSERT OR IGNORE INTO app_settings (key, value) VALUES (?, ?)'
       ).run('shift_duration', '7')
     }
+  },
+  {
+    version: 25,
+    name: 'add_user_arabic_name',
+    up: (db) => {
+      // Add arabic_name column to users table for attendance reports
+      const tableInfo = db.prepare("PRAGMA table_info(users)").all() as { name: string }[]
+      if (!tableInfo.some(c => c.name === 'arabic_name')) {
+        db.exec(`ALTER TABLE users ADD COLUMN arabic_name TEXT`)
+      }
+    }
+  },
+  {
+    version: 26,
+    name: 'add_attendance_timestamps',
+    up: (db) => {
+      // Add sign_in_time and sign_out_time columns to attendance_entries
+      const tableInfo = db.prepare("PRAGMA table_info(attendance_entries)").all() as { name: string }[]
+      if (!tableInfo.some(c => c.name === 'sign_in_time')) {
+        db.exec(`ALTER TABLE attendance_entries ADD COLUMN sign_in_time TEXT`)
+      }
+      if (!tableInfo.some(c => c.name === 'sign_out_time')) {
+        db.exec(`ALTER TABLE attendance_entries ADD COLUMN sign_out_time TEXT`)
+      }
+    }
+  },
+  {
+    version: 27,
+    name: 'add_condition_hides_times',
+    up: (db) => {
+      // Add hides_times flag to attendance_conditions - when true, sign-in/out times are hidden
+      const tableInfo = db.prepare("PRAGMA table_info(attendance_conditions)").all() as { name: string }[]
+      if (!tableInfo.some(c => c.name === 'hides_times')) {
+        db.exec(`ALTER TABLE attendance_conditions ADD COLUMN hides_times INTEGER DEFAULT 0`)
+      }
+    }
+  },
+  {
+    version: 28,
+    name: 'add_arabic_department_name_setting',
+    up: (db) => {
+      // Add Arabic department name setting for attendance reports
+      const existing = db.prepare("SELECT 1 FROM app_settings WHERE key = 'department_name_arabic'").get()
+      if (!existing) {
+        db.prepare("INSERT INTO app_settings (key, value) VALUES ('department_name_arabic', '')").run()
+      }
+    }
+  },
+  {
+    version: 29,
+    name: 'add_user_sort_order',
+    up: (db) => {
+      // Add sort_order column to users for ordering within shifts (managers first, etc.)
+      const tableInfo = db.prepare("PRAGMA table_info(users)").all() as { name: string }[]
+      if (!tableInfo.some(c => c.name === 'sort_order')) {
+        db.exec(`ALTER TABLE users ADD COLUMN sort_order INTEGER DEFAULT 100`)
+      }
+    }
+  },
+  {
+    version: 30,
+    name: 'add_condition_is_fallback',
+    up: (db) => {
+      // Add is_fallback flag - fallback conditions only show in PDF when no other conditions exist
+      const tableInfo = db.prepare("PRAGMA table_info(attendance_conditions)").all() as { name: string }[]
+      if (!tableInfo.some(c => c.name === 'is_fallback')) {
+        db.exec(`ALTER TABLE attendance_conditions ADD COLUMN is_fallback INTEGER DEFAULT 0`)
+      }
+    }
+  },
+  {
+    version: 31,
+    name: 'add_attendance_email_settings',
+    up: (db) => {
+      // Add settings for attendance report email recipients
+      const toExists = db.prepare("SELECT 1 FROM app_settings WHERE key = 'attendance_report_email_to'").get()
+      if (!toExists) {
+        db.prepare("INSERT INTO app_settings (key, value) VALUES ('attendance_report_email_to', '')").run()
+      }
+      const ccExists = db.prepare("SELECT 1 FROM app_settings WHERE key = 'attendance_report_email_cc'").get()
+      if (!ccExists) {
+        db.prepare("INSERT INTO app_settings (key, value) VALUES ('attendance_report_email_cc', '')").run()
+      }
+    }
+  },
+  {
+    version: 32,
+    name: 'add_attendance_email_templates',
+    up: (db) => {
+      // Add subject template setting
+      const subjectExists = db.prepare("SELECT 1 FROM app_settings WHERE key = 'attendance_report_email_subject'").get()
+      if (!subjectExists) {
+        db.prepare("INSERT INTO app_settings (key, value) VALUES ('attendance_report_email_subject', 'الموقف اليومي لإدارة الأمان النووي عن يوم {day_name} الموافق {date}')").run()
+      }
+      // Add body template setting (HTML)
+      const bodyExists = db.prepare("SELECT 1 FROM app_settings WHERE key = 'attendance_report_email_body'").get()
+      if (!bodyExists) {
+        const defaultBody = `السادة الزملاء بإدارة الشئون الإدارية
+تحية طيبة وبعد ،،،
+مرفق لسيادتكم الموقف اليومي لإدارة الأمان النووي عن يوم {day_name} الموافق {date}.
+وتفضلوا بقبول وافر الاحترام والتقدير ،،،`
+        db.prepare("INSERT INTO app_settings (key, value) VALUES ('attendance_report_email_body', ?)").run(defaultBody)
+      }
+    }
+  },
+  {
+    version: 33,
+    name: 'add_record_linked_mom_and_letter',
+    up: (db) => {
+      // Add linked_mom_id column to records table
+      const recordsInfo = db.prepare("PRAGMA table_info(records)").all() as { name: string }[]
+
+      if (!recordsInfo.some(col => col.name === 'linked_mom_id')) {
+        db.exec("ALTER TABLE records ADD COLUMN linked_mom_id TEXT REFERENCES moms(id) ON DELETE SET NULL")
+      }
+
+      if (!recordsInfo.some(col => col.name === 'linked_letter_id')) {
+        db.exec("ALTER TABLE records ADD COLUMN linked_letter_id TEXT REFERENCES letters(id) ON DELETE SET NULL")
+      }
+
+      // Create indexes for the new columns
+      db.exec("CREATE INDEX IF NOT EXISTS idx_records_linked_mom ON records(linked_mom_id)")
+      db.exec("CREATE INDEX IF NOT EXISTS idx_records_linked_letter ON records(linked_letter_id)")
+    }
+  },
+  {
+    version: 34,
+    name: 'add_record_date_field',
+    up: (db) => {
+      // Add record_date column - the date the record is associated with (separate from created_at)
+      const recordsInfo = db.prepare("PRAGMA table_info(records)").all() as { name: string }[]
+
+      if (!recordsInfo.some(col => col.name === 'record_date')) {
+        // Add column with default as created_at for existing records
+        db.exec("ALTER TABLE records ADD COLUMN record_date TEXT")
+        // Populate existing records with their created_at date (just the date part)
+        db.exec("UPDATE records SET record_date = date(created_at) WHERE record_date IS NULL")
+      }
+
+      // Create index for efficient date-based queries (shift handover)
+      db.exec("CREATE INDEX IF NOT EXISTS idx_records_record_date ON records(record_date)")
+    }
+  },
+  {
+    version: 35,
+    name: 'add_record_multiple_links',
+    up: (db) => {
+      // Create junction table for record <-> MOM links (many-to-many)
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS record_linked_moms (
+          id TEXT PRIMARY KEY,
+          record_id TEXT NOT NULL,
+          mom_id TEXT NOT NULL,
+          created_by TEXT NOT NULL,
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          FOREIGN KEY (record_id) REFERENCES records(id) ON DELETE CASCADE,
+          FOREIGN KEY (mom_id) REFERENCES moms(id) ON DELETE CASCADE,
+          FOREIGN KEY (created_by) REFERENCES users(id),
+          UNIQUE(record_id, mom_id)
+        )
+      `)
+
+      // Create junction table for record <-> Letter links (many-to-many)
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS record_linked_letters (
+          id TEXT PRIMARY KEY,
+          record_id TEXT NOT NULL,
+          letter_id TEXT NOT NULL,
+          created_by TEXT NOT NULL,
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          FOREIGN KEY (record_id) REFERENCES records(id) ON DELETE CASCADE,
+          FOREIGN KEY (letter_id) REFERENCES letters(id) ON DELETE CASCADE,
+          FOREIGN KEY (created_by) REFERENCES users(id),
+          UNIQUE(record_id, letter_id)
+        )
+      `)
+
+      // Create indexes for efficient queries
+      db.exec("CREATE INDEX IF NOT EXISTS idx_record_linked_moms_record ON record_linked_moms(record_id)")
+      db.exec("CREATE INDEX IF NOT EXISTS idx_record_linked_moms_mom ON record_linked_moms(mom_id)")
+      db.exec("CREATE INDEX IF NOT EXISTS idx_record_linked_letters_record ON record_linked_letters(record_id)")
+      db.exec("CREATE INDEX IF NOT EXISTS idx_record_linked_letters_letter ON record_linked_letters(letter_id)")
+
+      // Migrate existing single links to the junction tables
+      // Get all records with linked_mom_id
+      const recordsWithMom = db.prepare(`
+        SELECT id, linked_mom_id, created_by FROM records
+        WHERE linked_mom_id IS NOT NULL AND deleted_at IS NULL
+      `).all() as { id: string; linked_mom_id: string; created_by: string }[]
+
+      for (const record of recordsWithMom) {
+        const linkId = require('crypto').randomBytes(8).toString('hex')
+        db.prepare(`
+          INSERT OR IGNORE INTO record_linked_moms (id, record_id, mom_id, created_by)
+          VALUES (?, ?, ?, ?)
+        `).run(linkId, record.id, record.linked_mom_id, record.created_by)
+      }
+
+      // Get all records with linked_letter_id
+      const recordsWithLetter = db.prepare(`
+        SELECT id, linked_letter_id, created_by FROM records
+        WHERE linked_letter_id IS NOT NULL AND deleted_at IS NULL
+      `).all() as { id: string; linked_letter_id: string; created_by: string }[]
+
+      for (const record of recordsWithLetter) {
+        const linkId = require('crypto').randomBytes(8).toString('hex')
+        db.prepare(`
+          INSERT OR IGNORE INTO record_linked_letters (id, record_id, letter_id, created_by)
+          VALUES (?, ?, ?, ?)
+        `).run(linkId, record.id, record.linked_letter_id, record.created_by)
+      }
+
+      console.log(`Migrated ${recordsWithMom.length} MOM links and ${recordsWithLetter.length} Letter links to junction tables`)
+    }
+  },
+  {
+    version: 36,
+    name: 'add_scheduled_emails',
+    up: (db) => {
+      // 1. Create email_schedules table
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS email_schedules (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          description TEXT,
+          to_emails TEXT NOT NULL,
+          cc_emails TEXT,
+          subject_template TEXT NOT NULL,
+          body_template TEXT NOT NULL,
+          frequency_type TEXT NOT NULL DEFAULT 'daily',
+          frequency_days TEXT,
+          send_time TEXT NOT NULL DEFAULT '09:00',
+          language TEXT NOT NULL DEFAULT 'en',
+          is_active INTEGER NOT NULL DEFAULT 1,
+          last_generated_date TEXT,
+          created_by TEXT NOT NULL,
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+          deleted_at TEXT,
+          FOREIGN KEY (created_by) REFERENCES users(id)
+        )
+      `)
+
+      // 2. Create email_schedule_instances table
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS email_schedule_instances (
+          id TEXT PRIMARY KEY,
+          schedule_id TEXT NOT NULL,
+          scheduled_date TEXT NOT NULL,
+          scheduled_time TEXT NOT NULL,
+          status TEXT NOT NULL DEFAULT 'pending',
+          sent_at TEXT,
+          dismissed_at TEXT,
+          dismissed_by TEXT,
+          notes TEXT,
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+          FOREIGN KEY (schedule_id) REFERENCES email_schedules(id) ON DELETE CASCADE,
+          FOREIGN KEY (dismissed_by) REFERENCES users(id),
+          UNIQUE(schedule_id, scheduled_date)
+        )
+      `)
+
+      // 3. Create indexes
+      db.exec(`
+        CREATE INDEX IF NOT EXISTS idx_email_schedules_active ON email_schedules(is_active);
+        CREATE INDEX IF NOT EXISTS idx_email_schedules_deleted ON email_schedules(deleted_at);
+        CREATE INDEX IF NOT EXISTS idx_email_schedules_created_by ON email_schedules(created_by);
+        CREATE INDEX IF NOT EXISTS idx_email_schedule_instances_schedule ON email_schedule_instances(schedule_id);
+        CREATE INDEX IF NOT EXISTS idx_email_schedule_instances_date ON email_schedule_instances(scheduled_date);
+        CREATE INDEX IF NOT EXISTS idx_email_schedule_instances_status ON email_schedule_instances(status);
+      `)
+    }
+  },
+  {
+    version: 37,
+    name: 'add_secure_resources_enhancements',
+    up: (db) => {
+      // 1. Add admin_only and color columns to credentials table
+      const credInfo = db.prepare("PRAGMA table_info(credentials)").all() as { name: string }[]
+      if (!credInfo.some(c => c.name === 'admin_only')) {
+        db.exec(`ALTER TABLE credentials ADD COLUMN admin_only INTEGER DEFAULT 0`)
+      }
+      if (!credInfo.some(c => c.name === 'color')) {
+        db.exec(`ALTER TABLE credentials ADD COLUMN color TEXT DEFAULT NULL`)
+      }
+
+      // 2. Add admin_only and color columns to secure_references table
+      const refInfo = db.prepare("PRAGMA table_info(secure_references)").all() as { name: string }[]
+      if (!refInfo.some(c => c.name === 'admin_only')) {
+        db.exec(`ALTER TABLE secure_references ADD COLUMN admin_only INTEGER DEFAULT 0`)
+      }
+      if (!refInfo.some(c => c.name === 'color')) {
+        db.exec(`ALTER TABLE secure_references ADD COLUMN color TEXT DEFAULT NULL`)
+      }
+
+      // 3. Add encryption columns to secure_reference_files table
+      const fileInfo = db.prepare("PRAGMA table_info(secure_reference_files)").all() as { name: string }[]
+      if (!fileInfo.some(c => c.name === 'is_encrypted')) {
+        db.exec(`ALTER TABLE secure_reference_files ADD COLUMN is_encrypted INTEGER DEFAULT 0`)
+      }
+      if (!fileInfo.some(c => c.name === 'encryption_iv')) {
+        db.exec(`ALTER TABLE secure_reference_files ADD COLUMN encryption_iv TEXT DEFAULT NULL`)
+      }
+      if (!fileInfo.some(c => c.name === 'encryption_tag')) {
+        db.exec(`ALTER TABLE secure_reference_files ADD COLUMN encryption_tag TEXT DEFAULT NULL`)
+      }
+
+      // 4. Create resource_categories table
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS resource_categories (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          type TEXT NOT NULL CHECK(type IN ('credential', 'reference')),
+          display_order INTEGER DEFAULT 0,
+          created_by TEXT,
+          created_at TEXT DEFAULT (datetime('now')),
+          updated_at TEXT DEFAULT (datetime('now')),
+          FOREIGN KEY (created_by) REFERENCES users(id)
+        )
+      `)
+
+      // 5. Create indexes for new columns and table
+      db.exec(`
+        CREATE INDEX IF NOT EXISTS idx_credentials_admin_only ON credentials(admin_only);
+        CREATE INDEX IF NOT EXISTS idx_secure_references_admin_only ON secure_references(admin_only);
+        CREATE INDEX IF NOT EXISTS idx_secure_reference_files_encrypted ON secure_reference_files(is_encrypted);
+        CREATE INDEX IF NOT EXISTS idx_resource_categories_type ON resource_categories(type);
+        CREATE INDEX IF NOT EXISTS idx_resource_categories_order ON resource_categories(display_order);
+      `)
+
+      // 6. Seed default categories
+      const crypto = require('crypto')
+
+      // Credential categories
+      const credentialCategories = [
+        { name: 'Software', order: 1 },
+        { name: 'Desktop', order: 2 },
+        { name: 'Server', order: 3 },
+        { name: 'Network', order: 4 },
+        { name: 'Other', order: 5 }
+      ]
+
+      // Reference categories
+      const referenceCategories = [
+        { name: 'General', order: 1 },
+        { name: 'Policy', order: 2 },
+        { name: 'Procedure', order: 3 },
+        { name: 'Template', order: 4 },
+        { name: 'Guide', order: 5 },
+        { name: 'Other', order: 6 }
+      ]
+
+      const insertCategory = db.prepare(`
+        INSERT OR IGNORE INTO resource_categories (id, name, type, display_order)
+        VALUES (?, ?, ?, ?)
+      `)
+
+      for (const cat of credentialCategories) {
+        insertCategory.run(crypto.randomUUID(), cat.name, 'credential', cat.order)
+      }
+
+      for (const cat of referenceCategories) {
+        insertCategory.run(crypto.randomUUID(), cat.name, 'reference', cat.order)
+      }
+    }
+  },
+  {
+    version: 38,
+    name: 'add_entity_tags',
+    up: (db) => {
+      // Add description column to tags table
+      const tagsInfo = db.prepare("PRAGMA table_info(tags)").all() as { name: string }[]
+      if (!tagsInfo.some(c => c.name === 'description')) {
+        db.exec(`ALTER TABLE tags ADD COLUMN description TEXT`)
+      }
+
+      // Create record_tags junction table
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS record_tags (
+          record_id TEXT NOT NULL,
+          tag_id TEXT NOT NULL,
+          created_by TEXT NOT NULL,
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          PRIMARY KEY (record_id, tag_id),
+          FOREIGN KEY (record_id) REFERENCES records(id) ON DELETE CASCADE,
+          FOREIGN KEY (tag_id) REFERENCES tags(id) ON DELETE CASCADE,
+          FOREIGN KEY (created_by) REFERENCES users(id)
+        )
+      `)
+
+      // Create issue_tags junction table
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS issue_tags (
+          issue_id TEXT NOT NULL,
+          tag_id TEXT NOT NULL,
+          created_by TEXT NOT NULL,
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          PRIMARY KEY (issue_id, tag_id),
+          FOREIGN KEY (issue_id) REFERENCES issues(id) ON DELETE CASCADE,
+          FOREIGN KEY (tag_id) REFERENCES tags(id) ON DELETE CASCADE,
+          FOREIGN KEY (created_by) REFERENCES users(id)
+        )
+      `)
+
+      // Create letter_tags junction table
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS letter_tags (
+          letter_id TEXT NOT NULL,
+          tag_id TEXT NOT NULL,
+          created_by TEXT NOT NULL,
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          PRIMARY KEY (letter_id, tag_id),
+          FOREIGN KEY (letter_id) REFERENCES letters(id) ON DELETE CASCADE,
+          FOREIGN KEY (tag_id) REFERENCES tags(id) ON DELETE CASCADE,
+          FOREIGN KEY (created_by) REFERENCES users(id)
+        )
+      `)
+
+      // Create indexes
+      db.exec(`
+        CREATE INDEX IF NOT EXISTS idx_record_tags_record ON record_tags(record_id);
+        CREATE INDEX IF NOT EXISTS idx_record_tags_tag ON record_tags(tag_id);
+        CREATE INDEX IF NOT EXISTS idx_issue_tags_issue ON issue_tags(issue_id);
+        CREATE INDEX IF NOT EXISTS idx_issue_tags_tag ON issue_tags(tag_id);
+        CREATE INDEX IF NOT EXISTS idx_letter_tags_letter ON letter_tags(letter_id);
+        CREATE INDEX IF NOT EXISTS idx_letter_tags_tag ON letter_tags(tag_id);
+      `)
+    }
+  },
+  {
+    version: 39,
+    name: 'add_saved_searches',
+    up: (db) => {
+      // Create saved_searches table for advanced search
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS saved_searches (
+          id TEXT PRIMARY KEY,
+          user_id TEXT NOT NULL,
+          name TEXT NOT NULL,
+          filters TEXT NOT NULL,
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+          FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        )
+      `)
+
+      // Create indexes
+      db.exec(`
+        CREATE INDEX IF NOT EXISTS idx_saved_searches_user ON saved_searches(user_id);
+        CREATE INDEX IF NOT EXISTS idx_saved_searches_name ON saved_searches(name);
+      `)
+    }
+  },
+  {
+    version: 40,
+    name: 'add_pins',
+    up: (db) => {
+      // Create pins table for pinning cards to top of lists
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS pins (
+          id TEXT PRIMARY KEY,
+          entity_type TEXT NOT NULL,
+          entity_id TEXT NOT NULL,
+          user_id TEXT NOT NULL,
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+          UNIQUE(entity_type, entity_id, user_id)
+        )
+      `)
+
+      // Create indexes for efficient lookups
+      db.exec(`
+        CREATE INDEX IF NOT EXISTS idx_pins_entity ON pins(entity_type, entity_id);
+        CREATE INDEX IF NOT EXISTS idx_pins_user ON pins(user_id);
+        CREATE INDEX IF NOT EXISTS idx_pins_type_user ON pins(entity_type, user_id);
+      `)
+    }
   }
 ]
 

@@ -3,7 +3,7 @@ import { useAuth } from '../../context/AuthContext'
 import { useSettings } from '../../context/SettingsContext'
 import { useToast } from '../../context/ToastContext'
 import { useConfirm } from '../common/ConfirmDialog'
-import { LoginBackgroundStyle } from '../../types'
+import { LoginBackgroundStyle, SIDEBAR_TABS } from '../../types'
 import { BACKGROUND_OPTIONS } from '../auth/backgrounds'
 
 const DATE_FORMAT_OPTIONS = [
@@ -31,13 +31,17 @@ export function Settings() {
   const isAdmin = user?.role === 'admin'
 
   const [departmentName, setDepartmentName] = useState('')
+  const [departmentNameArabic, setDepartmentNameArabic] = useState('')
   const [theme, setTheme] = useState<'light' | 'dark'>('light')
   const [defaultView, setDefaultView] = useState('/topics')
   const [defaultViewMode, setDefaultViewMode] = useState<'card' | 'table'>('card')
   const [dateFormat, setDateFormat] = useState('DD/MM/YYYY')
   const [loginAnimationSpeed, setLoginAnimationSpeed] = useState(4)
   const [loginBackgroundStyle, setLoginBackgroundStyle] = useState<LoginBackgroundStyle>('atom')
+  const [showFloatingConsole, setShowFloatingConsole] = useState(true)
+  const [backupReminderDays, setBackupReminderDays] = useState(7)
   const [zoomFactor, setZoomFactor] = useState(0.85)
+  const [visibleTabs, setVisibleTabs] = useState<string[]>([])
   const [saving, setSaving] = useState(false)
 
   // Seed state
@@ -52,19 +56,31 @@ export function Settings() {
   const [showConsole, setShowConsole] = useState(false)
   const [loadingLogs, setLoadingLogs] = useState(false)
 
+  // App info
+  const [appInfo, setAppInfo] = useState<{ version: string; platform: string; isPackaged: boolean } | null>(null)
+
   useEffect(() => {
     setDepartmentName(settings.department_name)
+    setDepartmentNameArabic(settings.department_name_arabic)
     setTheme(settings.theme)
     setDefaultView(settings.default_view)
     setDefaultViewMode(settings.default_view_mode)
     setDateFormat(settings.date_format)
     setLoginAnimationSpeed(settings.login_animation_speed)
     setLoginBackgroundStyle(settings.login_background_style)
+    setShowFloatingConsole(settings.show_floating_console)
+    setBackupReminderDays(settings.backup_reminder_days)
+    setVisibleTabs(settings.visible_tabs)
   }, [settings])
 
   // Load zoom factor on mount
   useEffect(() => {
     window.electronAPI.app.getZoomFactor().then(setZoomFactor)
+  }, [])
+
+  // Load app info on mount
+  useEffect(() => {
+    window.electronAPI.app.getInfo().then(setAppInfo)
   }, [])
 
   const handleZoomChange = async (newZoom: number) => {
@@ -188,12 +204,16 @@ export function Settings() {
       const result = await window.electronAPI.settings.updateAll(
         {
           department_name: departmentName,
+          department_name_arabic: departmentNameArabic,
           theme,
           default_view: defaultView,
           default_view_mode: defaultViewMode,
           date_format: dateFormat,
           login_animation_speed: String(loginAnimationSpeed),
-          login_background_style: loginBackgroundStyle
+          login_background_style: loginBackgroundStyle,
+          show_floating_console: String(showFloatingConsole),
+          backup_reminder_days: String(backupReminderDays),
+          visible_tabs: JSON.stringify(visibleTabs)
         },
         user.id
       )
@@ -231,19 +251,36 @@ export function Settings() {
         </div>
         <div className="px-2 pt-4 space-y-5">
           {/* Department Name */}
-          <div>
-            <label className="label dark:text-gray-300">Department Name</label>
-            <input
-              type="text"
-              value={departmentName}
-              onChange={(e) => setDepartmentName(e.target.value)}
-              disabled={!isAdmin}
-              placeholder="e.g. IT Department"
-              className="input dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100 dark:placeholder-gray-400"
-            />
-            <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">
-              Displayed in the sidebar header. Leave empty for default.
-            </p>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="label dark:text-gray-300">Department Name</label>
+              <input
+                type="text"
+                value={departmentName}
+                onChange={(e) => setDepartmentName(e.target.value)}
+                disabled={!isAdmin}
+                placeholder="e.g. IT Department"
+                className="input dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100 dark:placeholder-gray-400"
+              />
+              <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">
+                Displayed in the sidebar header
+              </p>
+            </div>
+            <div>
+              <label className="label dark:text-gray-300">Department Name (Arabic)</label>
+              <input
+                type="text"
+                value={departmentNameArabic}
+                onChange={(e) => setDepartmentNameArabic(e.target.value)}
+                disabled={!isAdmin}
+                placeholder="مثال: قسم تقنية المعلومات"
+                dir="rtl"
+                className="input dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100 dark:placeholder-gray-400 text-right"
+              />
+              <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">
+                Used in Arabic attendance reports
+              </p>
+            </div>
           </div>
 
           {/* Date Format */}
@@ -572,10 +609,90 @@ export function Settings() {
               Default display mode for list pages.
             </p>
           </div>
+
+          {/* Visible Sidebar Tabs */}
+          <div className="pt-4 border-t border-gray-100 dark:border-gray-700">
+            <div className="flex items-center justify-between mb-3">
+              <label className="label dark:text-gray-300 mb-0">Visible Sidebar Tabs</label>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  disabled={!isAdmin}
+                  onClick={() => setVisibleTabs([])}
+                  className="text-xs text-primary-600 hover:text-primary-700 disabled:opacity-50"
+                >
+                  Show All
+                </button>
+                <span className="text-gray-300 dark:text-gray-600">|</span>
+                <button
+                  type="button"
+                  disabled={!isAdmin}
+                  onClick={() => setVisibleTabs(['/dashboard', '/topics', '/issues'])}
+                  className="text-xs text-primary-600 hover:text-primary-700 disabled:opacity-50"
+                >
+                  Minimal
+                </button>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+              {SIDEBAR_TABS.map((tab) => {
+                const isVisible = visibleTabs.length === 0 || visibleTabs.includes(tab.path)
+                return (
+                  <button
+                    key={tab.path}
+                    type="button"
+                    disabled={!isAdmin}
+                    onClick={() => {
+                      if (visibleTabs.length === 0) {
+                        // Currently showing all - set to all except this one
+                        setVisibleTabs(SIDEBAR_TABS.filter(t => t.path !== tab.path).map(t => t.path))
+                      } else if (visibleTabs.includes(tab.path)) {
+                        // Remove this tab
+                        const newTabs = visibleTabs.filter(p => p !== tab.path)
+                        // If removing would leave no tabs, show all
+                        setVisibleTabs(newTabs.length === 0 ? [] : newTabs)
+                      } else {
+                        // Add this tab
+                        const newTabs = [...visibleTabs, tab.path]
+                        // If all tabs are now selected, use empty array (show all)
+                        setVisibleTabs(newTabs.length === SIDEBAR_TABS.length ? [] : newTabs)
+                      }
+                    }}
+                    className={`flex items-center gap-2 px-3 py-2 rounded-lg border transition-colors text-left ${
+                      isVisible
+                        ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20 text-primary-700 dark:text-primary-400'
+                        : 'border-gray-200 dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:border-gray-300'
+                    } ${!isAdmin ? 'opacity-60' : ''}`}
+                  >
+                    {isVisible ? (
+                      <svg className="w-4 h-4 flex-shrink-0" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                    ) : (
+                      <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <circle cx="12" cy="12" r="9" strokeWidth="2" />
+                      </svg>
+                    )}
+                    <span className="text-sm truncate">{tab.label}</span>
+                  </button>
+                )
+              })}
+            </div>
+            <p className="mt-2 text-xs text-gray-400 dark:text-gray-500">
+              Select which tabs to show in the sidebar. Admin-only tabs (Audit Log, Backup) are always visible to admins.
+            </p>
+          </div>
         </div>
       </section>
 
-      
+      {/* Data Protection Section */}
+      <DataProtectionSection
+        isAdmin={isAdmin}
+        backupReminderDays={backupReminderDays}
+        setBackupReminderDays={setBackupReminderDays}
+      />
+
+
       {/* Database Testing Section - Admin Only */}
       {isAdmin && (
         <section className="card dark:bg-gray-800 dark:border-gray-700 border-red-200 dark:border-red-800">
@@ -674,6 +791,24 @@ export function Settings() {
                 </h2>
                 <p className="text-sm text-gray-500 dark:text-gray-400">View application logs and errors</p>
               </div>
+              <div className="flex items-center gap-3">
+                {/* Floating Console Toggle */}
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <span className="text-sm text-gray-600 dark:text-gray-400">Floating Console</span>
+                  <button
+                    type="button"
+                    onClick={() => setShowFloatingConsole(!showFloatingConsole)}
+                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                      showFloatingConsole ? 'bg-primary-600' : 'bg-gray-300 dark:bg-gray-600'
+                    }`}
+                  >
+                    <span
+                      className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                        showFloatingConsole ? 'translate-x-6' : 'translate-x-1'
+                      }`}
+                    />
+                  </button>
+                </label>
               {logStats && (
                 <div className="flex items-center gap-3 text-sm">
                   <span className="px-2 py-1 bg-gray-100 dark:bg-gray-700 rounded text-gray-600 dark:text-gray-400">
@@ -691,6 +826,7 @@ export function Settings() {
                   )}
                 </div>
               )}
+              </div>
             </div>
           </div>
           <div className="px-2 pt-4 space-y-4">
@@ -784,6 +920,9 @@ export function Settings() {
         </section>
       )}
 
+      {/* About & Updates */}
+      <AboutSection appInfo={appInfo} />
+
       {/* Save Button */}
       {isAdmin && (
         <div className="flex justify-end pb-6">
@@ -809,5 +948,310 @@ export function Settings() {
         </div>
       )}
     </div>
+  )
+}
+
+// About & Updates Section Component
+function AboutSection({ appInfo }: { appInfo: { version: string; platform: string; isPackaged: boolean } | null }) {
+  const [importing, setImporting] = useState(false)
+  const [updateReady, setUpdateReady] = useState(false)
+  const [updateStatus, setUpdateStatus] = useState<string>('')
+  const [statusType, setStatusType] = useState<'info' | 'success' | 'error'>('info')
+
+  // Check for pending update on mount
+  useEffect(() => {
+    window.electronAPI.updater.checkPending().then(result => {
+      setUpdateReady(result.pending)
+      if (result.pending) {
+        setUpdateStatus('Update ready to install')
+        setStatusType('success')
+      }
+    })
+  }, [])
+
+  const handleImportUpdate = async () => {
+    setImporting(true)
+    setUpdateStatus('Select update ZIP file...')
+    setStatusType('info')
+
+    try {
+      const result = await window.electronAPI.updater.importZip()
+      if (result.success) {
+        setUpdateReady(true)
+        setUpdateStatus(result.message || 'Update ready!')
+        setStatusType('success')
+      } else {
+        setUpdateStatus(result.error || 'Import failed')
+        setStatusType('error')
+      }
+    } catch (err: any) {
+      setUpdateStatus(err.message || 'Import failed')
+      setStatusType('error')
+    } finally {
+      setImporting(false)
+    }
+  }
+
+  const handleApplyUpdate = async () => {
+    setUpdateStatus('Applying update and restarting...')
+    setStatusType('info')
+    await window.electronAPI.updater.applyUpdate()
+  }
+
+  const handleCancelUpdate = async () => {
+    await window.electronAPI.updater.cancelUpdate()
+    setUpdateReady(false)
+    setUpdateStatus('')
+  }
+
+  return (
+    <section className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm">
+      <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4 flex items-center gap-2">
+        <svg className="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+        About & Updates
+      </h2>
+
+      <div className="space-y-4">
+        {/* App Info */}
+        <div className="flex items-center justify-between py-3 border-b border-gray-100 dark:border-gray-700">
+          <div>
+            <p className="text-sm font-medium text-gray-700 dark:text-gray-300">Version</p>
+            <p className="text-xs text-gray-500 dark:text-gray-400">
+              {appInfo?.version || 'Loading...'}
+              {appInfo?.isPackaged === false && ' (Development)'}
+            </p>
+          </div>
+        </div>
+
+        {/* Update Status */}
+        {updateStatus && (
+          <div className={`p-3 rounded-lg text-sm ${
+            statusType === 'success' ? 'bg-green-50 text-green-700 dark:bg-green-900/20 dark:text-green-400' :
+            statusType === 'error' ? 'bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-400' :
+            'bg-blue-50 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400'
+          }`}>
+            {updateStatus}
+          </div>
+        )}
+
+        {/* Update Buttons */}
+        <div className="flex items-center gap-3">
+          {!updateReady ? (
+            <button
+              onClick={handleImportUpdate}
+              disabled={importing}
+              className="px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 transition-colors disabled:opacity-50 flex items-center gap-2"
+            >
+              {importing ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  Importing...
+                </>
+              ) : (
+                <>
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                  </svg>
+                  Import Update ZIP
+                </>
+              )}
+            </button>
+          ) : (
+            <>
+              <button
+                onClick={handleApplyUpdate}
+                className="px-4 py-2 text-sm font-medium text-white bg-green-600 rounded-lg hover:bg-green-700 transition-colors flex items-center gap-2"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                Apply Update & Restart
+              </button>
+              <button
+                onClick={handleCancelUpdate}
+                className="px-4 py-2 text-sm font-medium text-gray-600 dark:text-gray-400 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+              >
+                Cancel
+              </button>
+            </>
+          )}
+        </div>
+
+        {/* Instructions */}
+        <div className="text-xs text-gray-500 dark:text-gray-400 space-y-1">
+          <p><strong>To update:</strong></p>
+          <ol className="list-decimal ml-4 space-y-1">
+            <li>Download the latest portable ZIP from <a href="https://github.com/mohamed20102002/Archive/releases" target="_blank" rel="noopener noreferrer" className="text-primary-600 hover:underline">GitHub Releases</a></li>
+            <li>Click "Import Update ZIP" and select the downloaded file</li>
+            <li>Click "Apply Update & Restart" to install</li>
+          </ol>
+          <p className="mt-2">Your data will be preserved during the update.</p>
+        </div>
+      </div>
+    </section>
+  )
+}
+
+// Data Protection Section Component
+function DataProtectionSection({
+  isAdmin,
+  backupReminderDays,
+  setBackupReminderDays
+}: {
+  isAdmin: boolean
+  backupReminderDays: number
+  setBackupReminderDays: (days: number) => void
+}) {
+  const { success, error } = useToast()
+  const [keyfileExists, setKeyfileExists] = useState(false)
+  const [exporting, setExporting] = useState(false)
+  const [importing, setImporting] = useState(false)
+
+  useEffect(() => {
+    window.electronAPI.keyfile.exists().then(setKeyfileExists)
+  }, [])
+
+  const handleExportKeyfile = async () => {
+    setExporting(true)
+    try {
+      const result = await window.electronAPI.keyfile.export()
+      if (result.success) {
+        success('Keyfile exported', 'Your encryption keyfile has been exported. Keep it safe!')
+      } else {
+        error('Export failed', result.error || 'Could not export keyfile')
+      }
+    } catch (err: any) {
+      error('Export failed', err.message)
+    } finally {
+      setExporting(false)
+    }
+  }
+
+  const handleImportKeyfile = async () => {
+    setImporting(true)
+    try {
+      const result = await window.electronAPI.keyfile.import()
+      if (result.success) {
+        success('Keyfile imported', 'Encryption keyfile has been restored. Restart the app to use it.')
+        setKeyfileExists(true)
+      } else if (result.error !== 'Import cancelled') {
+        error('Import failed', result.error || 'Could not import keyfile')
+      }
+    } catch (err: any) {
+      error('Import failed', err.message)
+    } finally {
+      setImporting(false)
+    }
+  }
+
+  return (
+    <section className="card dark:bg-gray-800 dark:border-gray-700">
+      <div className="px-2 pb-4 border-b border-gray-100 dark:border-gray-700">
+        <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 flex items-center gap-2">
+          <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+          </svg>
+          Data Protection
+        </h2>
+        <p className="text-sm text-gray-500 dark:text-gray-400">Configure backup reminders and encryption key management</p>
+      </div>
+      <div className="px-2 pt-4 space-y-5">
+        {/* Backup Reminder */}
+        <div>
+          <label className="label dark:text-gray-300">Backup Reminder</label>
+          <select
+            value={backupReminderDays}
+            onChange={(e) => setBackupReminderDays(Number(e.target.value))}
+            disabled={!isAdmin}
+            className="input dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100"
+          >
+            <option value={0}>Disabled</option>
+            <option value={7}>Every 7 days</option>
+            <option value={14}>Every 14 days</option>
+            <option value={30}>Every 30 days</option>
+          </select>
+          <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">
+            Show a reminder when it's been too long since the last backup.
+          </p>
+        </div>
+
+        {/* Encryption Keyfile - Admin Only */}
+        {isAdmin && (
+          <div className="pt-4 border-t border-gray-100 dark:border-gray-700">
+            <label className="label dark:text-gray-300 flex items-center gap-2">
+              <svg className="w-4 h-4 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
+              </svg>
+              Encryption Keyfile
+            </label>
+            <div className="flex items-center gap-3 mt-2">
+              <button
+                onClick={handleExportKeyfile}
+                disabled={!keyfileExists || exporting}
+                className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-amber-600 hover:bg-amber-700 rounded-lg transition-colors disabled:opacity-50"
+              >
+                {exporting ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    Exporting...
+                  </>
+                ) : (
+                  <>
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                    </svg>
+                    Export Keyfile
+                  </>
+                )}
+              </button>
+              <button
+                onClick={handleImportKeyfile}
+                disabled={importing}
+                className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg transition-colors disabled:opacity-50"
+              >
+                {importing ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-gray-500 border-t-transparent rounded-full animate-spin" />
+                    Importing...
+                  </>
+                ) : (
+                  <>
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                    </svg>
+                    Import Keyfile
+                  </>
+                )}
+              </button>
+            </div>
+            <div className="mt-3 p-3 bg-amber-50 dark:bg-amber-900/20 rounded-lg">
+              <p className="text-xs text-amber-800 dark:text-amber-300">
+                <strong>Important:</strong> The encryption keyfile is used to encrypt/decrypt credentials and secure references.
+                If you lose this file and your backup, you will <strong>permanently lose access</strong> to all encrypted data.
+                Export and store this keyfile in a safe location separate from your database backup.
+              </p>
+            </div>
+            {!keyfileExists && (
+              <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                No keyfile exists yet. It will be created when you add your first credential or secure reference.
+              </p>
+            )}
+          </div>
+        )}
+
+        {/* Tip */}
+        <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+          <p className="text-sm text-blue-700 dark:text-blue-400">
+            <strong>Tip:</strong> Regular backups protect your data from loss. Go to{' '}
+            <a href="#" onClick={(e) => { e.preventDefault(); window.location.hash = '/backup' }} className="underline hover:no-underline">
+              Backup & Restore
+            </a>
+            {' '}to create a backup.
+          </p>
+        </div>
+      </div>
+    </section>
   )
 }

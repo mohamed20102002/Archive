@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { useToast } from '../context/ToastContext'
 import { notifyDataChanged, onDataTypeChanged } from '../utils/dataEvents'
@@ -11,33 +11,57 @@ export function useTopics() {
 
   const { user } = useAuth()
   const toast = useToast()
+  // Use ref to avoid toast changes triggering loadTopics recreation
+  const toastRef = useRef(toast)
+  toastRef.current = toast
 
   const loadTopics = useCallback(async () => {
     setIsLoading(true)
     setError(null)
 
     try {
-      const data = await window.electronAPI.topics.getAll()
-      setTopics(data as Topic[])
+      const result = await window.electronAPI.topics.getAll({}) as { data: Topic[] }
+      setTopics(result.data || [])
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to load topics'
       setError(message)
-      toast.error('Error', message)
+      toastRef.current.error('Error', message)
     } finally {
       setIsLoading(false)
     }
-  }, [toast])
+  }, []) // Removed toast dependency - using ref instead
 
   useEffect(() => {
     loadTopics()
   }, [loadTopics])
 
-  // Listen for record changes to update topic record counts
+  // Listen for record changes to update topic record counts (with debounce)
   useEffect(() => {
-    const unsubscribe = onDataTypeChanged(['record', 'topic', 'all'], () => {
-      loadTopics()
+    let debounceTimer: NodeJS.Timeout | null = null
+    let lastEventTime = 0
+
+    const unsubscribe = onDataTypeChanged(['record', 'topic', 'all'], (event) => {
+      const now = Date.now()
+      console.log(`[useTopics] Data change event:`, event.type, event.action, `timeSinceLast=${now - lastEventTime}ms`)
+
+      // Ignore events within 500ms
+      if (now - lastEventTime < 500) {
+        console.log(`[useTopics] Ignoring event (debounced)`)
+        return
+      }
+      lastEventTime = now
+
+      if (debounceTimer) clearTimeout(debounceTimer)
+      debounceTimer = setTimeout(() => {
+        console.log(`[useTopics] Reloading topics`)
+        loadTopics()
+      }, 300)
     })
-    return unsubscribe
+
+    return () => {
+      unsubscribe()
+      if (debounceTimer) clearTimeout(debounceTimer)
+    }
   }, [loadTopics])
 
   const createTopic = useCallback(async (data: CreateTopicData): Promise<{ success: boolean; topic?: Topic; error?: string }> => {
@@ -141,6 +165,9 @@ export function useTopic(topicId: string | undefined) {
   const [error, setError] = useState<string | null>(null)
 
   const toast = useToast()
+  // Use ref to avoid toast changes triggering loadTopic recreation
+  const toastRef = useRef(toast)
+  toastRef.current = toast
 
   const loadTopic = useCallback(async () => {
     if (!topicId) {
@@ -161,11 +188,11 @@ export function useTopic(topicId: string | undefined) {
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to load topic'
       setError(message)
-      toast.error('Error', message)
+      toastRef.current.error('Error', message)
     } finally {
       setIsLoading(false)
     }
-  }, [topicId, toast])
+  }, [topicId]) // Removed toast dependency - using ref instead
 
   useEffect(() => {
     loadTopic()

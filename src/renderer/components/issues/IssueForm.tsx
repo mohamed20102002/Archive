@@ -41,8 +41,8 @@ export function IssueForm({ issue, onSubmit, onCancel }: IssueFormProps) {
 
   const loadTopics = async () => {
     try {
-      const result = await window.electronAPI.topics.getAll()
-      setTopics((result as Topic[]).filter(t => !t.deleted_at))
+      const result = await window.electronAPI.topics.getAll({}) as { data: Topic[] }
+      setTopics((result.data || []).filter(t => !t.deleted_at))
     } catch (err) {
       console.error('Error loading topics:', err)
     }

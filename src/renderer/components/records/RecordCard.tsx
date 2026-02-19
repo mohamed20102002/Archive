@@ -1,5 +1,6 @@
 import React, { useState, useEffect, memo } from 'react'
-import { format } from 'date-fns'
+import { useNavigate } from 'react-router-dom'
+import { useSettings } from '../../context/SettingsContext'
 import type { Record, RecordAttachment } from '../../types'
 
 interface RecordCardProps {
@@ -58,12 +59,26 @@ const typeDotColors: globalThis.Record<string, string> = {
 const parseTypes = (typeStr: string): string[] => typeStr.split(',').filter(Boolean)
 
 export const RecordCard = memo(function RecordCard({ record, highlighted, onEdit, onDelete, onOpenEmail }: RecordCardProps) {
+  const navigate = useNavigate()
+  const { formatDate } = useSettings()
   // Parse multiple types
   const types = parseTypes(record.type)
   const primaryType = types[0] || 'note'
   const [copied, setCopied] = useState(false)
   const [attachments, setAttachments] = useState<RecordAttachment[]>([])
   const [showAttachments, setShowAttachments] = useState(false)
+
+  const handleNavigateToMom = (momId: string) => {
+    navigate('/mom', { state: { highlightType: 'mom', highlightId: momId } })
+  }
+
+  const handleNavigateToLetter = (letterId: string) => {
+    navigate('/letters', { state: { highlightType: 'letter', highlightId: letterId } })
+  }
+
+  // Get linked items - prefer arrays, fallback to single items for backwards compatibility
+  const linkedMoms = record.linked_moms || (record.linked_mom ? [record.linked_mom] : [])
+  const linkedLetters = record.linked_letters || (record.linked_letter ? [record.linked_letter] : [])
 
   // Load attachments for all records
   useEffect(() => {
@@ -124,7 +139,7 @@ export const RecordCard = memo(function RecordCard({ record, highlighted, onEdit
               </span>
             )}
             <span className="text-xs text-gray-400">
-              {format(new Date(record.created_at), 'h:mm a')}
+              {formatDate(record.created_at, 'withTime').split(' ').slice(-2).join(' ')}
             </span>
           </div>
 
@@ -159,6 +174,68 @@ export const RecordCard = memo(function RecordCard({ record, highlighted, onEdit
           <p className="text-sm text-gray-600 whitespace-pre-wrap line-clamp-3">
             {record.content}
           </p>
+        )}
+
+        {/* Linked MOM/Letter Tags */}
+        {(linkedMoms.length > 0 || linkedLetters.length > 0) && (
+          <div className="mt-3 pt-3 border-t border-gray-100 flex flex-wrap gap-2">
+            {linkedMoms.map(mom => (
+              <button
+                key={mom.id}
+                onClick={() => !mom.deleted && handleNavigateToMom(mom.id)}
+                disabled={mom.deleted}
+                className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
+                  mom.deleted
+                    ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                    : 'bg-amber-50 text-amber-700 hover:bg-amber-100'
+                }`}
+                title={mom.deleted ? 'This MOM has been deleted' : `Go to MOM: ${mom.title}`}
+              >
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+                <span className={mom.deleted ? 'line-through' : ''}>
+                  MOM: {mom.mom_id}
+                </span>
+                {mom.deleted && (
+                  <span className="text-red-400 text-[10px]">(Deleted)</span>
+                )}
+                {!mom.deleted && (
+                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                  </svg>
+                )}
+              </button>
+            ))}
+            {linkedLetters.map(letter => (
+              <button
+                key={letter.id}
+                onClick={() => !letter.deleted && handleNavigateToLetter(letter.id)}
+                disabled={letter.deleted}
+                className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
+                  letter.deleted
+                    ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                    : 'bg-cyan-50 text-cyan-700 hover:bg-cyan-100'
+                }`}
+                title={letter.deleted ? 'This Letter has been deleted' : `Go to Letter: ${letter.subject}`}
+              >
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                </svg>
+                <span className={letter.deleted ? 'line-through' : ''}>
+                  Letter: {letter.reference_number}
+                </span>
+                {letter.deleted && (
+                  <span className="text-red-400 text-[10px]">(Deleted)</span>
+                )}
+                {!letter.deleted && (
+                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                  </svg>
+                )}
+              </button>
+            ))}
+          </div>
         )}
 
         {/* Email indicator with Open button - shown when email type is included */}
@@ -257,7 +334,7 @@ export const RecordCard = memo(function RecordCard({ record, highlighted, onEdit
         {/* Footer */}
         <div className="mt-3 pt-3 border-t border-gray-100 flex items-center justify-between text-xs text-gray-400">
           <span>
-            By {record.creator_name || 'Unknown'} &middot; {format(new Date(record.created_at), 'MMM d, yyyy')}
+            By {record.creator_name || 'Unknown'} &middot; {formatDate(record.created_at)}
           </span>
           <span className="flex items-center gap-1">
             <span className="text-[11px] font-mono text-gray-400">{record.id.slice(0, 8)}</span>

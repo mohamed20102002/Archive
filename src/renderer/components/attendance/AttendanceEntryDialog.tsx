@@ -6,7 +6,7 @@ interface AttendanceEntryDialogProps {
   date: string
   entry: AttendanceEntry | null
   conditions: AttendanceCondition[]
-  onSave: (conditionIds: string[], note: string) => void
+  onSave: (conditionIds: string[], note: string, signInTime: string, signOutTime: string) => void
   onDelete: () => void
   onClose: () => void
 }
@@ -22,14 +22,20 @@ export function AttendanceEntryDialog({
 }: AttendanceEntryDialogProps) {
   const [selectedConditions, setSelectedConditions] = useState<Set<string>>(new Set())
   const [note, setNote] = useState('')
+  const [signInTime, setSignInTime] = useState('')
+  const [signOutTime, setSignOutTime] = useState('')
 
   useEffect(() => {
     if (entry) {
       setSelectedConditions(new Set(entry.conditions.map(c => c.id)))
       setNote(entry.note || '')
+      setSignInTime(entry.sign_in_time || '')
+      setSignOutTime(entry.sign_out_time || '')
     } else {
       setSelectedConditions(new Set())
       setNote('')
+      setSignInTime('')
+      setSignOutTime('')
     }
   }, [entry, date])
 
@@ -47,8 +53,13 @@ export function AttendanceEntryDialog({
 
   const handleSave = () => {
     if (selectedConditions.size === 0) return
-    onSave(Array.from(selectedConditions), note)
+    // If any selected condition hides times, don't save the times
+    const shouldHideTimes = conditions.some(c => selectedConditions.has(c.id) && c.hides_times)
+    onSave(Array.from(selectedConditions), note, shouldHideTimes ? '' : signInTime, shouldHideTimes ? '' : signOutTime)
   }
+
+  // Check if any selected condition has hides_times = true
+  const timesDisabled = conditions.some(c => selectedConditions.has(c.id) && c.hides_times)
 
   // Format date for display
   const displayDate = (() => {
@@ -106,6 +117,35 @@ export function AttendanceEntryDialog({
               )}
             </div>
           </div>
+
+          {/* Time entries */}
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className={`label ${timesDisabled ? 'text-gray-400 dark:text-gray-500' : 'dark:text-gray-300'}`}>Sign In Time</label>
+              <input
+                type="time"
+                value={timesDisabled ? '' : signInTime}
+                onChange={e => setSignInTime(e.target.value)}
+                disabled={timesDisabled}
+                className={`input mt-1 ${timesDisabled ? 'bg-gray-100 dark:bg-gray-800 text-gray-400 dark:text-gray-500 cursor-not-allowed' : 'dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100'}`}
+              />
+            </div>
+            <div>
+              <label className={`label ${timesDisabled ? 'text-gray-400 dark:text-gray-500' : 'dark:text-gray-300'}`}>Sign Out Time</label>
+              <input
+                type="time"
+                value={timesDisabled ? '' : signOutTime}
+                onChange={e => setSignOutTime(e.target.value)}
+                disabled={timesDisabled}
+                className={`input mt-1 ${timesDisabled ? 'bg-gray-100 dark:bg-gray-800 text-gray-400 dark:text-gray-500 cursor-not-allowed' : 'dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100'}`}
+              />
+            </div>
+          </div>
+          {timesDisabled && (
+            <p className="text-xs text-amber-600 dark:text-amber-400 -mt-3">
+              Times are disabled because a selected condition doesn't require sign-in/out times.
+            </p>
+          )}
 
           {/* Note */}
           <div>

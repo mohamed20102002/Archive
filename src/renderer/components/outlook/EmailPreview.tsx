@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { format } from 'date-fns'
 import { Modal } from '../common/Modal'
 import { useToast } from '../../context/ToastContext'
 import { useAuth } from '../../context/AuthContext'
+import { useSettings } from '../../context/SettingsContext'
 import { notifyDataChanged } from '../../utils/dataEvents'
 import type { OutlookEmail, OutlookFolder, Topic, Subcategory } from '../../types'
 
@@ -39,6 +39,7 @@ export function EmailPreview({ email, selectedFolder, isArchived, isLoadingDetai
 
   const { success, error } = useToast()
   const { user } = useAuth()
+  const { formatDate } = useSettings()
   const navigate = useNavigate()
 
   // Load archive info when email changes and is archived
@@ -87,8 +88,8 @@ export function EmailPreview({ email, selectedFolder, isArchived, isLoadingDetai
   const handleOpenArchiveModal = async () => {
     setIsLoadingTopics(true)
     try {
-      const data = await window.electronAPI.topics.getAll()
-      setTopics(data as Topic[])
+      const result = await window.electronAPI.topics.getAll({}) as { data: Topic[] }
+      setTopics(result.data || [])
       setShowArchiveModal(true)
     } catch (err) {
       error('Failed to load topics')
@@ -258,9 +259,9 @@ export function EmailPreview({ email, selectedFolder, isArchived, isLoadingDetai
               <span className="text-gray-500 w-16">Date:</span>
               <span className="text-gray-900">
                 {email.receivedAt
-                  ? format(new Date(email.receivedAt), 'EEEE, MMMM d, yyyy h:mm a')
+                  ? formatDate(email.receivedAt, 'full')
                   : email.sentAt
-                    ? format(new Date(email.sentAt), 'EEEE, MMMM d, yyyy h:mm a')
+                    ? formatDate(email.sentAt, 'full')
                     : 'Unknown'
                 }
               </span>

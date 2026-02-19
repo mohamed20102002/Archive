@@ -1,5 +1,5 @@
 import React from 'react'
-import { format } from 'date-fns'
+import { useSettings } from '../../context/SettingsContext'
 import type { Email } from '../../types'
 
 interface EmailMetadataProps {
@@ -8,6 +8,8 @@ interface EmailMetadataProps {
 }
 
 export function EmailMetadata({ email, showFull = false }: EmailMetadataProps) {
+  const { formatDate } = useSettings()
+
   const parseRecipients = (recipients: string): string[] => {
     try {
       return JSON.parse(recipients)
@@ -41,9 +43,9 @@ export function EmailMetadata({ email, showFull = false }: EmailMetadataProps) {
           <label className="text-xs font-medium text-gray-500 uppercase tracking-wider">Date</label>
           <div className="mt-1 text-gray-900">
             {email.sent_at
-              ? format(new Date(email.sent_at), 'MMM d, yyyy h:mm a')
+              ? formatDate(email.sent_at, 'withTime')
               : email.received_at
-                ? format(new Date(email.received_at), 'MMM d, yyyy h:mm a')
+                ? formatDate(email.received_at, 'withTime')
                 : 'Unknown'
             }
           </div>
@@ -148,7 +150,7 @@ export function EmailMetadata({ email, showFull = false }: EmailMetadataProps) {
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
               </svg>
-              <span>Archived on {format(new Date(email.archived_at), 'MMM d, yyyy h:mm a')}</span>
+              <span>Archived on {formatDate(email.archived_at, 'withTime')}</span>
             </div>
 
             {email.checksum && (

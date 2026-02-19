@@ -11,6 +11,9 @@ export interface DataChangeEvent {
 
 // Dispatch this event from any component after mutating data
 export function notifyDataChanged(type: DataChangeType, action: 'create' | 'update' | 'delete' = 'update', id?: string): void {
+  // Log all data change events for debugging random refresh issues
+  console.log(`[DataEvent] notifyDataChanged called:`, { type, action, id, stack: new Error().stack?.split('\n').slice(1, 4).join(' <- ') })
+
   const event = new CustomEvent('app-data-changed', {
     detail: { type, action, id } as DataChangeEvent
   })
@@ -21,6 +24,7 @@ export function notifyDataChanged(type: DataChangeType, action: 'create' | 'upda
 export function onDataChanged(callback: (event: DataChangeEvent) => void): () => void {
   const handler = (e: Event) => {
     const customEvent = e as CustomEvent<DataChangeEvent>
+    console.log(`[DataEvent] onDataChanged received:`, customEvent.detail)
     callback(customEvent.detail)
   }
   window.addEventListener('app-data-changed', handler)

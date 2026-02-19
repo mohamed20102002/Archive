@@ -32,6 +32,8 @@ export interface AttendanceCondition {
   sort_order: number
   display_number: number
   is_ignored: boolean
+  hides_times: boolean
+  is_fallback: boolean
   created_by: string
   created_at: string
   updated_at: string
@@ -44,6 +46,8 @@ export interface CreateConditionData {
   sort_order?: number
   display_number?: number
   is_ignored?: boolean
+  hides_times?: boolean
+  is_fallback?: boolean
 }
 
 export interface UpdateConditionData {
@@ -52,6 +56,8 @@ export interface UpdateConditionData {
   sort_order?: number
   display_number?: number
   is_ignored?: boolean
+  hides_times?: boolean
+  is_fallback?: boolean
 }
 
 export interface AttendanceEntry {
@@ -63,6 +69,8 @@ export interface AttendanceEntry {
   day: number
   shift_id: string | null
   shift_name: string | null
+  sign_in_time: string | null
+  sign_out_time: string | null
   note: string | null
   created_by: string
   created_by_name?: string
@@ -77,6 +85,8 @@ export interface SaveEntryData {
   entry_date: string
   shift_id: string
   condition_ids: string[]
+  sign_in_time?: string
+  sign_out_time?: string
   note?: string
 }
 
@@ -229,9 +239,9 @@ export function createCondition(
     })()
 
     db.prepare(`
-      INSERT INTO attendance_conditions (id, name, color, sort_order, display_number, is_ignored, created_by)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run(id, data.name, data.color, sortOrder, displayNumber, data.is_ignored ? 1 : 0, userId)
+      INSERT INTO attendance_conditions (id, name, color, sort_order, display_number, is_ignored, hides_times, is_fallback, created_by)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(id, data.name, data.color, sortOrder, displayNumber, data.is_ignored ? 1 : 0, data.hides_times ? 1 : 0, data.is_fallback ? 1 : 0, userId)
 
     const condition = db.prepare(
       'SELECT * FROM attendance_conditions WHERE id = ?'
@@ -266,6 +276,8 @@ export function updateCondition(
     if (data.sort_order !== undefined) { sets.push('sort_order = ?'); params.push(data.sort_order) }
     if (data.display_number !== undefined) { sets.push('display_number = ?'); params.push(data.display_number) }
     if (data.is_ignored !== undefined) { sets.push('is_ignored = ?'); params.push(data.is_ignored ? 1 : 0) }
+    if (data.hides_times !== undefined) { sets.push('hides_times = ?'); params.push(data.hides_times ? 1 : 0) }
+    if (data.is_fallback !== undefined) { sets.push('is_fallback = ?'); params.push(data.is_fallback ? 1 : 0) }
 
     if (sets.length === 0) return { success: true }
 
@@ -310,8 +322,8 @@ export function getAllConditions(includeDeleted = false): AttendanceCondition[] 
   const where = includeDeleted ? '' : 'WHERE deleted_at IS NULL'
   const rows = db.prepare(
     `SELECT * FROM attendance_conditions ${where} ORDER BY sort_order ASC, name ASC`
-  ).all() as (Omit<AttendanceCondition, 'is_ignored'> & { is_ignored: number })[]
-  return rows.map(r => ({ ...r, is_ignored: !!r.is_ignored }))
+  ).all() as (Omit<AttendanceCondition, 'is_ignored' | 'hides_times' | 'is_fallback'> & { is_ignored: number; hides_times: number; is_fallback: number })[]
+  return rows.map(r => ({ ...r, is_ignored: !!r.is_ignored, hides_times: !!r.hides_times, is_fallback: !!r.is_fallback }))
 }
 
 export function getConditionById(id: string): AttendanceCondition | null {
@@ -353,18 +365,18 @@ export function saveEntry(
         // Update existing entry
         db.prepare(`
           UPDATE attendance_entries
-          SET shift_id = ?, note = ?, updated_at = datetime('now')
+          SET shift_id = ?, sign_in_time = ?, sign_out_time = ?, note = ?, updated_at = datetime('now')
           WHERE id = ?
-        `).run(data.shift_id, data.note || null, entryId)
+        `).run(data.shift_id, data.sign_in_time || null, data.sign_out_time || null, data.note || null, entryId)
 
         // Remove old conditions
         db.prepare('DELETE FROM attendance_entry_conditions WHERE entry_id = ?').run(entryId)
       } else {
         entryId = generateId()
         db.prepare(`
-          INSERT INTO attendance_entries (id, user_id, entry_date, year, month, day, shift_id, note, created_by)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `).run(entryId, data.user_id, data.entry_date, year, month, day, data.shift_id, data.note || null, userId)
+          INSERT INTO attendance_entries (id, user_id, entry_date, year, month, day, shift_id, sign_in_time, sign_out_time, note, created_by)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(entryId, data.user_id, data.entry_date, year, month, day, data.shift_id, data.sign_in_time || null, data.sign_out_time || null, data.note || null, userId)
       }
 
       // Insert conditions
@@ -396,6 +408,8 @@ export interface BulkSaveEntryData {
   shift_id: string
   entry_date: string
   condition_ids: string[]
+  sign_in_time?: string
+  sign_out_time?: string
   note?: string
   exclude_user_ids?: string[]
 }
@@ -441,17 +455,17 @@ export function saveBulkEntries(
           entryId = existing.id
           db.prepare(`
             UPDATE attendance_entries
-            SET shift_id = ?, note = ?, updated_at = datetime('now')
+            SET shift_id = ?, sign_in_time = ?, sign_out_time = ?, note = ?, updated_at = datetime('now')
             WHERE id = ?
-          `).run(data.shift_id, data.note || null, entryId)
+          `).run(data.shift_id, data.sign_in_time || null, data.sign_out_time || null, data.note || null, entryId)
 
           db.prepare('DELETE FROM attendance_entry_conditions WHERE entry_id = ?').run(entryId)
         } else {
           entryId = generateId()
           db.prepare(`
-            INSERT INTO attendance_entries (id, user_id, entry_date, year, month, day, shift_id, note, created_by)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-          `).run(entryId, targetUser.id, data.entry_date, year, month, day, data.shift_id, data.note || null, userId)
+            INSERT INTO attendance_entries (id, user_id, entry_date, year, month, day, shift_id, sign_in_time, sign_out_time, note, created_by)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `).run(entryId, targetUser.id, data.entry_date, year, month, day, data.shift_id, data.sign_in_time || null, data.sign_out_time || null, data.note || null, userId)
         }
 
         const insertCondition = db.prepare(
@@ -507,6 +521,60 @@ export function deleteEntry(
     return { success: true }
   } catch (error: any) {
     console.error('Error deleting attendance entry:', error)
+    return { success: false, error: error.message }
+  }
+}
+
+export function deleteBulkEntries(
+  shiftId: string,
+  entryDate: string,
+  requestingUserId: string
+): { success: boolean; count?: number; error?: string } {
+  try {
+    const db = getDatabase()
+    const username = getUsername(requestingUserId)
+
+    // Parse date to check year
+    const [yearStr] = entryDate.split('-')
+    const year = parseInt(yearStr, 10)
+
+    if (!isYearEditable(year)) {
+      return { success: false, error: 'Past year data is read-only' }
+    }
+
+    // Get all users in this shift
+    const usersInShift = db.prepare('SELECT id FROM users WHERE shift_id = ? AND is_active = 1').all(shiftId) as { id: string }[]
+    const userIds = usersInShift.map(u => u.id)
+
+    if (userIds.length === 0) {
+      return { success: false, error: 'No users found in this shift' }
+    }
+
+    // Find all entries for these users on this date
+    const placeholders = userIds.map(() => '?').join(',')
+    const entries = db.prepare(`
+      SELECT id FROM attendance_entries
+      WHERE user_id IN (${placeholders}) AND entry_date = ?
+    `).all(...userIds, entryDate) as { id: string }[]
+
+    if (entries.length === 0) {
+      return { success: true, count: 0 }
+    }
+
+    // Delete entries (junction rows cascade delete)
+    const entryIds = entries.map(e => e.id)
+    const entryPlaceholders = entryIds.map(() => '?').join(',')
+    db.prepare(`DELETE FROM attendance_entries WHERE id IN (${entryPlaceholders})`).run(...entryIds)
+
+    logAudit('ATTENDANCE_BULK_DELETE', requestingUserId, username, 'attendance_entry', null, {
+      shift_id: shiftId,
+      entry_date: entryDate,
+      deleted_count: entries.length
+    })
+
+    return { success: true, count: entries.length }
+  } catch (error: any) {
+    console.error('Error bulk deleting attendance entries:', error)
     return { success: false, error: error.message }
   }
 }
@@ -687,4 +755,129 @@ export function getAvailableYears(): number[] {
 
 export function isYearEditable(year: number): boolean {
   return year === new Date().getFullYear()
+}
+
+// ===== Department Report Data =====
+
+export interface DepartmentReportUserCondition {
+  name: string
+  color: string
+}
+
+export interface DepartmentReportUser {
+  user_id: string
+  arabic_name: string | null
+  display_name: string
+  shift_id: string | null
+  shift_name: string | null
+  sign_in_time: string | null
+  sign_out_time: string | null
+  note: string | null
+  hides_times: boolean // true if any condition with hides_times is selected
+  conditions: DepartmentReportUserCondition[] // conditions with name and color for display
+}
+
+export interface DepartmentReportData {
+  date: string
+  shifts: {
+    shift_id: string
+    shift_name: string
+    users: DepartmentReportUser[]
+  }[]
+}
+
+export function getDepartmentReportData(date: string): DepartmentReportData {
+  const db = getDatabase()
+
+  // Get all shifts
+  const shifts = getAllShifts()
+
+  // Get all active users with their attendance for the specified date
+  const usersWithAttendance = db.prepare(`
+    SELECT
+      u.id as user_id,
+      u.arabic_name,
+      u.display_name,
+      u.shift_id,
+      u.sort_order,
+      s.name as shift_name,
+      ae.id as entry_id,
+      ae.sign_in_time,
+      ae.sign_out_time,
+      ae.note
+    FROM users u
+    LEFT JOIN shifts s ON s.id = u.shift_id
+    LEFT JOIN attendance_entries ae ON ae.user_id = u.id AND ae.entry_date = ?
+    WHERE u.is_active = 1 AND u.deleted_at IS NULL
+    ORDER BY s.sort_order ASC, u.sort_order ASC, u.display_name ASC
+  `).all(date) as (DepartmentReportUser & { entry_id: string | null; sort_order: number })[]
+
+  // For each user with an entry, check if any condition has hides_times and get conditions list
+  const result: DepartmentReportUser[] = usersWithAttendance.map(user => {
+    let hidesTimes = false
+    let conditions: DepartmentReportUserCondition[] = []
+
+    if (user.entry_id) {
+      // Get all conditions for this user's entry
+      const userConditions = db.prepare(`
+        SELECT ac.name, ac.color, ac.hides_times, ac.is_fallback
+        FROM attendance_entry_conditions aec
+        INNER JOIN attendance_conditions ac ON ac.id = aec.condition_id
+        WHERE aec.entry_id = ?
+        ORDER BY ac.sort_order ASC
+      `).all(user.entry_id) as { name: string; color: string; hides_times: number; is_fallback: number }[]
+
+      // Check if any condition hides times
+      hidesTimes = userConditions.some(c => c.hides_times === 1)
+
+      // Filter conditions for PDF display:
+      // If there are non-fallback conditions, hide fallback ones
+      // If only fallback conditions exist, show them
+      const nonFallbackConditions = userConditions.filter(c => !c.is_fallback)
+      const displayConditions = nonFallbackConditions.length > 0
+        ? nonFallbackConditions
+        : userConditions
+
+      // Map conditions for display
+      conditions = displayConditions.map(c => ({
+        name: c.name,
+        color: c.color
+      }))
+    }
+
+    return {
+      user_id: user.user_id,
+      arabic_name: user.arabic_name,
+      display_name: user.display_name,
+      shift_id: user.shift_id,
+      shift_name: user.shift_name,
+      sign_in_time: user.sign_in_time,
+      sign_out_time: user.sign_out_time,
+      note: user.note,
+      hides_times: hidesTimes,
+      conditions
+    }
+  })
+
+  // Group users by shift
+  const shiftData = shifts.map(shift => ({
+    shift_id: shift.id,
+    shift_name: shift.name,
+    users: result.filter(u => u.shift_id === shift.id)
+  }))
+
+  // Add users without a shift assignment
+  const unassignedUsers = result.filter(u => !u.shift_id)
+  if (unassignedUsers.length > 0) {
+    shiftData.push({
+      shift_id: 'unassigned',
+      shift_name: 'Unassigned',
+      users: unassignedUsers
+    })
+  }
+
+  return {
+    date,
+    shifts: shiftData.filter(s => s.users.length > 0)
+  }
 }

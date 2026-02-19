@@ -65,16 +65,16 @@ export async function archiveEmail(
   const id = generateId()
   const now = new Date()
 
-  // Use the email's sent date for folder organization, not the archive date
-  // Fall back to received date, then to current date if neither is available
+  // Use the email's received date for folder organization and record_date
+  // Fall back to sent date, then to current date if neither is available
   let emailDate = now
-  if (emailData.sentAt) {
-    const parsed = new Date(emailData.sentAt)
+  if (emailData.receivedAt) {
+    const parsed = new Date(emailData.receivedAt)
     if (!isNaN(parsed.getTime())) {
       emailDate = parsed
     }
-  } else if (emailData.receivedAt) {
-    const parsed = new Date(emailData.receivedAt)
+  } else if (emailData.sentAt) {
+    const parsed = new Date(emailData.sentAt)
     if (!isNaN(parsed.getTime())) {
       emailDate = parsed
     }
@@ -197,10 +197,13 @@ export async function archiveEmail(
     )
 
     // Create a record entry for the timeline
+    // Use email's received/sent date as record_date for chronological ordering
+    // But keep created_at as the archive date for audit purposes
     const recordId = generateId()
+    const recordDate = emailDate.toISOString().split('T')[0] // YYYY-MM-DD format
     db.prepare(`
-      INSERT INTO records (id, topic_id, subcategory_id, type, title, content, email_id, created_by, created_at, updated_at)
-      VALUES (?, ?, ?, 'email', ?, ?, ?, ?, ?, ?)
+      INSERT INTO records (id, topic_id, subcategory_id, type, title, content, email_id, record_date, created_by, created_at, updated_at)
+      VALUES (?, ?, ?, 'email', ?, ?, ?, ?, ?, ?, ?)
     `).run(
       recordId,
       topicId,
@@ -208,8 +211,9 @@ export async function archiveEmail(
       emailData.subject,
       null,
       id,
+      recordDate,  // Email's received/sent date for timeline ordering
       userId,
-      now.toISOString(),
+      now.toISOString(),  // When the user archived it (audit trail)
       now.toISOString()
     )
 
@@ -412,6 +416,46 @@ export function openEmailFile(emailId: string): { success: boolean; error?: stri
   }
 }
 
+// Helper function to clean up empty timeline folders after email deletion
+function cleanupEmptyTimelineFolders(emailStoragePath: string): void {
+  const emailsBasePath = getEmailsPath()
+
+  try {
+    // The email storage path is like: Emails/2026/02/02/email-id
+    // After deleting the email folder, check if day/month/year folders are empty
+    const dayFolder = path.dirname(emailStoragePath)
+    const monthFolder = path.dirname(dayFolder)
+    const yearFolder = path.dirname(monthFolder)
+
+    // Check and remove empty day folder
+    if (fs.existsSync(dayFolder) && dayFolder !== emailsBasePath) {
+      const dayContents = fs.readdirSync(dayFolder)
+      if (dayContents.length === 0) {
+        fs.rmdirSync(dayFolder)
+
+        // Check and remove empty month folder
+        if (fs.existsSync(monthFolder) && monthFolder !== emailsBasePath) {
+          const monthContents = fs.readdirSync(monthFolder)
+          if (monthContents.length === 0) {
+            fs.rmdirSync(monthFolder)
+
+            // Check and remove empty year folder
+            if (fs.existsSync(yearFolder) && yearFolder !== emailsBasePath) {
+              const yearContents = fs.readdirSync(yearFolder)
+              if (yearContents.length === 0) {
+                fs.rmdirSync(yearFolder)
+              }
+            }
+          }
+        }
+      }
+    }
+  } catch (error) {
+    console.error('Error cleaning up empty timeline folders:', error)
+    // Non-critical error, don't throw
+  }
+}
+
 export function deleteArchivedEmail(id: string, userId: string): { success: boolean; error?: string } {
   const db = getDatabase()
 
@@ -431,6 +475,9 @@ export function deleteArchivedEmail(id: string, userId: string): { success: bool
     const storagePath = getEmailStoragePath(email)
     if (fs.existsSync(storagePath)) {
       fs.rmSync(storagePath, { recursive: true, force: true })
+
+      // Clean up empty timeline folders (day/month/year)
+      cleanupEmptyTimelineFolders(storagePath)
     }
 
     logAudit(

@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useRef } from 'react'
+import { useLocation } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { useToast } from '../../context/ToastContext'
 import { Modal } from '../common/Modal'
@@ -8,24 +9,40 @@ import { CredentialDetail } from './CredentialDetail'
 import { ReferenceCard } from './ReferenceCard'
 import { ReferenceForm } from './ReferenceForm'
 import { ReferenceDetail } from './ReferenceDetail'
+import { CategoryManager } from './CategoryManager'
 import type {
   Credential,
   SecureReference,
-  CredentialCategory,
-  ReferenceCategory,
+  ResourceCategory,
   CreateCredentialData,
   CreateReferenceData,
   SecureResourceStats
 } from '../../types'
 
 type TabMode = 'credentials' | 'references'
+type SortOption = 'date-desc' | 'date-asc' | 'name-asc' | 'name-desc' | 'color'
 
-const CREDENTIAL_CATEGORIES: CredentialCategory[] = ['Software', 'Desktop', 'Server', 'Network', 'Other']
-const REFERENCE_CATEGORIES: ReferenceCategory[] = ['General', 'Policy', 'Procedure', 'Template', 'Guide', 'Other']
+const DEFAULT_CREDENTIAL_CATEGORIES = ['Software', 'Desktop', 'Server', 'Network', 'Other']
+const DEFAULT_REFERENCE_CATEGORIES = ['General', 'Policy', 'Procedure', 'Template', 'Guide', 'Other']
+
+// Color sort order (references with no color go last)
+const COLOR_ORDER: Record<string, number> = {
+  red: 1,
+  orange: 2,
+  yellow: 3,
+  green: 4,
+  blue: 5,
+  purple: 6
+}
 
 export function SecureResources() {
   const { user } = useAuth()
   const toast = useToast()
+  const location = useLocation()
+  const scrollContainerRef = useRef<HTMLDivElement>(null)
+  const [highlightedId, setHighlightedId] = useState<string | null>(null)
+
+  const isAdmin = user?.role === 'admin'
 
   // Data state
   const [credentials, setCredentials] = useState<Credential[]>([])
@@ -33,19 +50,45 @@ export function SecureResources() {
   const [stats, setStats] = useState<SecureResourceStats | null>(null)
   const [loading, setLoading] = useState(true)
 
+  // Categories state
+  const [credentialCategories, setCredentialCategories] = useState<string[]>(DEFAULT_CREDENTIAL_CATEGORIES)
+  const [referenceCategories, setReferenceCategories] = useState<string[]>(DEFAULT_REFERENCE_CATEGORIES)
+
   // UI state
   const [tabMode, setTabMode] = useState<TabMode>('credentials')
   const [showCreateModal, setShowCreateModal] = useState(false)
+  const [showCategoryManager, setShowCategoryManager] = useState(false)
   const [selectedCredential, setSelectedCredential] = useState<Credential | null>(null)
   const [selectedReference, setSelectedReference] = useState<SecureReference | null>(null)
 
   // Filters
   const [searchQuery, setSearchQuery] = useState('')
   const [filterCategory, setFilterCategory] = useState('')
+  const [sortBy, setSortBy] = useState<SortOption>('date-desc')
+
+  // Load categories
+  const loadCategories = useCallback(async () => {
+    try {
+      const credCats = await window.electronAPI.categories.getByType('credential')
+      if (credCats && Array.isArray(credCats) && credCats.length > 0) {
+        setCredentialCategories((credCats as ResourceCategory[]).map(c => c.name))
+      }
+      const refCats = await window.electronAPI.categories.getByType('reference')
+      if (refCats && Array.isArray(refCats) && refCats.length > 0) {
+        setReferenceCategories((refCats as ResourceCategory[]).map(c => c.name))
+      }
+    } catch (err) {
+      console.error('Error loading categories:', err)
+    }
+  }, [])
+
+  useEffect(() => {
+    loadCategories()
+  }, [loadCategories])
 
   const loadCredentials = useCallback(async () => {
     try {
-      const filters: { query?: string; category?: string } = {}
+      const filters: { query?: string; category?: string; isAdmin?: boolean } = { isAdmin }
       if (searchQuery.trim()) filters.query = searchQuery.trim()
       if (filterCategory) filters.category = filterCategory
       const result = await window.electronAPI.credentials.getAll(filters)
@@ -53,11 +96,11 @@ export function SecureResources() {
     } catch (err) {
       console.error('Error loading credentials:', err)
     }
-  }, [searchQuery, filterCategory])
+  }, [searchQuery, filterCategory, isAdmin])
 
   const loadReferences = useCallback(async () => {
     try {
-      const filters: { query?: string; category?: string } = {}
+      const filters: { query?: string; category?: string; isAdmin?: boolean } = { isAdmin }
       if (searchQuery.trim()) filters.query = searchQuery.trim()
       if (filterCategory) filters.category = filterCategory
       const result = await window.electronAPI.secureReferences.getAll(filters)
@@ -65,16 +108,16 @@ export function SecureResources() {
     } catch (err) {
       console.error('Error loading references:', err)
     }
-  }, [searchQuery, filterCategory])
+  }, [searchQuery, filterCategory, isAdmin])
 
   const loadStats = useCallback(async () => {
     try {
-      const result = await window.electronAPI.secureReferences.getStats()
+      const result = await window.electronAPI.secureReferences.getStats(isAdmin)
       setStats(result as SecureResourceStats)
     } catch (err) {
       console.error('Error loading stats:', err)
     }
-  }, [])
+  }, [isAdmin])
 
   const loadData = useCallback(async () => {
     setLoading(true)
@@ -107,6 +150,40 @@ export function SecureResources() {
     setFilterCategory('')
     setSearchQuery('')
   }, [tabMode])
+
+  // Handle search highlight from global search
+  useEffect(() => {
+    const state = location.state as any
+    if ((state?.highlightType === 'credential' || state?.highlightType === 'secure_reference') && state?.highlightId) {
+      const itemId = state.highlightId
+      const itemType = state.highlightType
+
+      // Switch to the correct tab
+      if (itemType === 'credential' && tabMode !== 'credentials') {
+        setTabMode('credentials')
+      } else if (itemType === 'secure_reference' && tabMode !== 'references') {
+        setTabMode('references')
+      }
+
+      setHighlightedId(itemId)
+
+      // Scroll to the item after a short delay
+      setTimeout(() => {
+        const element = document.getElementById(`resource-${itemId}`)
+        if (element) {
+          element.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        }
+      }, 300)
+
+      // Clear highlight after 5 seconds
+      const timer = setTimeout(() => setHighlightedId(null), 5000)
+
+      // Clear the location state
+      window.history.replaceState({}, document.title)
+
+      return () => clearTimeout(timer)
+    }
+  }, [location.state])
 
   const handleCreateCredential = async (data: CreateCredentialData) => {
     if (!user) return
@@ -158,13 +235,59 @@ export function SecureResources() {
     }
   }
 
+  const handleCategoriesUpdated = () => {
+    loadCategories()
+    loadData()
+    loadStats()
+  }
+
   const hasActiveFilters = filterCategory || searchQuery.trim()
   const clearFilters = () => {
     setSearchQuery('')
     setFilterCategory('')
   }
 
-  const categories = tabMode === 'credentials' ? CREDENTIAL_CATEGORIES : REFERENCE_CATEGORIES
+  const categories = tabMode === 'credentials' ? credentialCategories : referenceCategories
+
+  // Sort references
+  const sortedReferences = [...references].sort((a, b) => {
+    switch (sortBy) {
+      case 'date-desc':
+        return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
+      case 'date-asc':
+        return new Date(a.updated_at).getTime() - new Date(b.updated_at).getTime()
+      case 'name-asc':
+        return a.name.localeCompare(b.name)
+      case 'name-desc':
+        return b.name.localeCompare(a.name)
+      case 'color':
+        const colorA = a.color ? COLOR_ORDER[a.color] || 99 : 99
+        const colorB = b.color ? COLOR_ORDER[b.color] || 99 : 99
+        if (colorA !== colorB) return colorA - colorB
+        return a.name.localeCompare(b.name) // Secondary sort by name
+      default:
+        return 0
+    }
+  })
+
+  // Sort credentials
+  const sortedCredentials = [...credentials].sort((a, b) => {
+    switch (sortBy) {
+      case 'date-desc':
+        return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
+      case 'date-asc':
+        return new Date(a.updated_at).getTime() - new Date(b.updated_at).getTime()
+      case 'name-asc':
+        return a.name.localeCompare(b.name)
+      case 'name-desc':
+        return b.name.localeCompare(a.name)
+      case 'color':
+        // Credentials don't have colors, so sort by name
+        return a.name.localeCompare(b.name)
+      default:
+        return 0
+    }
+  })
 
   return (
     <div className="flex-1 flex flex-col">
@@ -177,15 +300,30 @@ export function SecureResources() {
               <h1 className="text-2xl font-bold text-gray-900">Secure Resources</h1>
               <p className="text-sm text-gray-500 mt-1">Manage credentials and reference documents securely</p>
             </div>
-            <button
-              onClick={() => setShowCreateModal(true)}
-              className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 transition-colors"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-              </svg>
-              {tabMode === 'credentials' ? 'New Credential' : 'New Reference'}
-            </button>
+            <div className="flex items-center gap-2">
+              {/* Category Manager Button (Admin only) */}
+              {isAdmin && (
+                <button
+                  onClick={() => setShowCategoryManager(true)}
+                  className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+                  title="Manage Categories"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                  </svg>
+                </button>
+              )}
+              <button
+                onClick={() => setShowCreateModal(true)}
+                className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 transition-colors"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                </svg>
+                {tabMode === 'credentials' ? 'New Credential' : 'New Reference'}
+              </button>
+            </div>
           </div>
 
           {/* Stats cards */}
@@ -280,6 +418,19 @@ export function SecureResources() {
             ))}
           </select>
 
+          {/* Sort */}
+          <select
+            value={sortBy}
+            onChange={(e) => setSortBy(e.target.value as SortOption)}
+            className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+          >
+            <option value="date-desc">Newest First</option>
+            <option value="date-asc">Oldest First</option>
+            <option value="name-asc">Name (A-Z)</option>
+            <option value="name-desc">Name (Z-A)</option>
+            {tabMode === 'references' && <option value="color">By Color</option>}
+          </select>
+
           {hasActiveFilters && (
             <button
               onClick={clearFilters}
@@ -325,12 +476,14 @@ export function SecureResources() {
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {credentials.map((credential) => (
-                <CredentialCard
-                  key={credential.id}
-                  credential={credential}
-                  onClick={() => setSelectedCredential(credential)}
-                />
+              {sortedCredentials.map((credential) => (
+                <div key={credential.id} id={`resource-${credential.id}`}>
+                  <CredentialCard
+                    credential={credential}
+                    onClick={() => setSelectedCredential(credential)}
+                    highlighted={highlightedId === credential.id}
+                  />
+                </div>
               ))}
             </div>
           )
@@ -362,12 +515,14 @@ export function SecureResources() {
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {references.map((reference) => (
-                <ReferenceCard
-                  key={reference.id}
-                  reference={reference}
-                  onClick={() => setSelectedReference(reference)}
-                />
+              {sortedReferences.map((reference) => (
+                <div key={reference.id} id={`resource-${reference.id}`}>
+                  <ReferenceCard
+                    reference={reference}
+                    onClick={() => setSelectedReference(reference)}
+                    highlighted={highlightedId === reference.id}
+                  />
+                </div>
               ))}
             </div>
           )
@@ -400,6 +555,22 @@ export function SecureResources() {
           <ReferenceForm
             onSubmit={(data) => handleCreateReference(data as CreateReferenceData)}
             onCancel={() => setShowCreateModal(false)}
+          />
+        </Modal>
+      )}
+
+      {/* Category Manager Modal */}
+      {showCategoryManager && (
+        <Modal
+          title={`Manage ${tabMode === 'credentials' ? 'Credential' : 'Reference'} Categories`}
+          onClose={() => setShowCategoryManager(false)}
+          isOpen={showCategoryManager}
+          size="md"
+        >
+          <CategoryManager
+            type={tabMode === 'credentials' ? 'credential' : 'reference'}
+            onClose={() => setShowCategoryManager(false)}
+            onCategoriesUpdated={handleCategoriesUpdated}
           />
         </Modal>
       )}

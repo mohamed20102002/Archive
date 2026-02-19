@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react'
-import { format, parseISO } from 'date-fns'
 import { useAuth } from '../../context/AuthContext'
 import { useToast } from '../../context/ToastContext'
 import { useConfirm } from '../common/ConfirmDialog'
+import { useSettings } from '../../context/SettingsContext'
+import { useUndoRedo } from '../../context/UndoRedoContext'
 import { MOMForm } from './MOMForm'
 import { MOMActions } from './MOMActions'
 import { MOMDrafts } from './MOMDrafts'
@@ -22,6 +23,8 @@ export function MOMDetail({ mom, onClose, onUpdated }: MOMDetailProps) {
   const { user } = useAuth()
   const toast = useToast()
   const confirm = useConfirm()
+  const { formatDate } = useSettings()
+  const { recordOperation } = useUndoRedo()
   const [currentMom, setCurrentMom] = useState<Mom>(mom)
   const [activeTab, setActiveTab] = useState<DetailTab>('actions')
   const [isEditing, setIsEditing] = useState(false)
@@ -63,8 +66,35 @@ export function MOMDetail({ mom, onClose, onUpdated }: MOMDetailProps) {
   const handleUpdate = async (data: UpdateMomData) => {
     if (!user) return
     try {
+      // Capture before state for undo
+      const beforeData = await window.electronAPI.history.getEntity('mom', currentMom.id)
+
       const result = await window.electronAPI.moms.update(currentMom.id, data, user.id)
       if (result.success) {
+        // Capture after state for undo/redo
+        const afterData = await window.electronAPI.history.getEntity('mom', currentMom.id)
+
+        // Record operation for undo/redo
+        if (beforeData) {
+          recordOperation({
+            operation: 'update',
+            entityType: 'mom',
+            entityId: currentMom.id,
+            description: `Update MOM "${data.title || currentMom.title}"`,
+            beforeState: {
+              entityType: 'mom',
+              entityId: currentMom.id,
+              data: beforeData
+            },
+            afterState: afterData ? {
+              entityType: 'mom',
+              entityId: currentMom.id,
+              data: afterData
+            } : null,
+            userId: user.id
+          })
+        }
+
         setIsEditing(false)
         refreshMom()
         loadHistory()
@@ -125,8 +155,28 @@ export function MOMDetail({ mom, onClose, onUpdated }: MOMDetailProps) {
     })
     if (!confirmed) return
     try {
+      // Capture before state for undo
+      const beforeData = await window.electronAPI.history.getEntity('mom', currentMom.id)
+
       const result = await window.electronAPI.moms.delete(currentMom.id, user.id)
       if (result.success) {
+        // Record operation for undo/redo
+        if (beforeData) {
+          recordOperation({
+            operation: 'delete',
+            entityType: 'mom',
+            entityId: currentMom.id,
+            description: `Delete MOM "${currentMom.mom_id || currentMom.title}"`,
+            beforeState: {
+              entityType: 'mom',
+              entityId: currentMom.id,
+              data: beforeData
+            },
+            afterState: null,
+            userId: user.id
+          })
+        }
+
         onUpdated()
         onClose()
       } else {
@@ -276,7 +326,7 @@ export function MOMDetail({ mom, onClose, onUpdated }: MOMDetailProps) {
         <div>
           <p className="text-xs text-gray-500 uppercase font-medium">Meeting Date</p>
           <p className="text-sm text-gray-700 mt-0.5">
-            {currentMom.meeting_date ? format(parseISO(currentMom.meeting_date), 'MMM d, yyyy') : '—'}
+            {currentMom.meeting_date ? formatDate(currentMom.meeting_date) : '—'}
           </p>
         </div>
         <div>

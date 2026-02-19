@@ -89,10 +89,10 @@ export function BackupRestore() {
       )
 
       if (result.success) {
-        // Reload the entire app so all components pick up the restored data
-        setTimeout(() => {
-          window.location.reload()
-        }, 1500)
+        // Session is already invalidated by the backup service via 'backup:sessionInvalidated' event
+        // The AuthContext listener will handle logout - no need to reload the page
+        // This prevents the annoying double-refresh that clears user's login input
+        toast.success('Restore complete', 'Please log in again to access the restored data')
         return
       } else {
         toast.error(result.error || 'Restore failed')

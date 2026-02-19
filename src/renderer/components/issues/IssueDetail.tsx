@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useCallback } from 'react'
-import { parseISO, differenceInDays, format } from 'date-fns'
+import { parseISO, differenceInDays } from 'date-fns'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { useToast } from '../../context/ToastContext'
+import { useSettings } from '../../context/SettingsContext'
+import { useUndoRedo } from '../../context/UndoRedoContext'
 import { IssueTimeline } from './IssueTimeline'
 import { IssueForm } from './IssueForm'
 import { notifyReminderDataChanged } from '../reminders/ReminderBadge'
@@ -35,6 +37,8 @@ export function IssueDetail({ issue: initialIssue, onClose, onUpdated }: IssueDe
   const { user } = useAuth()
   const toast = useToast()
   const navigate = useNavigate()
+  const { formatDate } = useSettings()
+  const { recordOperation } = useUndoRedo()
   const [issue, setIssue] = useState<Issue>(initialIssue)
   const [history, setHistory] = useState<IssueHistory[]>([])
   const [isEditing, setIsEditing] = useState(false)
@@ -78,8 +82,9 @@ export function IssueDetail({ issue: initialIssue, onClose, onUpdated }: IssueDe
   // Load topics when picker opens
   useEffect(() => {
     if (showRecordPicker && pickerTopics.length === 0) {
-      window.electronAPI.topics.getAll().then((topics) => {
-        setPickerTopics((topics as { id: string; title: string }[]).map(t => ({ id: t.id, title: t.title })))
+      window.electronAPI.topics.getAll({}).then((result) => {
+        const topicsData = (result as { data: { id: string; title: string }[] }).data || result
+        setPickerTopics((topicsData as { id: string; title: string }[]).map(t => ({ id: t.id, title: t.title })))
       }).catch(() => {})
     }
   }, [showRecordPicker, pickerTopics.length])
@@ -119,8 +124,35 @@ export function IssueDetail({ issue: initialIssue, onClose, onUpdated }: IssueDe
     if (!user) return
     setSubmitting(true)
     try {
+      // Capture before state for undo
+      const beforeData = await window.electronAPI.history.getEntity('issue', issue.id)
+
       const result = await window.electronAPI.issues.update(issue.id, data, user.id)
       if (result.success) {
+        // Capture after state for undo/redo
+        const afterData = await window.electronAPI.history.getEntity('issue', issue.id)
+
+        // Record operation for undo/redo
+        if (beforeData) {
+          recordOperation({
+            operation: 'update',
+            entityType: 'issue',
+            entityId: issue.id,
+            description: `Update issue "${(data as UpdateIssueData).title || issue.title}"`,
+            beforeState: {
+              entityType: 'issue',
+              entityId: issue.id,
+              data: beforeData
+            },
+            afterState: afterData ? {
+              entityType: 'issue',
+              entityId: issue.id,
+              data: afterData
+            } : null,
+            userId: user.id
+          })
+        }
+
         setIsEditing(false)
         await loadIssue()
         await loadHistory()
@@ -275,14 +307,14 @@ export function IssueDetail({ issue: initialIssue, onClose, onUpdated }: IssueDe
         <div>
           <span className="text-gray-500">Created:</span>{' '}
           <span className="text-gray-700">
-            {(() => { try { return format(parseISO(issue.created_at), 'MMM d, yyyy h:mm a') } catch { return issue.created_at } })()}
+            {formatDate(issue.created_at, 'withTime')}
           </span>
         </div>
         {issue.reminder_date && (
           <div>
             <span className="text-gray-500">Reminder:</span>{' '}
             <span className={`font-medium ${new Date(issue.reminder_date) < new Date() ? 'text-red-600' : 'text-gray-700'}`}>
-              {(() => { try { return format(parseISO(issue.reminder_date), 'MMM d, yyyy h:mm a') } catch { return issue.reminder_date } })()}
+              {formatDate(issue.reminder_date, 'withTime')}
             </span>
           </div>
         )}
@@ -296,7 +328,7 @@ export function IssueDetail({ issue: initialIssue, onClose, onUpdated }: IssueDe
           <div>
             <span className="text-gray-500">Completed:</span>{' '}
             <span className="text-gray-700">
-              {(() => { try { return format(parseISO(issue.completed_at), 'MMM d, yyyy h:mm a') } catch { return issue.completed_at } })()}
+              {formatDate(issue.completed_at, 'withTime')}
             </span>
           </div>
         )}
@@ -453,7 +485,7 @@ export function IssueDetail({ issue: initialIssue, onClose, onUpdated }: IssueDe
                               <span className="font-medium text-gray-700 truncate">{r.title}</span>
                             </div>
                             <div className="text-[10px] text-gray-400 mt-0.5 ml-[calc(1.5rem+6px)]">
-                              {(() => { try { return format(parseISO(r.created_at), 'd MMM yyyy') } catch { return r.created_at } })()}
+                              {formatDate(r.created_at)}
                             </div>
                           </button>
                         ))}

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { useAuth } from './context/AuthContext'
 import { useSettings } from './context/SettingsContext'
+import { SearchHighlightProvider } from './context/SearchHighlightContext'
 import { MainLayout } from './components/layout/MainLayout'
 import { LoginForm } from './components/auth/LoginForm'
 import { FirstRunSetup } from './components/auth/FirstRunSetup'
@@ -21,7 +22,7 @@ function DefaultRedirect() {
   const { settings, loading } = useSettings()
 
   if (loading) return null
-  return <Navigate to={settings.default_view || '/topics'} replace />
+  return <Navigate to={settings.default_view || '/dashboard'} replace />
 }
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -45,10 +46,38 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>
 }
 
+// Global counter for tracking app mounts (helps debug refresh issues)
+let appMountCount = 0
+
 export function App() {
   const [isFirstRun, setIsFirstRun] = useState<boolean | null>(null)
   const [checkingFirstRun, setCheckingFirstRun] = useState(true)
   const { isAuthenticated, isLoading } = useAuth()
+
+  // Track app mounts and add global error handlers
+  useEffect(() => {
+    appMountCount++
+    console.log(`[App] Mounted (count: ${appMountCount}) at ${new Date().toISOString()}`)
+
+    // Global error handler for uncaught errors
+    const handleError = (event: ErrorEvent) => {
+      console.error('[App] Uncaught error:', event.error, event.message, event.filename, event.lineno)
+    }
+
+    // Global handler for unhandled promise rejections
+    const handleUnhandledRejection = (event: PromiseRejectionEvent) => {
+      console.error('[App] Unhandled promise rejection:', event.reason)
+    }
+
+    window.addEventListener('error', handleError)
+    window.addEventListener('unhandledrejection', handleUnhandledRejection)
+
+    return () => {
+      console.log(`[App] Unmounting (count: ${appMountCount}) at ${new Date().toISOString()}`)
+      window.removeEventListener('error', handleError)
+      window.removeEventListener('unhandledrejection', handleUnhandledRejection)
+    }
+  }, [])
 
   useEffect(() => {
     async function checkFirstRun() {
@@ -118,6 +147,7 @@ export function App() {
 
   return (
     <HashRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+      <SearchHighlightProvider>
       <Routes>
         {/* Public routes */}
         <Route
@@ -142,6 +172,7 @@ export function App() {
         >
           <Route index element={<DefaultRedirect />} />
           {/* Keep-alive routes: rendered in MainLayout, toggled by CSS */}
+          <Route path="dashboard" element={null} />
           <Route path="topics" element={null} />
           <Route path="topics/:topicId" element={<Timeline />} />
           <Route path="issues" element={null} />
@@ -152,6 +183,9 @@ export function App() {
           <Route path="handover" element={null} />
           <Route path="secure-resources" element={null} />
           <Route path="attendance" element={null} />
+          <Route path="calendar" element={null} />
+          <Route path="search" element={null} />
+          <Route path="scheduled-emails" element={null} />
           <Route path="audit" element={null} />
           <Route path="backup" element={null} />
           <Route path="settings" element={null} />
@@ -160,6 +194,7 @@ export function App() {
         {/* Catch all */}
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
+      </SearchHighlightProvider>
     </HashRouter>
   )
 }

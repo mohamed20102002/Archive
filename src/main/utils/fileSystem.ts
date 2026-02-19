@@ -4,8 +4,7 @@ import { app } from 'electron'
 
 /**
  * Get the base path for the application data
- * In development, uses project root
- * In production, uses the directory containing the executable
+ * Simple portable mode - always uses folder next to exe
  */
 export function getBasePath(): string {
   return app.isPackaged

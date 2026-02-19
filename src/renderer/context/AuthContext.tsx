@@ -63,6 +63,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
+  // Listen for session invalidation after backup restore
+  useEffect(() => {
+    const handleSessionInvalidated = () => {
+      console.log('[Auth] Session invalidated after backup restore - forcing re-login')
+      localStorage.removeItem(TOKEN_STORAGE_KEY)
+      localStorage.removeItem(USER_STORAGE_KEY)
+      setToken(null)
+      setUser(null)
+    }
+
+    window.electronAPI.backup.onSessionInvalidated(handleSessionInvalidated)
+
+    return () => {
+      window.electronAPI.backup.offSessionInvalidated()
+    }
+  }, [])
+
   const login = useCallback(async (username: string, password: string): Promise<{ success: boolean; error?: string }> => {
     try {
       const result = await window.electronAPI.auth.login(username, password)

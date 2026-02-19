@@ -11,7 +11,11 @@ const STORAGE_KEYS = {
   selectedFolderId: 'outlook_selected_folder_id'
 }
 
-export function OutlookBrowser() {
+interface OutlookBrowserProps {
+  isActive?: boolean
+}
+
+export function OutlookBrowser({ isActive = false }: OutlookBrowserProps) {
   const [isConnected, setIsConnected] = useState(false)
   const [isConnecting, setIsConnecting] = useState(false)
   const [mailboxes, setMailboxes] = useState<OutlookMailbox[]>([])
@@ -24,6 +28,7 @@ export function OutlookBrowser() {
   const [isLoadingEmailDetails, setIsLoadingEmailDetails] = useState(false)
   const [archivedEmailIds, setArchivedEmailIds] = useState<Set<string>>(new Set())
   const [isRestoring, setIsRestoring] = useState(false)
+  const [hasInitialized, setHasInitialized] = useState(false)
 
   const { success, error, warning } = useToast()
 
@@ -37,8 +42,13 @@ export function OutlookBrowser() {
     }
   }
 
-  // Restore state on mount
+  // Restore state only when active and not yet initialized
   useEffect(() => {
+    // Only initialize when the Outlook page is actually being viewed
+    if (!isActive || hasInitialized) {
+      return
+    }
+
     const initializeAndRestore = async () => {
       const connected = await checkConnection()
       loadArchivedEmailIds()
@@ -52,6 +62,7 @@ export function OutlookBrowser() {
         const savedFolderId = localStorage.getItem(STORAGE_KEYS.selectedFolderId)
         // Keep existing state, user can manually refresh if needed
         console.log('Skipping Outlook refresh after database refresh')
+        setHasInitialized(true)
         return
       }
 
@@ -100,12 +111,15 @@ export function OutlookBrowser() {
           console.error('Error restoring Outlook state:', err)
         } finally {
           setIsRestoring(false)
+          setHasInitialized(true)
         }
+      } else {
+        setHasInitialized(true)
       }
     }
 
     initializeAndRestore()
-  }, [])
+  }, [isActive, hasInitialized])
 
   const checkConnection = async (): Promise<boolean> => {
     try {
@@ -125,6 +139,8 @@ export function OutlookBrowser() {
       if (result.success) {
         setIsConnected(true)
         success('Connected to Outlook', 'You can now browse your emails')
+        // Notify sidebar of connection change
+        window.dispatchEvent(new CustomEvent('outlook-connection-changed'))
         // Load mailboxes
         const data = await window.electronAPI.outlook.getMailboxes()
         setMailboxes(data as OutlookMailbox[])
@@ -150,6 +166,8 @@ export function OutlookBrowser() {
     // Clear saved state
     localStorage.removeItem(STORAGE_KEYS.selectedMailboxId)
     localStorage.removeItem(STORAGE_KEYS.selectedFolderId)
+    // Notify sidebar of connection change
+    window.dispatchEvent(new CustomEvent('outlook-connection-changed'))
     success('Disconnected', 'Outlook connection closed')
   }
 
@@ -297,22 +315,35 @@ export function OutlookBrowser() {
   }
 
   return (
-    <div className="h-full flex flex-col">
+    <div className="h-full flex flex-col p-6">
       {/* Header */}
-      <div className="flex items-center justify-between pb-4 border-b border-gray-200 mb-4">
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2 text-sm text-green-600">
-            <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
-              <circle cx="12" cy="12" r="8" />
-            </svg>
-            <span>Connected to Outlook</span>
+      <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center gap-4">
+          {/* Outlook Icon with Connection Badge */}
+          <div className="relative">
+            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center shadow-lg">
+              <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+              </svg>
+            </div>
+            {/* Connection status dot */}
+            <span className="absolute -bottom-0.5 -right-0.5 w-4 h-4 bg-green-500 rounded-full border-2 border-white animate-pulse-slow" />
+          </div>
+          <div>
+            <h1 className="text-xl font-semibold text-gray-900">Outlook Integration</h1>
+            <div className="flex items-center gap-2 mt-0.5">
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                <span className="w-1.5 h-1.5 rounded-full bg-green-500" />
+                Connected
+              </span>
+            </div>
           </div>
         </div>
         <div className="flex items-center gap-2">
           <button
             onClick={handleRefreshOutlook}
             disabled={isRefreshingOutlook}
-            className="btn-secondary text-sm flex items-center gap-1.5"
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-medium transition-colors"
             title="Refresh Outlook data"
           >
             <svg
@@ -327,8 +358,11 @@ export function OutlookBrowser() {
           </button>
           <button
             onClick={handleDisconnect}
-            className="btn-secondary text-sm"
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-red-50 hover:bg-red-100 text-red-600 text-sm font-medium transition-colors"
           >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+            </svg>
             Disconnect
           </button>
         </div>

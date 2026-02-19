@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { format } from 'date-fns'
+import { useSettings } from '../../context/SettingsContext'
 import type { AuditEntry as AuditEntryType } from '../../types'
 
 interface AuditEntryProps {
@@ -230,6 +230,7 @@ function formatDetailsSummary(action: string, details: any): string | null {
 
 export function AuditEntry({ entry }: AuditEntryProps) {
   const [isExpanded, setIsExpanded] = useState(false)
+  const { formatDate } = useSettings()
 
   const details = entry.details ? JSON.parse(entry.details) : null
   const summary = formatDetailsSummary(entry.action, details)
@@ -267,7 +268,7 @@ export function AuditEntry({ entry }: AuditEntryProps) {
             )}
             <span className="text-gray-400">-</span>
             <span className="text-gray-500">
-              {format(new Date(entry.timestamp), 'MMM d, yyyy h:mm:ss a')}
+              {formatDate(entry.timestamp, 'withTime')}
             </span>
           </div>
 

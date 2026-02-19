@@ -11,3 +11,4 @@ nul
 models/
 release/
 *.txt
+.env

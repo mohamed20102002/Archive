@@ -1,11 +1,14 @@
 import React, { useState } from 'react'
-import { format, parseISO } from 'date-fns'
+import { useSettings } from '../../context/SettingsContext'
+import { PinButton } from '../common/PinButton'
 import type { Mom } from '../../types'
 
 interface MOMCardProps {
   mom: Mom
   onClick: () => void
   highlighted?: boolean
+  isPinned?: boolean
+  onTogglePin?: () => void
 }
 
 function isOverdue(deadline: string | null): boolean {
@@ -13,8 +16,9 @@ function isOverdue(deadline: string | null): boolean {
   return new Date(deadline) < new Date()
 }
 
-export function MOMCard({ mom, onClick, highlighted }: MOMCardProps) {
+export function MOMCard({ mom, onClick, highlighted, isPinned = false, onTogglePin }: MOMCardProps) {
   const [copied, setCopied] = useState(false)
+  const { formatDate } = useSettings()
 
   const handleCopyId = async (e: React.MouseEvent) => {
     e.stopPropagation()
@@ -35,12 +39,17 @@ export function MOMCard({ mom, onClick, highlighted }: MOMCardProps) {
     <div
       data-mom-id={mom.id}
       onClick={onClick}
-      className={`bg-white rounded-lg border border-gray-200 border-l-4 ${borderColor} p-4 hover:shadow-md transition-all duration-700 cursor-pointer ${highlighted ? 'ring-2 ring-primary-400 bg-primary-50/50' : ''}`}
+      className={`bg-white rounded-lg border border-gray-200 border-l-4 ${borderColor} p-4 hover:shadow-md transition-all duration-700 cursor-pointer group ${highlighted ? 'ring-2 ring-primary-400 bg-primary-50/50' : ''} ${isPinned ? 'ring-2 ring-amber-200 bg-amber-50/30' : ''}`}
     >
       {/* Header */}
       <div className="flex items-start justify-between gap-3 mb-2">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1">
+            {isPinned && (
+              <svg className="w-4 h-4 text-amber-500 flex-shrink-0" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
+              </svg>
+            )}
             {mom.mom_id && (
               <span className="inline-flex px-2 py-0.5 text-xs font-mono font-medium rounded bg-gray-100 text-gray-700 flex-shrink-0">
                 {mom.mom_id}
@@ -54,6 +63,11 @@ export function MOMCard({ mom, onClick, highlighted }: MOMCardProps) {
           </div>
           <h3 className="text-sm font-semibold text-gray-900 line-clamp-2">{mom.title}</h3>
         </div>
+        {onTogglePin && (
+          <span className="opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
+            <PinButton isPinned={isPinned} onToggle={onTogglePin} />
+          </span>
+        )}
       </div>
 
       {/* Meeting date & location */}
@@ -63,7 +77,7 @@ export function MOMCard({ mom, onClick, highlighted }: MOMCardProps) {
             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
             </svg>
-            {format(parseISO(mom.meeting_date), 'MMM d, yyyy')}
+            {formatDate(mom.meeting_date)}
           </span>
         )}
         {mom.location_name && (

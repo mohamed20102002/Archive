@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { format } from 'date-fns'
+import { useSettings } from '../../context/SettingsContext'
 import { BackupStatusFile } from '../../types'
 
 interface Props {
@@ -20,6 +20,7 @@ export function BackupSection({ onCreateBackup, isOperationInProgress }: Props) 
   const [loading, setLoading] = useState(true)
   const [includeEmails, setIncludeEmails] = useState(false)
   const [emailsSize, setEmailsSize] = useState<{ totalBytes: number; fileCount: number } | null>(null)
+  const { formatDate } = useSettings()
 
   useEffect(() => {
     loadStatus()
@@ -79,13 +80,7 @@ export function BackupSection({ onCreateBackup, isOperationInProgress }: Props) 
           <div className="flex justify-between text-sm">
             <span className="text-gray-500 dark:text-gray-400">Last Backup</span>
             <span className="text-gray-900 dark:text-gray-100 font-medium">
-              {(() => {
-                try {
-                  return format(new Date(status.last_backup_date), 'MMM d, yyyy h:mm a')
-                } catch {
-                  return status.last_backup_date
-                }
-              })()}
+              {formatDate(status.last_backup_date, 'withTime')}
             </span>
           </div>
           <div className="flex justify-between text-sm">

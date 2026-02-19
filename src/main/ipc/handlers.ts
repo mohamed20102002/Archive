@@ -18,9 +18,9 @@ import * as letterAttachmentService from '../services/letter-attachment.service'
 import * as issueService from '../services/issue.service'
 import * as credentialService from '../services/credential.service'
 import * as secureReferenceService from '../services/secure-reference.service'
+import * as secureResourcesCrypto from '../services/secure-resources-crypto'
 import * as auditService from '../database/audit'
 import * as settingsService from '../services/settings.service'
-import * as aiService from '../services/ai.service'
 import * as attendanceService from '../services/attendance.service'
 import * as attendancePdfService from '../services/attendance-pdf.service'
 import * as momService from '../services/mom.service'
@@ -28,6 +28,15 @@ import * as backupService from '../services/backup.service'
 import * as seedService from '../services/seed.service'
 import * as recordAttachmentService from '../services/record-attachment.service'
 import * as loggerService from '../services/logger.service'
+import * as searchService from '../services/search.service'
+import * as scheduledEmailService from '../services/scheduled-email.service'
+import * as categoryService from '../services/category.service'
+import * as dashboardService from '../services/dashboard.service'
+import * as calendarService from '../services/calendar.service'
+import * as tagService from '../services/tag.service'
+import * as exportService from '../services/export.service'
+import * as historyService from '../services/history.service'
+import * as pinService from '../services/pin.service'
 import { refreshDatabase } from '../database/connection'
 
 export function registerIpcHandlers(): void {
@@ -77,14 +86,19 @@ export function registerIpcHandlers(): void {
     return authService.checkUsernameExists(username)
   })
 
+  // ===== Global Search Handler =====
+  ipcMain.handle('search:global', async (_event, query: string, limit?: number) => {
+    return searchService.globalSearch(query, limit)
+  })
+
   // ===== Topic Handlers =====
 
   ipcMain.handle('topics:create', async (_event, data: unknown, userId: string) => {
     return topicService.createTopic(data as topicService.CreateTopicData, userId)
   })
 
-  ipcMain.handle('topics:getAll', async () => {
-    return topicService.getAllTopics()
+  ipcMain.handle('topics:getAll', async (_event, filters?: unknown) => {
+    return topicService.getAllTopics(filters as topicService.TopicFilters | undefined)
   })
 
   ipcMain.handle('topics:getById', async (_event, id: string) => {
@@ -127,6 +141,31 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle('records:search', async (_event, query: string, topicId?: string) => {
     return recordService.searchRecords(query, topicId)
+  })
+
+  // Record link handlers (multiple MOMs/Letters)
+  ipcMain.handle('records:linkMom', async (_event, recordId: string, momId: string, userId: string) => {
+    return recordService.linkMomToRecord(recordId, momId, userId)
+  })
+
+  ipcMain.handle('records:unlinkMom', async (_event, recordId: string, momId: string, userId: string) => {
+    return recordService.unlinkMomFromRecord(recordId, momId, userId)
+  })
+
+  ipcMain.handle('records:linkLetter', async (_event, recordId: string, letterId: string, userId: string) => {
+    return recordService.linkLetterToRecord(recordId, letterId, userId)
+  })
+
+  ipcMain.handle('records:unlinkLetter', async (_event, recordId: string, letterId: string, userId: string) => {
+    return recordService.unlinkLetterFromRecord(recordId, letterId, userId)
+  })
+
+  ipcMain.handle('records:getLinkedMoms', async (_event, recordId: string) => {
+    return recordService.getRecordLinkedMoms(recordId)
+  })
+
+  ipcMain.handle('records:getLinkedLetters', async (_event, recordId: string) => {
+    return recordService.getRecordLinkedLetters(recordId)
   })
 
   // ===== Record Attachment Handlers =====
@@ -323,6 +362,12 @@ export function registerIpcHandlers(): void {
     }
   })
 
+  ipcMain.handle('outlook:composeAttendanceEmail', async (_event, date: string, attachmentPath: string, toEmails: string, ccEmails?: string, subjectTemplate?: string, bodyTemplate?: string) => {
+    console.log('=== outlook:composeAttendanceEmail called ===')
+    console.log('date:', date, 'attachmentPath:', attachmentPath)
+    return outlookService.composeAttendanceReportEmail(date, attachmentPath, toEmails, ccEmails, subjectTemplate, bodyTemplate)
+  })
+
   // ===== Reminder Handlers =====
 
   ipcMain.handle('reminders:create', async (_event, data: unknown, userId: string) => {
@@ -475,8 +520,8 @@ export function registerIpcHandlers(): void {
     return letterService.createLetter(data as letterService.CreateLetterData, userId)
   })
 
-  ipcMain.handle('letters:getAll', async () => {
-    return letterService.getAllLetters()
+  ipcMain.handle('letters:getAll', async (_event, filters?: unknown) => {
+    return letterService.getAllLetters(filters as letterService.LetterFilters | undefined)
   })
 
   ipcMain.handle('letters:getById', async (_event, id: string) => {
@@ -763,6 +808,10 @@ export function registerIpcHandlers(): void {
     return issueService.getIssueHistory(issueId)
   })
 
+  ipcMain.handle('issues:getOpenSummary', async () => {
+    return issueService.getOpenIssuesSummary()
+  })
+
   ipcMain.handle('issues:getStats', async () => {
     return issueService.getIssueStats()
   })
@@ -785,8 +834,8 @@ export function registerIpcHandlers(): void {
     return credentialService.createCredential(data as credentialService.CreateCredentialData, userId)
   })
 
-  ipcMain.handle('credentials:getAll', async (_event, filters?: unknown) => {
-    return credentialService.getAllCredentials(filters as credentialService.CredentialFilters | undefined)
+  ipcMain.handle('credentials:getAll', async (_event, filters?: { query?: string; category?: string; isAdmin?: boolean }) => {
+    return credentialService.getAllCredentials(filters)
   })
 
   ipcMain.handle('credentials:getById', async (_event, id: string) => {
@@ -811,8 +860,8 @@ export function registerIpcHandlers(): void {
     return secureReferenceService.createReference(data as secureReferenceService.CreateReferenceData, userId)
   })
 
-  ipcMain.handle('secureReferences:getAll', async (_event, filters?: unknown) => {
-    return secureReferenceService.getAllReferences(filters as secureReferenceService.ReferenceFilters | undefined)
+  ipcMain.handle('secureReferences:getAll', async (_event, filters?: { query?: string; category?: string; isAdmin?: boolean }) => {
+    return secureReferenceService.getAllReferences(filters)
   })
 
   ipcMain.handle('secureReferences:getById', async (_event, id: string) => {
@@ -844,8 +893,74 @@ export function registerIpcHandlers(): void {
     return secureReferenceService.getReferenceFilePath(fileId)
   })
 
-  ipcMain.handle('secureReferences:getStats', async () => {
-    return credentialService.getSecureResourceStats()
+  ipcMain.handle('secureReferences:getStats', async (_event, isAdmin?: boolean) => {
+    return credentialService.getSecureResourceStats(isAdmin ?? true)
+  })
+
+  // ===== Keyfile Handlers =====
+
+  ipcMain.handle('keyfile:exists', async () => {
+    return secureResourcesCrypto.keyfileExists()
+  })
+
+  ipcMain.handle('keyfile:export', async () => {
+    const { dialog } = await import('electron')
+    const result = await dialog.showSaveDialog({
+      title: 'Export Encryption Keyfile',
+      defaultPath: 'keyfile_backup.key',
+      filters: [{ name: 'Keyfile', extensions: ['key'] }]
+    })
+
+    if (result.canceled || !result.filePath) {
+      return { success: false, error: 'Export cancelled' }
+    }
+
+    return secureResourcesCrypto.exportKeyfile(result.filePath)
+  })
+
+  ipcMain.handle('keyfile:import', async () => {
+    const { dialog } = await import('electron')
+    const result = await dialog.showOpenDialog({
+      title: 'Import Encryption Keyfile',
+      filters: [{ name: 'Keyfile', extensions: ['key'] }],
+      properties: ['openFile']
+    })
+
+    if (result.canceled || result.filePaths.length === 0) {
+      return { success: false, error: 'Import cancelled' }
+    }
+
+    return secureResourcesCrypto.importKeyfile(result.filePaths[0])
+  })
+
+  // ===== Resource Category Handlers =====
+
+  ipcMain.handle('categories:getAll', async () => {
+    return categoryService.getAllCategories()
+  })
+
+  ipcMain.handle('categories:getByType', async (_event, type: 'credential' | 'reference') => {
+    return categoryService.getCategories(type)
+  })
+
+  ipcMain.handle('categories:getById', async (_event, id: string) => {
+    return categoryService.getCategoryById(id)
+  })
+
+  ipcMain.handle('categories:create', async (_event, data: categoryService.CreateCategoryData, userId: string) => {
+    return categoryService.createCategory(data, userId)
+  })
+
+  ipcMain.handle('categories:update', async (_event, id: string, data: categoryService.UpdateCategoryData, userId: string) => {
+    return categoryService.updateCategory(id, data, userId)
+  })
+
+  ipcMain.handle('categories:delete', async (_event, id: string, reassignTo: string, userId: string) => {
+    return categoryService.deleteCategory(id, reassignTo, userId)
+  })
+
+  ipcMain.handle('categories:reorder', async (_event, ids: string[], userId: string) => {
+    return categoryService.reorderCategories(ids, userId)
   })
 
   // ===== Settings Handlers =====
@@ -864,20 +979,6 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle('settings:updateAll', async (_event, settings: Record<string, string>, userId: string) => {
     return settingsService.updateSettings(settings, userId)
-  })
-
-  // ===== AI Handlers =====
-
-  ipcMain.handle('ai:getStatus', async () => {
-    return aiService.getModelStatus()
-  })
-
-  ipcMain.handle('ai:summarize', async (_event, topicId: string, mode?: string) => {
-    return aiService.summarizeTopic(topicId, (mode as any) || 'full')
-  })
-
-  ipcMain.handle('ai:dispose', async () => {
-    aiService.disposeModel()
   })
 
   // ===== Attendance Handlers =====
@@ -908,6 +1009,10 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle('attendance:deleteEntry', async (_event, entryId: string, userId: string) => {
     return attendanceService.deleteEntry(entryId, userId)
+  })
+
+  ipcMain.handle('attendance:deleteBulkEntries', async (_event, shiftId: string, entryDate: string, userId: string) => {
+    return attendanceService.deleteBulkEntries(shiftId, entryDate, userId)
   })
 
   ipcMain.handle('attendance:getEntry', async (_event, userId: string, entryDate: string) => {
@@ -1002,6 +1107,27 @@ export function registerIpcHandlers(): void {
 
     fs.writeFileSync(dialogResult.filePath, result.buffer)
     return { success: true, filePath: dialogResult.filePath }
+  })
+
+  // Department Report PDF export - saves directly to archive folder
+  ipcMain.handle('attendance:exportDepartmentReportDialog', async (_event, date: string, userId: string) => {
+    const result = await attendancePdfService.exportDepartmentReportPdf(date, userId)
+    if (!result.success) {
+      return { success: false, error: result.error || 'Failed to generate PDF' }
+    }
+
+    // Get the archive path where it was saved
+    const filePath = attendancePdfService.getDepartmentReportPath(date)
+    return { success: true, filePath }
+  })
+
+  // Department Report Archive handlers
+  ipcMain.handle('attendance:getDepartmentReportInfo', (_event, date: string) => {
+    return attendancePdfService.getDepartmentReportInfo(date)
+  })
+
+  ipcMain.handle('attendance:openDepartmentReport', (_event, date: string) => {
+    return attendancePdfService.openDepartmentReport(date)
   })
 
   // ===== MOM Location Handlers =====
@@ -1361,9 +1487,15 @@ export function registerIpcHandlers(): void {
     return backupService.getBackupStatus()
   })
 
+  ipcMain.handle('backup:checkReminder', async (_event, reminderDays: number) => {
+    return backupService.checkBackupReminder(reminderDays)
+  })
+
   // ===== Database Handlers =====
 
   ipcMain.handle('database:refresh', async () => {
+    console.log('[IPC] database:refresh called from renderer at', new Date().toISOString())
+    console.log('[IPC] database:refresh call stack:', new Error().stack)
     try {
       refreshDatabase()
       return { success: true }
@@ -1396,6 +1528,306 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle('logger:getStats', async () => {
     return loggerService.getLogStats()
+  })
+
+  // One-way log from renderer (for persistent logging across page reloads)
+  ipcMain.on('logger:log', (_event, level: string, message: string) => {
+    const validLevels = ['log', 'info', 'warn', 'error'] as const
+    const logLevel = validLevels.includes(level as any) ? (level as any) : 'log'
+    loggerService.addLog(logLevel, [message])
+  })
+
+  // ===== Dialog Handlers =====
+
+  ipcMain.handle('dialog:showMessage', async (_event, options: {
+    type?: 'none' | 'info' | 'error' | 'question' | 'warning'
+    title?: string
+    message: string
+    detail?: string
+    buttons?: string[]
+  }) => {
+    const win = BrowserWindow.getFocusedWindow()
+    const result = await dialog.showMessageBox(win || undefined as any, {
+      type: options.type || 'info',
+      title: options.title || 'Message',
+      message: options.message,
+      detail: options.detail,
+      buttons: options.buttons || ['OK']
+    })
+    return { response: result.response }
+  })
+
+  // ===== Scheduled Email Handlers =====
+
+  ipcMain.handle('scheduledEmails:create', async (_event, data: unknown, userId: string) => {
+    return scheduledEmailService.createSchedule(data as scheduledEmailService.CreateEmailScheduleInput, userId)
+  })
+
+  ipcMain.handle('scheduledEmails:getAll', async (_event, includeInactive?: boolean) => {
+    return scheduledEmailService.getAllSchedules(includeInactive)
+  })
+
+  ipcMain.handle('scheduledEmails:getById', async (_event, id: string) => {
+    return scheduledEmailService.getScheduleById(id)
+  })
+
+  ipcMain.handle('scheduledEmails:update', async (_event, id: string, data: unknown, userId: string) => {
+    return scheduledEmailService.updateSchedule(id, data as scheduledEmailService.UpdateEmailScheduleInput, userId)
+  })
+
+  ipcMain.handle('scheduledEmails:delete', async (_event, id: string, userId: string) => {
+    return scheduledEmailService.deleteSchedule(id, userId)
+  })
+
+  ipcMain.handle('scheduledEmails:getInstances', async (_event, startDate?: string, endDate?: string, status?: string) => {
+    return scheduledEmailService.getInstances(startDate, endDate, status)
+  })
+
+  ipcMain.handle('scheduledEmails:getTodayInstances', async () => {
+    return scheduledEmailService.getTodayInstances()
+  })
+
+  ipcMain.handle('scheduledEmails:getPendingCounts', async () => {
+    return scheduledEmailService.getPendingCounts()
+  })
+
+  ipcMain.handle('scheduledEmails:generateInstances', async (_event, date: string) => {
+    const dateObj = new Date(date)
+    return scheduledEmailService.generateInstancesForDate(dateObj)
+  })
+
+  ipcMain.handle('scheduledEmails:markSent', async (_event, instanceId: string, userId: string) => {
+    return scheduledEmailService.markInstanceSent(instanceId, userId)
+  })
+
+  ipcMain.handle('scheduledEmails:dismiss', async (_event, instanceId: string, userId: string, notes?: string) => {
+    return scheduledEmailService.dismissInstance(instanceId, userId, notes)
+  })
+
+  ipcMain.handle('scheduledEmails:reset', async (_event, instanceId: string, userId: string) => {
+    return scheduledEmailService.resetInstance(instanceId, userId)
+  })
+
+  ipcMain.handle('scheduledEmails:getInstanceById', async (_event, instanceId: string) => {
+    return scheduledEmailService.getInstanceById(instanceId)
+  })
+
+  ipcMain.handle('scheduledEmails:composeEmail', async (_event, instanceId: string, userId: string) => {
+    return scheduledEmailService.composeEmailForInstance(instanceId, userId)
+  })
+
+  ipcMain.handle('scheduledEmails:getHistory', async (_event, scheduleId: string) => {
+    return scheduledEmailService.getScheduleHistory(scheduleId)
+  })
+
+  ipcMain.handle('scheduledEmails:previewPlaceholders', async (_event, text: string, date: string, language: 'en' | 'ar', userId: string) => {
+    return scheduledEmailService.previewPlaceholders(text, date, language, userId)
+  })
+
+  // ===== Dashboard Handlers =====
+
+  ipcMain.handle('dashboard:getStats', async () => {
+    return dashboardService.getDashboardStats()
+  })
+
+  ipcMain.handle('dashboard:getDiskSpace', async () => {
+    return dashboardService.getDiskSpaceInfo()
+  })
+
+  ipcMain.handle('dashboard:getRecentActivity', async (_event, limit?: number) => {
+    return dashboardService.getRecentActivity(limit)
+  })
+
+  ipcMain.handle('dashboard:getActivityByMonth', async (_event, year: number) => {
+    return dashboardService.getActivityByMonth(year)
+  })
+
+  ipcMain.handle('dashboard:getTopTopics', async (_event, limit?: number) => {
+    return dashboardService.getTopTopics(limit)
+  })
+
+  // ===== Calendar Handlers =====
+
+  ipcMain.handle('calendar:getEvents', async (_event, year: number, month: number) => {
+    return calendarService.getCalendarEvents(year, month)
+  })
+
+  ipcMain.handle('calendar:getEventsForDate', async (_event, date: string) => {
+    return calendarService.getEventsForDate(date)
+  })
+
+  ipcMain.handle('calendar:getUpcoming', async (_event, days?: number) => {
+    return calendarService.getUpcomingEvents(days)
+  })
+
+  // ===== Tag Handlers =====
+
+  ipcMain.handle('tags:create', async (_event, data: unknown, userId: string) => {
+    return tagService.createTag(data as tagService.CreateTagData, userId)
+  })
+
+  ipcMain.handle('tags:getAll', async () => {
+    return tagService.getAllTags()
+  })
+
+  ipcMain.handle('tags:getById', async (_event, id: string) => {
+    return tagService.getTagById(id)
+  })
+
+  ipcMain.handle('tags:update', async (_event, id: string, data: unknown, userId: string) => {
+    return tagService.updateTag(id, data as tagService.UpdateTagData, userId)
+  })
+
+  ipcMain.handle('tags:delete', async (_event, id: string, userId: string) => {
+    return tagService.deleteTag(id, userId)
+  })
+
+  // Record tags
+  ipcMain.handle('tags:getRecordTags', async (_event, recordId: string) => {
+    return tagService.getRecordTags(recordId)
+  })
+
+  ipcMain.handle('tags:setRecordTags', async (_event, recordId: string, tagIds: string[], userId: string) => {
+    return tagService.setRecordTags(recordId, tagIds, userId)
+  })
+
+  // Issue tags
+  ipcMain.handle('tags:getIssueTags', async (_event, issueId: string) => {
+    return tagService.getIssueTags(issueId)
+  })
+
+  ipcMain.handle('tags:setIssueTags', async (_event, issueId: string, tagIds: string[], userId: string) => {
+    return tagService.setIssueTags(issueId, tagIds, userId)
+  })
+
+  // Letter tags
+  ipcMain.handle('tags:getLetterTags', async (_event, letterId: string) => {
+    return tagService.getLetterTags(letterId)
+  })
+
+  ipcMain.handle('tags:setLetterTags', async (_event, letterId: string, tagIds: string[], userId: string) => {
+    return tagService.setLetterTags(letterId, tagIds, userId)
+  })
+
+  // Search by tag
+  ipcMain.handle('tags:getRecordsByTag', async (_event, tagId: string) => {
+    return tagService.getRecordsByTag(tagId)
+  })
+
+  ipcMain.handle('tags:getIssuesByTag', async (_event, tagId: string) => {
+    return tagService.getIssuesByTag(tagId)
+  })
+
+  ipcMain.handle('tags:getLettersByTag', async (_event, tagId: string) => {
+    return tagService.getLettersByTag(tagId)
+  })
+
+  // ===== Advanced Search Handlers =====
+
+  ipcMain.handle('search:advanced', async (_event, filters: unknown) => {
+    return searchService.advancedSearch(filters as searchService.AdvancedSearchFilters)
+  })
+
+  ipcMain.handle('search:createSaved', async (_event, userId: string, name: string, filters: unknown) => {
+    return searchService.createSavedSearch(userId, name, filters as searchService.AdvancedSearchFilters)
+  })
+
+  ipcMain.handle('search:getSaved', async (_event, userId: string) => {
+    return searchService.getSavedSearches(userId)
+  })
+
+  ipcMain.handle('search:getSavedById', async (_event, id: string) => {
+    return searchService.getSavedSearchById(id)
+  })
+
+  ipcMain.handle('search:updateSaved', async (_event, id: string, name: string, filters: unknown) => {
+    return searchService.updateSavedSearch(id, name, filters as searchService.AdvancedSearchFilters)
+  })
+
+  ipcMain.handle('search:deleteSaved', async (_event, id: string) => {
+    return searchService.deleteSavedSearch(id)
+  })
+
+  // ===== Export Handlers =====
+
+  ipcMain.handle('export:topics', async () => {
+    return exportService.exportTopics()
+  })
+
+  ipcMain.handle('export:letters', async () => {
+    return exportService.exportLetters()
+  })
+
+  ipcMain.handle('export:moms', async () => {
+    return exportService.exportMOMs()
+  })
+
+  ipcMain.handle('export:issues', async () => {
+    return exportService.exportIssues()
+  })
+
+  ipcMain.handle('export:attendance', async (_event, year: number, month?: number) => {
+    return exportService.exportAttendance(year, month)
+  })
+
+  ipcMain.handle('export:searchResults', async (_event, results: any[]) => {
+    return exportService.exportSearchResults(results)
+  })
+
+  ipcMain.handle('export:recordsByTopic', async (_event, topicId: string) => {
+    return exportService.exportRecordsByTopic(topicId)
+  })
+
+  ipcMain.handle('export:customData', async (_event, data: any[], sheetName: string, filename: string) => {
+    return exportService.exportCustomData(data, sheetName, filename)
+  })
+
+  // ===== History (Undo/Redo) Handlers =====
+
+  ipcMain.handle('history:undoCreate', async (_event, entityType: historyService.EntityType, entityId: string, userId: string) => {
+    return historyService.undoCreate(entityType, entityId, userId)
+  })
+
+  ipcMain.handle('history:undoUpdate', async (_event, entityType: historyService.EntityType, entityId: string, previousData: Record<string, unknown>, userId: string) => {
+    return historyService.undoUpdate(entityType, entityId, previousData, userId)
+  })
+
+  ipcMain.handle('history:undoDelete', async (_event, entityType: historyService.EntityType, entityId: string, userId: string) => {
+    return historyService.undoDelete(entityType, entityId, userId)
+  })
+
+  ipcMain.handle('history:redoCreate', async (_event, entityType: historyService.EntityType, entityId: string, userId: string) => {
+    return historyService.redoCreate(entityType, entityId, userId)
+  })
+
+  ipcMain.handle('history:redoUpdate', async (_event, entityType: historyService.EntityType, entityId: string, afterData: Record<string, unknown>, userId: string) => {
+    return historyService.redoUpdate(entityType, entityId, afterData, userId)
+  })
+
+  ipcMain.handle('history:redoDelete', async (_event, entityType: historyService.EntityType, entityId: string, userId: string) => {
+    return historyService.redoDelete(entityType, entityId, userId)
+  })
+
+  ipcMain.handle('history:getEntity', async (_event, entityType: historyService.EntityType, entityId: string) => {
+    return historyService.getEntityById(entityType, entityId)
+  })
+
+  // ===== Pin Handlers =====
+
+  ipcMain.handle('pins:toggle', async (_event, entityType: pinService.PinnableEntityType, entityId: string, userId: string) => {
+    return pinService.togglePin(entityType, entityId, userId)
+  })
+
+  ipcMain.handle('pins:isPinned', async (_event, entityType: pinService.PinnableEntityType, entityId: string, userId: string) => {
+    return pinService.isPinned(entityType, entityId, userId)
+  })
+
+  ipcMain.handle('pins:getPinnedIds', async (_event, entityType: pinService.PinnableEntityType, userId: string) => {
+    return pinService.getPinnedIds(entityType, userId)
+  })
+
+  ipcMain.handle('pins:getPinStatuses', async (_event, entityType: pinService.PinnableEntityType, entityIds: string[], userId: string) => {
+    return pinService.getPinStatuses(entityType, entityIds, userId)
   })
 
   console.log('IPC handlers registered')

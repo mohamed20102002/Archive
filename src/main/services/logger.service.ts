@@ -29,7 +29,7 @@ function formatArgs(args: unknown[]): string {
   }).join(' ')
 }
 
-function addLog(level: LogEntry['level'], args: unknown[]): void {
+export function addLog(level: LogEntry['level'], args: unknown[]): void {
   const entry: LogEntry = {
     timestamp: new Date().toISOString(),
     level,

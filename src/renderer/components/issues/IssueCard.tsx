@@ -1,11 +1,14 @@
 import React from 'react'
 import { parseISO, differenceInDays } from 'date-fns'
+import { PinButton } from '../common/PinButton'
 import type { Issue } from '../../types'
 
 interface IssueCardProps {
   issue: Issue
   onClick: () => void
   highlighted?: boolean
+  isPinned?: boolean
+  onTogglePin?: () => void
 }
 
 const importanceStyles: Record<string, { badge: string; border: string }> = {
@@ -30,25 +33,39 @@ function isReminderOverdue(reminderDate: string | null): boolean {
   return new Date(reminderDate) < new Date()
 }
 
-export function IssueCard({ issue, onClick, highlighted }: IssueCardProps) {
+export function IssueCard({ issue, onClick, highlighted, isPinned = false, onTogglePin }: IssueCardProps) {
   const styles = importanceStyles[issue.importance] || importanceStyles.medium
   const reminderOverdue = issue.status === 'open' && isReminderOverdue(issue.reminder_date)
 
   return (
     <div
       onClick={onClick}
-      className={`bg-white rounded-lg border border-l-4 ${styles.border} p-4 hover:shadow-md transition-all cursor-pointer ${
+      className={`bg-white rounded-lg border border-l-4 ${styles.border} p-4 hover:shadow-md transition-all cursor-pointer group ${
         highlighted
           ? 'border-primary-500 ring-2 ring-primary-500 ring-opacity-50 shadow-lg'
           : 'border-gray-200'
-      }`}
+      } ${isPinned ? 'ring-2 ring-amber-200 bg-amber-50/30' : ''}`}
     >
       {/* Header */}
       <div className="flex items-start justify-between gap-3 mb-2">
-        <h3 className="text-sm font-semibold text-gray-900 line-clamp-2 flex-1">{issue.title}</h3>
-        <span className={`inline-flex px-2 py-0.5 text-xs font-medium rounded-full flex-shrink-0 ${styles.badge}`}>
-          {issue.importance}
-        </span>
+        <div className="flex items-center gap-2 flex-1 min-w-0">
+          {isPinned && (
+            <svg className="w-4 h-4 text-amber-500 flex-shrink-0" fill="currentColor" viewBox="0 0 24 24">
+              <path d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
+            </svg>
+          )}
+          <h3 className="text-sm font-semibold text-gray-900 line-clamp-2">{issue.title}</h3>
+        </div>
+        <div className="flex items-center gap-2 flex-shrink-0">
+          {onTogglePin && (
+            <span className="opacity-0 group-hover:opacity-100 transition-opacity">
+              <PinButton isPinned={isPinned} onToggle={onTogglePin} />
+            </span>
+          )}
+          <span className={`inline-flex px-2 py-0.5 text-xs font-medium rounded-full ${styles.badge}`}>
+            {issue.importance}
+          </span>
+        </div>
       </div>
 
       {/* Description preview */}

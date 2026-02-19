@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { format } from 'date-fns'
+import { useSettings } from '../../context/SettingsContext'
 import { BackupComparison } from '../../types'
 
 interface Props {
@@ -11,7 +11,7 @@ interface Props {
 const moduleLabels: Record<string, string> = {
   topics: 'Topics',
   records: 'Records',
-  emails: 'Emails',
+  emails: 'Archived Emails (Outlook)',
   letters: 'Letters',
   moms: 'Minutes of Meeting',
   issues: 'Issues',
@@ -21,20 +21,17 @@ const moduleLabels: Record<string, string> = {
   authorities: 'Authorities',
   credentials: 'Credentials',
   secure_references: 'Secure References',
+  secure_reference_files: 'Secure Reference Files',
+  scheduled_emails: 'Scheduled Emails',
   users: 'Users'
 }
 
 export function RestoreComparisonModal({ comparison, onConfirm, onCancel }: Props) {
   const [confirmText, setConfirmText] = useState('')
+  const { formatDate } = useSettings()
   const isConfirmValid = confirmText === 'CONFIRM'
 
-  const backupDate = (() => {
-    try {
-      return format(new Date(comparison.backup.backup_date), 'MMM d, yyyy h:mm a')
-    } catch {
-      return comparison.backup.backup_date
-    }
-  })()
+  const backupDate = formatDate(comparison.backup.backup_date, 'withTime')
 
   return (
     <div className="fixed inset-0 z-[90] bg-black/50 flex items-center justify-center">

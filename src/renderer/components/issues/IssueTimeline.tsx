@@ -1,9 +1,11 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
-import { format, parseISO } from 'date-fns'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { useToast } from '../../context/ToastContext'
+import { useSettings } from '../../context/SettingsContext'
 import type { IssueHistory, IssueHistoryAction, CommentEdit } from '../../types'
+
+type HistoryLayout = 'timeline' | 'compact'
 
 interface IssueTimelineProps {
   history: IssueHistory[]
@@ -112,20 +114,29 @@ function formatFieldName(fieldName: string | null): string {
   }
 }
 
-function formatTimestamp(dateStr: string): string {
-  try {
-    return format(parseISO(dateStr), 'MMM d, yyyy h:mm a')
-  } catch {
-    return dateStr
-  }
-}
-
 type LinkSearchResult = { id: string; title: string; topic_title: string; topic_id: string; type: string; subcategory_title: string | null; created_at: string }
 
 export function IssueTimeline({ history, onHistoryChanged }: IssueTimelineProps) {
   const navigate = useNavigate()
   const { user } = useAuth()
   const toast = useToast()
+  const { formatDate } = useSettings()
+
+  // Layout toggle - persisted in localStorage
+  const [layout, setLayout] = useState<HistoryLayout>(() => {
+    const saved = localStorage.getItem('issueHistoryLayout')
+    return (saved === 'compact' || saved === 'timeline') ? saved : 'timeline'
+  })
+
+  const toggleLayout = () => {
+    const newLayout = layout === 'timeline' ? 'compact' : 'timeline'
+    setLayout(newLayout)
+    localStorage.setItem('issueHistoryLayout', newLayout)
+  }
+
+  const formatTimestamp = (dateStr: string): string => {
+    return formatDate(dateStr, 'withTime')
+  }
 
   // Edit mode state
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -303,13 +314,256 @@ export function IssueTimeline({ history, onHistoryChanged }: IssueTimelineProps)
 
   const isCommentEntry = (action: string) => action === 'comment' || action === 'closure_note'
 
-  return (
-    <div className="relative">
-      {/* Vertical connector line */}
-      <div className="absolute left-5 top-6 bottom-6 w-0.5 bg-gray-200" />
+  // Layout toggle button component
+  const LayoutToggle = () => (
+    <div className="flex items-center justify-end mb-3">
+      <button
+        onClick={toggleLayout}
+        className="inline-flex items-center gap-1.5 px-2 py-1 text-xs text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded transition-colors"
+        title={`Switch to ${layout === 'timeline' ? 'compact' : 'timeline'} view`}
+      >
+        {layout === 'timeline' ? (
+          <>
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h7" />
+            </svg>
+            Compact
+          </>
+        ) : (
+          <>
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            Timeline
+          </>
+        )}
+      </button>
+    </div>
+  )
 
-      <div className="space-y-4">
-        {history.map((entry) => {
+  // Compact view - cleaner chat-like layout
+  if (layout === 'compact') {
+    return (
+      <div>
+        <LayoutToggle />
+        <div className="space-y-2">
+          {history.map((entry) => {
+            const isEditing = editingId === entry.id
+            const isAddingLinks = addingLinksId === entry.id
+            const existingLinkIds = new Set(entry.linked_records?.map(lr => lr.record_id) || [])
+
+            return (
+              <div key={entry.id} className="group/entry">
+                {/* Non-comment entries - minimal inline style */}
+                {!isCommentEntry(entry.action) && (
+                  <div className="flex items-center gap-2 py-1.5 px-2 text-xs text-gray-500 bg-gray-50/50 rounded">
+                    <span className="font-medium text-gray-700">{entry.creator_name || 'System'}</span>
+                    <span>{getActionDescription(entry)}</span>
+                    {entry.action === 'field_edit' && entry.field_name !== 'description' && (
+                      <span className="text-gray-400">
+                        (<span className="line-through">{entry.old_value || 'empty'}</span> → {entry.new_value || 'empty'})
+                      </span>
+                    )}
+                    <span className="text-gray-400 ml-auto">{formatTimestamp(entry.created_at)}</span>
+                  </div>
+                )}
+
+                {/* Comment entries - chat bubble style */}
+                {isCommentEntry(entry.action) && (
+                  <div className="rounded-lg border border-gray-100 bg-white shadow-sm overflow-hidden">
+                    {/* Header */}
+                    <div className="flex items-center justify-between px-3 py-2 bg-gray-50 border-b border-gray-100">
+                      <div className="flex items-center gap-2">
+                        <div className="w-6 h-6 rounded-full bg-primary-100 flex items-center justify-center">
+                          <span className="text-xs font-medium text-primary-700">
+                            {(entry.creator_name || 'U')[0].toUpperCase()}
+                          </span>
+                        </div>
+                        <span className="text-sm font-medium text-gray-900">{entry.creator_name || 'Unknown'}</span>
+                        <span className="text-xs text-gray-400">{formatTimestamp(entry.created_at)}</span>
+                        {(entry.edit_count ?? 0) > 0 && (
+                          <button
+                            onClick={() => openEditHistory(entry.id)}
+                            className="text-xs text-gray-400 hover:text-gray-600"
+                          >
+                            (edited)
+                          </button>
+                        )}
+                      </div>
+                      {!isEditing && !isAddingLinks && (
+                        <div className="flex items-center gap-1 opacity-0 group-hover/entry:opacity-100 transition-opacity">
+                          <button
+                            onClick={() => startEdit(entry)}
+                            className="p-1 rounded text-gray-400 hover:text-blue-600 hover:bg-blue-50"
+                            title="Edit"
+                          >
+                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                            </svg>
+                          </button>
+                          <button
+                            onClick={() => startAddLinks(entry.id)}
+                            className="p-1 rounded text-gray-400 hover:text-blue-600 hover:bg-blue-50"
+                            title="Link records"
+                          >
+                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+                            </svg>
+                          </button>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Comment body */}
+                    <div className="px-3 py-2">
+                      {isEditing ? (
+                        <div className="space-y-2">
+                          <textarea
+                            value={editText}
+                            onChange={(e) => setEditText(e.target.value)}
+                            onKeyDown={handleEditKeyDown}
+                            rows={3}
+                            className="w-full px-3 py-2 border border-blue-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 resize-none"
+                            autoFocus
+                          />
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={saveEdit}
+                              disabled={editSubmitting || !editText.trim()}
+                              className="px-3 py-1 text-xs font-medium text-white bg-blue-600 rounded hover:bg-blue-700 disabled:opacity-50"
+                            >
+                              {editSubmitting ? 'Saving...' : 'Save'}
+                            </button>
+                            <button onClick={cancelEdit} className="px-3 py-1 text-xs text-gray-600 hover:text-gray-800">
+                              Cancel
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <p className="text-sm text-gray-700 whitespace-pre-wrap">{entry.comment}</p>
+                      )}
+                    </div>
+
+                    {/* Linked records */}
+                    {entry.linked_records && entry.linked_records.length > 0 && (
+                      <div className="px-3 py-2 bg-gray-50 border-t border-gray-100">
+                        <div className="flex flex-wrap gap-1.5">
+                          {entry.linked_records.map(lr => (
+                            lr.deleted_reason ? (
+                              <span
+                                key={lr.record_id}
+                                className="inline-flex items-center gap-1 px-2 py-0.5 bg-gray-100 text-gray-400 rounded text-xs line-through"
+                              >
+                                {lr.record_title || 'Deleted'}
+                              </span>
+                            ) : (
+                              <button
+                                key={lr.record_id}
+                                onClick={() => lr.topic_id && navigate(`/topics/${lr.topic_id}?recordId=${lr.record_id}`)}
+                                className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-50 text-blue-700 rounded text-xs hover:bg-blue-100"
+                              >
+                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+                                </svg>
+                                {lr.topic_title} / {lr.record_title}
+                              </button>
+                            )
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Add links UI */}
+                    {isAddingLinks && (
+                      <div className="px-3 py-2 bg-blue-50 border-t border-blue-100 space-y-2">
+                        {pendingLinks.length > 0 && (
+                          <div className="flex flex-wrap gap-1.5">
+                            {pendingLinks.map(r => (
+                              <span key={r.id} className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-100 text-blue-700 rounded text-xs">
+                                {r.topic_title}: {r.title}
+                                <button onClick={() => setPendingLinks(prev => prev.filter(l => l.id !== r.id))} className="text-blue-400 hover:text-blue-600">
+                                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                                </button>
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                        <div className="relative">
+                          <input
+                            type="text"
+                            value={linkSearch}
+                            onChange={(e) => setLinkSearch(e.target.value)}
+                            placeholder="Search records..."
+                            className="w-full px-3 py-1.5 border border-blue-300 rounded text-xs focus:outline-none focus:ring-2 focus:ring-blue-400 bg-white"
+                            autoFocus
+                          />
+                          {linkResults.length > 0 && (
+                            <div className="absolute z-20 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-44 overflow-auto">
+                              {linkResults.filter(r => !existingLinkIds.has(r.id) && !pendingLinks.some(p => p.id === r.id)).map(r => (
+                                <button
+                                  key={r.id}
+                                  onClick={() => { setPendingLinks(prev => [...prev, r]); setLinkSearch(''); setLinkResults([]) }}
+                                  className="w-full text-left px-3 py-2 text-xs hover:bg-gray-50"
+                                >
+                                  <span className="text-gray-400">{r.topic_title} /</span> {r.title}
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={saveLinks}
+                            disabled={linkSubmitting || pendingLinks.length === 0}
+                            className="px-3 py-1 text-xs font-medium text-white bg-blue-600 rounded hover:bg-blue-700 disabled:opacity-50"
+                          >
+                            {linkSubmitting ? 'Saving...' : `Link ${pendingLinks.length}`}
+                          </button>
+                          <button onClick={cancelAddLinks} className="px-3 py-1 text-xs text-gray-600">Cancel</button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Edit history popover */}
+                {editHistoryId === entry.id && (
+                  <div ref={popoverRef} className="mt-1 ml-8 w-80 max-h-64 overflow-auto bg-white border border-gray-200 rounded-lg shadow-lg z-30">
+                    <div className="px-3 py-2 border-b border-gray-100 text-xs font-medium text-gray-700">Edit History</div>
+                    {editHistoryLoading ? (
+                      <div className="px-3 py-4 text-xs text-gray-400 text-center">Loading...</div>
+                    ) : (
+                      <div className="divide-y divide-gray-100">
+                        {(editHistoryCache[entry.id] || []).map(edit => (
+                          <div key={edit.id} className="px-3 py-2">
+                            <div className="text-[11px] text-gray-500">
+                              <span className="font-medium text-gray-700">{edit.editor_name || 'Unknown'}</span> - {formatTimestamp(edit.edited_at)}
+                            </div>
+                            <div className="mt-1 text-xs text-gray-500 bg-gray-50 rounded px-2 py-1.5 whitespace-pre-wrap">{edit.old_comment}</div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      </div>
+    )
+  }
+
+  // Timeline view - original layout
+  return (
+    <div>
+      <LayoutToggle />
+      <div className="relative">
+        {/* Vertical connector line */}
+        <div className="absolute left-5 top-6 bottom-6 w-0.5 bg-gray-200" />
+
+        <div className="space-y-4">
+          {history.map((entry) => {
           const isEditing = editingId === entry.id
           const isAddingLinks = addingLinksId === entry.id
           const existingLinkIds = new Set(entry.linked_records?.map(lr => lr.record_id) || [])
@@ -555,7 +809,8 @@ export function IssueTimeline({ history, onHistoryChanged }: IssueTimelineProps)
             </div>
           </div>
           )
-        })}
+          })}
+        </div>
       </div>
     </div>
   )

@@ -8,6 +8,20 @@ import { getUsername } from './auth.service'
 import { getTopicById } from './topic.service'
 import { getAttachmentsByRecordId, deleteAttachment } from './record-attachment.service'
 
+export interface LinkedMomInfo {
+  id: string
+  mom_id: string
+  title: string
+  deleted?: boolean
+}
+
+export interface LinkedLetterInfo {
+  id: string
+  reference_number: string
+  subject: string
+  deleted?: boolean
+}
+
 export interface Record {
   id: string
   topic_id: string
@@ -16,6 +30,9 @@ export interface Record {
   title: string
   content: string | null
   email_id: string | null
+  linked_mom_id: string | null
+  linked_letter_id: string | null
+  record_date: string
   created_by: string
   created_at: string
   updated_at: string
@@ -23,6 +40,12 @@ export interface Record {
   creator_name?: string
   email_subject?: string
   subcategory_title?: string
+  // Legacy single link (for backwards compatibility)
+  linked_mom?: LinkedMomInfo
+  linked_letter?: LinkedLetterInfo
+  // New multiple links
+  linked_moms?: LinkedMomInfo[]
+  linked_letters?: LinkedLetterInfo[]
 }
 
 export interface CreateRecordData {
@@ -32,6 +55,9 @@ export interface CreateRecordData {
   title: string
   content?: string
   email_id?: string
+  linked_mom_id?: string
+  linked_letter_id?: string
+  record_date?: string
 }
 
 export interface UpdateRecordData {
@@ -39,6 +65,9 @@ export interface UpdateRecordData {
   content?: string
   type?: string
   subcategory_id?: string | null
+  linked_mom_id?: string | null
+  linked_letter_id?: string | null
+  record_date?: string
 }
 
 export function createRecord(
@@ -63,11 +92,13 @@ export function createRecord(
 
   const id = generateId()
   const now = new Date().toISOString()
+  // record_date defaults to today if not provided
+  const recordDate = data.record_date || now.split('T')[0]
 
   try {
     db.prepare(`
-      INSERT INTO records (id, topic_id, subcategory_id, type, title, content, email_id, created_by, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO records (id, topic_id, subcategory_id, type, title, content, email_id, linked_mom_id, linked_letter_id, record_date, created_by, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       id,
       data.topic_id,
@@ -76,6 +107,9 @@ export function createRecord(
       data.title.trim(),
       data.content?.trim() || null,
       data.email_id || null,
+      data.linked_mom_id?.trim() || null,
+      data.linked_letter_id?.trim() || null,
+      recordDate,
       userId,
       now,
       now
@@ -92,6 +126,9 @@ export function createRecord(
       title: data.title.trim(),
       content: data.content?.trim() || null,
       email_id: data.email_id || null,
+      linked_mom_id: data.linked_mom_id?.trim() || null,
+      linked_letter_id: data.linked_letter_id?.trim() || null,
+      record_date: recordDate,
       created_by: userId,
       created_at: now,
       updated_at: now,
@@ -119,6 +156,44 @@ export function createRecord(
     console.error('Error creating record:', error)
     return { success: false, error: 'Failed to create record' }
   }
+}
+
+// Helper function to get linked MOMs for a record
+function getLinkedMomsForRecord(recordId: string): LinkedMomInfo[] {
+  const db = getDatabase()
+  const rows = db.prepare(`
+    SELECT m.id, m.mom_id, m.title, m.deleted_at
+    FROM record_linked_moms rlm
+    JOIN moms m ON rlm.mom_id = m.id
+    WHERE rlm.record_id = ?
+    ORDER BY rlm.created_at ASC
+  `).all(recordId) as { id: string; mom_id: string; title: string; deleted_at: string | null }[]
+
+  return rows.map(row => ({
+    id: row.id,
+    mom_id: row.mom_id || '[Deleted]',
+    title: row.title || '[Deleted MOM]',
+    deleted: !!row.deleted_at
+  }))
+}
+
+// Helper function to get linked Letters for a record
+function getLinkedLettersForRecord(recordId: string): LinkedLetterInfo[] {
+  const db = getDatabase()
+  const rows = db.prepare(`
+    SELECT l.id, l.reference_number, l.subject, l.deleted_at
+    FROM record_linked_letters rll
+    JOIN letters l ON rll.letter_id = l.id
+    WHERE rll.record_id = ?
+    ORDER BY rll.created_at ASC
+  `).all(recordId) as { id: string; reference_number: string; subject: string; deleted_at: string | null }[]
+
+  return rows.map(row => ({
+    id: row.id,
+    reference_number: row.reference_number || '[Deleted]',
+    subject: row.subject || '[Deleted Letter]',
+    deleted: !!row.deleted_at
+  }))
 }
 
 export function getRecordsByTopic(topicId: string, subcategoryId?: string | null): Record[] {
@@ -150,17 +225,34 @@ export function getRecordsByTopic(topicId: string, subcategoryId?: string | null
   }
   // If subcategoryId is undefined, get all records for the topic
 
-  sql += ' ORDER BY r.created_at DESC'
+  sql += ' ORDER BY COALESCE(r.record_date, date(r.created_at)) DESC, r.created_at DESC'
 
-  const records = db.prepare(sql).all(...params) as Record[]
+  const rows = db.prepare(sql).all(...params) as any[]
 
-  return records
+  // Transform rows to include nested linked objects
+  return rows.map(row => {
+    const record: Record = { ...row }
+
+    // Get linked MOMs and Letters from junction tables
+    record.linked_moms = getLinkedMomsForRecord(row.id)
+    record.linked_letters = getLinkedLettersForRecord(row.id)
+
+    // For backwards compatibility, also set single link fields if there's at least one link
+    if (record.linked_moms.length > 0) {
+      record.linked_mom = record.linked_moms[0]
+    }
+    if (record.linked_letters.length > 0) {
+      record.linked_letter = record.linked_letters[0]
+    }
+
+    return record
+  })
 }
 
 export function getRecordById(id: string): Record | null {
   const db = getDatabase()
 
-  const record = db.prepare(`
+  const row = db.prepare(`
     SELECT
       r.*,
       u.display_name as creator_name,
@@ -169,9 +261,185 @@ export function getRecordById(id: string): Record | null {
     LEFT JOIN users u ON r.created_by = u.id
     LEFT JOIN emails e ON r.email_id = e.id
     WHERE r.id = ? AND r.deleted_at IS NULL
-  `).get(id) as Record | undefined
+  `).get(id) as any | undefined
 
-  return record || null
+  if (!row) return null
+
+  const record: Record = { ...row }
+
+  // Get linked MOMs and Letters from junction tables
+  record.linked_moms = getLinkedMomsForRecord(id)
+  record.linked_letters = getLinkedLettersForRecord(id)
+
+  // For backwards compatibility, also set single link fields if there's at least one link
+  if (record.linked_moms.length > 0) {
+    record.linked_mom = record.linked_moms[0]
+  }
+  if (record.linked_letters.length > 0) {
+    record.linked_letter = record.linked_letters[0]
+  }
+
+  return record
+}
+
+// Link a MOM to a record
+export function linkMomToRecord(
+  recordId: string,
+  momId: string,
+  userId: string
+): { success: boolean; error?: string } {
+  const db = getDatabase()
+
+  const record = getRecordById(recordId)
+  if (!record) {
+    return { success: false, error: 'Record not found' }
+  }
+
+  // Verify MOM exists
+  const mom = db.prepare('SELECT id, mom_id, title FROM moms WHERE id = ? AND deleted_at IS NULL').get(momId) as { id: string; mom_id: string; title: string } | undefined
+  if (!mom) {
+    return { success: false, error: 'MOM not found' }
+  }
+
+  try {
+    const linkId = generateId()
+    db.prepare(`
+      INSERT OR IGNORE INTO record_linked_moms (id, record_id, mom_id, created_by)
+      VALUES (?, ?, ?, ?)
+    `).run(linkId, recordId, momId, userId)
+
+    logAudit(
+      'RECORD_LINK_MOM',
+      userId,
+      getUsername(userId),
+      'record',
+      recordId,
+      { mom_id: momId, mom_display_id: mom.mom_id, mom_title: mom.title }
+    )
+
+    return { success: true }
+  } catch (error) {
+    console.error('Error linking MOM to record:', error)
+    return { success: false, error: 'Failed to link MOM' }
+  }
+}
+
+// Unlink a MOM from a record
+export function unlinkMomFromRecord(
+  recordId: string,
+  momId: string,
+  userId: string
+): { success: boolean; error?: string } {
+  const db = getDatabase()
+
+  try {
+    const result = db.prepare(`
+      DELETE FROM record_linked_moms WHERE record_id = ? AND mom_id = ?
+    `).run(recordId, momId)
+
+    if (result.changes === 0) {
+      return { success: false, error: 'Link not found' }
+    }
+
+    logAudit(
+      'RECORD_UNLINK_MOM',
+      userId,
+      getUsername(userId),
+      'record',
+      recordId,
+      { mom_id: momId }
+    )
+
+    return { success: true }
+  } catch (error) {
+    console.error('Error unlinking MOM from record:', error)
+    return { success: false, error: 'Failed to unlink MOM' }
+  }
+}
+
+// Link a Letter to a record
+export function linkLetterToRecord(
+  recordId: string,
+  letterId: string,
+  userId: string
+): { success: boolean; error?: string } {
+  const db = getDatabase()
+
+  const record = getRecordById(recordId)
+  if (!record) {
+    return { success: false, error: 'Record not found' }
+  }
+
+  // Verify Letter exists
+  const letter = db.prepare('SELECT id, reference_number, subject FROM letters WHERE id = ? AND deleted_at IS NULL').get(letterId) as { id: string; reference_number: string; subject: string } | undefined
+  if (!letter) {
+    return { success: false, error: 'Letter not found' }
+  }
+
+  try {
+    const linkId = generateId()
+    db.prepare(`
+      INSERT OR IGNORE INTO record_linked_letters (id, record_id, letter_id, created_by)
+      VALUES (?, ?, ?, ?)
+    `).run(linkId, recordId, letterId, userId)
+
+    logAudit(
+      'RECORD_LINK_LETTER',
+      userId,
+      getUsername(userId),
+      'record',
+      recordId,
+      { letter_id: letterId, reference_number: letter.reference_number, subject: letter.subject }
+    )
+
+    return { success: true }
+  } catch (error) {
+    console.error('Error linking Letter to record:', error)
+    return { success: false, error: 'Failed to link Letter' }
+  }
+}
+
+// Unlink a Letter from a record
+export function unlinkLetterFromRecord(
+  recordId: string,
+  letterId: string,
+  userId: string
+): { success: boolean; error?: string } {
+  const db = getDatabase()
+
+  try {
+    const result = db.prepare(`
+      DELETE FROM record_linked_letters WHERE record_id = ? AND letter_id = ?
+    `).run(recordId, letterId)
+
+    if (result.changes === 0) {
+      return { success: false, error: 'Link not found' }
+    }
+
+    logAudit(
+      'RECORD_UNLINK_LETTER',
+      userId,
+      getUsername(userId),
+      'record',
+      recordId,
+      { letter_id: letterId }
+    )
+
+    return { success: true }
+  } catch (error) {
+    console.error('Error unlinking Letter from record:', error)
+    return { success: false, error: 'Failed to unlink Letter' }
+  }
+}
+
+// Get all linked MOMs for a record (public export)
+export function getRecordLinkedMoms(recordId: string): LinkedMomInfo[] {
+  return getLinkedMomsForRecord(recordId)
+}
+
+// Get all linked Letters for a record (public export)
+export function getRecordLinkedLetters(recordId: string): LinkedLetterInfo[] {
+  return getLinkedLettersForRecord(recordId)
 }
 
 export function updateRecord(
@@ -215,6 +483,28 @@ export function updateRecord(
     fields.push('subcategory_id = ?')
     values.push(data.subcategory_id)
     changes.subcategory_id = { from: existing.subcategory_id, to: data.subcategory_id }
+  }
+
+  if (data.linked_mom_id !== undefined) {
+    fields.push('linked_mom_id = ?')
+    // Convert empty string to null to avoid FK constraint violation
+    const momId = data.linked_mom_id?.trim() || null
+    values.push(momId)
+    changes.linked_mom_id = { from: existing.linked_mom_id, to: momId }
+  }
+
+  if (data.linked_letter_id !== undefined) {
+    fields.push('linked_letter_id = ?')
+    // Convert empty string to null to avoid FK constraint violation
+    const letterId = data.linked_letter_id?.trim() || null
+    values.push(letterId)
+    changes.linked_letter_id = { from: existing.linked_letter_id, to: letterId }
+  }
+
+  if (data.record_date !== undefined) {
+    fields.push('record_date = ?')
+    values.push(data.record_date)
+    changes.record_date = { from: existing.record_date, to: data.record_date }
   }
 
   if (fields.length === 0) {
@@ -391,7 +681,7 @@ export function searchRecords(query: string, topicId?: string): Record[] {
     params.push(topicId)
   }
 
-  sql += ' ORDER BY r.created_at DESC'
+  sql += ' ORDER BY COALESCE(r.record_date, date(r.created_at)) DESC, r.created_at DESC'
 
   const records = db.prepare(sql).all(...params) as Record[]
 
@@ -419,7 +709,7 @@ export function getRecordsByType(type: string, topicId?: string): Record[] {
     params.push(topicId)
   }
 
-  sql += ' ORDER BY r.created_at DESC'
+  sql += ' ORDER BY COALESCE(r.record_date, date(r.created_at)) DESC, r.created_at DESC'
 
   const records = db.prepare(sql).all(...params) as Record[]
 
@@ -458,7 +748,7 @@ export function getRecordStats(topicId?: string): {
     FROM records r
     LEFT JOIN users u ON r.created_by = u.id
     ${whereClause}
-    ORDER BY r.created_at DESC
+    ORDER BY COALESCE(r.record_date, date(r.created_at)) DESC, r.created_at DESC
     LIMIT 5
   `).all(...params) as Record[]
 

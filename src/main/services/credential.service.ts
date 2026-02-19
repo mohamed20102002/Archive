@@ -6,6 +6,8 @@ import { encryptPassword, decryptPassword } from './secure-resources-crypto'
 
 // Types
 
+export type ResourceColor = 'red' | 'orange' | 'yellow' | 'green' | 'blue' | 'purple' | null
+
 export interface CredentialView {
   id: string
   system_name: string
@@ -13,6 +15,8 @@ export interface CredentialView {
   category: string
   description: string | null
   notes: string | null
+  admin_only: boolean
+  color: ResourceColor
   created_by: string
   created_at: string
   updated_at: string
@@ -26,6 +30,8 @@ export interface CreateCredentialData {
   category?: string
   description?: string
   notes?: string
+  admin_only?: boolean
+  color?: ResourceColor
 }
 
 export interface UpdateCredentialData {
@@ -35,11 +41,14 @@ export interface UpdateCredentialData {
   category?: string
   description?: string
   notes?: string
+  admin_only?: boolean
+  color?: ResourceColor
 }
 
 export interface CredentialFilters {
   query?: string
   category?: string
+  isAdmin?: boolean
 }
 
 // Create credential
@@ -62,6 +71,8 @@ export function createCredential(
   const id = generateId()
   const now = new Date().toISOString()
   const category = data.category || 'Other'
+  const adminOnly = data.admin_only ? 1 : 0
+  const color = data.color || null
 
   try {
     const { encrypted, iv, tag } = encryptPassword(data.password)
@@ -69,8 +80,8 @@ export function createCredential(
     db.prepare(`
       INSERT INTO credentials (
         id, system_name, username, encrypted_password, password_iv, password_tag,
-        category, description, notes, created_by, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        category, description, notes, admin_only, color, created_by, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       id,
       data.system_name.trim(),
@@ -81,6 +92,8 @@ export function createCredential(
       category,
       data.description?.trim() || null,
       data.notes?.trim() || null,
+      adminOnly,
+      color,
       userId,
       now,
       now
@@ -110,6 +123,11 @@ export function getAllCredentials(filters?: CredentialFilters): CredentialView[]
   const conditions: string[] = ['c.deleted_at IS NULL']
   const values: unknown[] = []
 
+  // Filter out admin_only resources for non-admin users
+  if (!filters?.isAdmin) {
+    conditions.push('c.admin_only = 0')
+  }
+
   if (filters?.query?.trim()) {
     conditions.push('(c.system_name LIKE ? OR c.username LIKE ? OR c.description LIKE ?)')
     const q = `%${filters.query.trim()}%`
@@ -123,33 +141,51 @@ export function getAllCredentials(filters?: CredentialFilters): CredentialView[]
 
   const whereClause = conditions.join(' AND ')
 
-  return db.prepare(`
+  const rows = db.prepare(`
     SELECT
       c.id, c.system_name, c.username, c.category,
-      c.description, c.notes, c.created_by, c.created_at, c.updated_at,
+      c.description, c.notes, c.admin_only, c.color,
+      c.created_by, c.created_at, c.updated_at,
       u.display_name as creator_name
     FROM credentials c
     LEFT JOIN users u ON c.created_by = u.id
     WHERE ${whereClause}
     ORDER BY c.system_name ASC
-  `).all(...values) as CredentialView[]
+  `).all(...values) as (CredentialView & { admin_only: number })[]
+
+  // Convert admin_only from integer to boolean
+  return rows.map(row => ({
+    ...row,
+    admin_only: row.admin_only === 1
+  }))
 }
 
 // Get single credential by ID (no password fields)
-export function getCredentialById(id: string): CredentialView | null {
+export function getCredentialById(id: string, isAdmin: boolean = true): CredentialView | null {
   const db = getDatabase()
 
-  const credential = db.prepare(`
+  const conditions = ['c.id = ?', 'c.deleted_at IS NULL']
+  if (!isAdmin) {
+    conditions.push('c.admin_only = 0')
+  }
+
+  const row = db.prepare(`
     SELECT
       c.id, c.system_name, c.username, c.category,
-      c.description, c.notes, c.created_by, c.created_at, c.updated_at,
+      c.description, c.notes, c.admin_only, c.color,
+      c.created_by, c.created_at, c.updated_at,
       u.display_name as creator_name
     FROM credentials c
     LEFT JOIN users u ON c.created_by = u.id
-    WHERE c.id = ? AND c.deleted_at IS NULL
-  `).get(id) as CredentialView | undefined
+    WHERE ${conditions.join(' AND ')}
+  `).get(id) as (CredentialView & { admin_only: number }) | undefined
 
-  return credential || null
+  if (!row) return null
+
+  return {
+    ...row,
+    admin_only: row.admin_only === 1
+  }
 }
 
 // Get credential password (decrypt + audit)
@@ -182,9 +218,13 @@ export function getCredentialPassword(
     )
 
     return { success: true, password }
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error decrypting password:', error)
-    return { success: false, error: 'Failed to decrypt password' }
+    // Check if this is an invalid IV error (likely seeded with placeholder data)
+    if (error.message?.includes('Invalid IV') || error.message?.includes('Invalid initialization vector')) {
+      return { success: false, error: 'This credential was created with invalid encryption. Please delete it and create a new one.' }
+    }
+    return { success: false, error: 'Failed to decrypt password. The encryption key may have changed.' }
   }
 }
 
@@ -246,6 +286,16 @@ export function updateCredential(
   if (data.notes !== undefined) {
     fields.push('notes = ?')
     values.push(data.notes?.trim() || null)
+  }
+
+  if (data.admin_only !== undefined) {
+    fields.push('admin_only = ?')
+    values.push(data.admin_only ? 1 : 0)
+  }
+
+  if (data.color !== undefined) {
+    fields.push('color = ?')
+    values.push(data.color)
   }
 
   if (fields.length === 0) {
@@ -311,8 +361,46 @@ export function deleteCredential(
   }
 }
 
+// Toggle admin_only status
+export function toggleCredentialAdminOnly(
+  id: string,
+  adminOnly: boolean,
+  userId: string
+): { success: boolean; error?: string } {
+  const db = getDatabase()
+
+  const existing = db.prepare(
+    'SELECT system_name FROM credentials WHERE id = ? AND deleted_at IS NULL'
+  ).get(id) as { system_name: string } | undefined
+
+  if (!existing) {
+    return { success: false, error: 'Credential not found' }
+  }
+
+  try {
+    db.prepare(
+      'UPDATE credentials SET admin_only = ?, updated_at = ? WHERE id = ?'
+    ).run(adminOnly ? 1 : 0, new Date().toISOString(), id)
+
+    logAudit(
+      'CREDENTIAL_TOGGLE_ADMIN_ONLY' as any,
+      userId,
+      getUsername(userId),
+      'credential',
+      id,
+      { system_name: existing.system_name, admin_only: adminOnly }
+    )
+
+    return { success: true }
+  } catch (error) {
+    console.error('Error toggling credential admin_only:', error)
+    return { success: false, error: 'Failed to update credential' }
+  }
+}
+
 // Get stats for both credentials and references
-export function getSecureResourceStats(): {
+// isAdmin: if false, excludes admin_only resources from counts
+export function getSecureResourceStats(isAdmin: boolean = true): {
   totalCredentials: number
   totalReferences: number
   credentialsByCategory: Record<string, number>
@@ -320,20 +408,23 @@ export function getSecureResourceStats(): {
 } {
   const db = getDatabase()
 
+  // Filter condition for non-admin users
+  const adminFilter = isAdmin ? '' : ' AND admin_only = 0'
+
   const totalCredentials = (db.prepare(
-    'SELECT COUNT(*) as count FROM credentials WHERE deleted_at IS NULL'
+    `SELECT COUNT(*) as count FROM credentials WHERE deleted_at IS NULL${adminFilter}`
   ).get() as { count: number }).count
 
   const totalReferences = (db.prepare(
-    'SELECT COUNT(*) as count FROM secure_references WHERE deleted_at IS NULL'
+    `SELECT COUNT(*) as count FROM secure_references WHERE deleted_at IS NULL${adminFilter}`
   ).get() as { count: number }).count
 
   const credCats = db.prepare(
-    'SELECT category, COUNT(*) as count FROM credentials WHERE deleted_at IS NULL GROUP BY category'
+    `SELECT category, COUNT(*) as count FROM credentials WHERE deleted_at IS NULL${adminFilter} GROUP BY category`
   ).all() as { category: string; count: number }[]
 
   const refCats = db.prepare(
-    'SELECT category, COUNT(*) as count FROM secure_references WHERE deleted_at IS NULL GROUP BY category'
+    `SELECT category, COUNT(*) as count FROM secure_references WHERE deleted_at IS NULL${adminFilter} GROUP BY category`
   ).all() as { category: string; count: number }[]
 
   return {

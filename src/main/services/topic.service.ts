@@ -93,10 +93,52 @@ export function createTopic(
   }
 }
 
-export function getAllTopics(): Topic[] {
+export interface TopicFilters {
+  query?: string
+  status?: string
+  priority?: string
+  limit?: number
+  offset?: number
+}
+
+export interface PaginatedTopics {
+  data: Topic[]
+  total: number
+  hasMore: boolean
+}
+
+export function getAllTopics(filters?: TopicFilters): PaginatedTopics {
   const db = getDatabase()
 
-  const topics = db.prepare(`
+  const conditions: string[] = ['t.deleted_at IS NULL']
+  const values: unknown[] = []
+
+  if (filters?.query?.trim()) {
+    conditions.push("(t.title LIKE ? OR t.description LIKE ?)")
+    const q = `%${filters.query.trim()}%`
+    values.push(q, q)
+  }
+
+  if (filters?.status) {
+    conditions.push('t.status = ?')
+    values.push(filters.status)
+  }
+
+  if (filters?.priority) {
+    conditions.push('t.priority = ?')
+    values.push(filters.priority)
+  }
+
+  const whereClause = conditions.join(' AND ')
+
+  // Get total count first
+  const countResult = db.prepare(`
+    SELECT COUNT(*) as count FROM topics t WHERE ${whereClause}
+  `).get(...values) as { count: number }
+  const total = countResult.count
+
+  // Build main query with pagination
+  let query = `
     SELECT
       t.*,
       u.display_name as creator_name,
@@ -104,11 +146,26 @@ export function getAllTopics(): Topic[] {
       (SELECT MAX(r.created_at) FROM records r WHERE r.topic_id = t.id AND r.deleted_at IS NULL) as last_activity
     FROM topics t
     LEFT JOIN users u ON t.created_by = u.id
-    WHERE t.deleted_at IS NULL
+    WHERE ${whereClause}
     ORDER BY t.updated_at DESC
-  `).all() as Topic[]
+  `
 
-  return topics
+  const queryValues = [...values]
+
+  if (filters?.limit) {
+    query += ' LIMIT ?'
+    queryValues.push(filters.limit)
+    if (filters?.offset) {
+      query += ' OFFSET ?'
+      queryValues.push(filters.offset)
+    }
+  }
+
+  const topics = db.prepare(query).all(...queryValues) as Topic[]
+
+  const hasMore = filters?.limit ? (filters.offset || 0) + topics.length < total : false
+
+  return { data: topics, total, hasMore }
 }
 
 export function getTopicById(id: string): Topic | null {

@@ -66,6 +66,14 @@ export interface IssueFilters {
   importance?: string
   has_reminder?: boolean
   min_age_days?: number
+  limit?: number
+  offset?: number
+}
+
+export interface PaginatedIssues {
+  data: Issue[]
+  total: number
+  hasMore: boolean
 }
 
 // Helper: add a history entry, returns the history id
@@ -179,7 +187,7 @@ export function getIssueById(id: string): Issue | null {
 }
 
 // Get open issues with optional filters
-export function getOpenIssues(filters?: IssueFilters): Issue[] {
+export function getOpenIssues(filters?: IssueFilters): PaginatedIssues {
   const db = getDatabase()
 
   const conditions: string[] = ["i.status = 'open'"]
@@ -214,7 +222,14 @@ export function getOpenIssues(filters?: IssueFilters): Issue[] {
 
   const whereClause = conditions.join(' AND ')
 
-  const issues = db.prepare(`
+  // Get total count first
+  const countResult = db.prepare(`
+    SELECT COUNT(*) as count FROM issues i WHERE ${whereClause}
+  `).get(...values) as { count: number }
+  const total = countResult.count
+
+  // Build main query with pagination
+  let query = `
     SELECT
       i.*,
       t.title as topic_title,
@@ -235,13 +250,28 @@ export function getOpenIssues(filters?: IssueFilters): Issue[] {
         WHEN 'low' THEN 3
       END ASC,
       i.created_at DESC
-  `).all(...values) as Issue[]
+  `
 
-  return issues
+  const queryValues = [...values]
+
+  if (filters?.limit) {
+    query += ' LIMIT ?'
+    queryValues.push(filters.limit)
+    if (filters?.offset) {
+      query += ' OFFSET ?'
+      queryValues.push(filters.offset)
+    }
+  }
+
+  const issues = db.prepare(query).all(...queryValues) as Issue[]
+
+  const hasMore = filters?.limit ? (filters.offset || 0) + issues.length < total : false
+
+  return { data: issues, total, hasMore }
 }
 
 // Get completed issues with optional filters
-export function getCompletedIssues(filters?: IssueFilters): Issue[] {
+export function getCompletedIssues(filters?: IssueFilters): PaginatedIssues {
   const db = getDatabase()
 
   const conditions: string[] = ["i.status = 'completed'"]
@@ -265,7 +295,14 @@ export function getCompletedIssues(filters?: IssueFilters): Issue[] {
 
   const whereClause = conditions.join(' AND ')
 
-  const issues = db.prepare(`
+  // Get total count first
+  const countResult = db.prepare(`
+    SELECT COUNT(*) as count FROM issues i WHERE ${whereClause}
+  `).get(...values) as { count: number }
+  const total = countResult.count
+
+  // Build main query with pagination
+  let query = `
     SELECT
       i.*,
       t.title as topic_title,
@@ -279,9 +316,24 @@ export function getCompletedIssues(filters?: IssueFilters): Issue[] {
     LEFT JOIN users u2 ON i.completed_by = u2.id
     WHERE ${whereClause}
     ORDER BY i.completed_at DESC
-  `).all(...values) as Issue[]
+  `
 
-  return issues
+  const queryValues = [...values]
+
+  if (filters?.limit) {
+    query += ' LIMIT ?'
+    queryValues.push(filters.limit)
+    if (filters?.offset) {
+      query += ' OFFSET ?'
+      queryValues.push(filters.offset)
+    }
+  }
+
+  const issues = db.prepare(query).all(...queryValues) as Issue[]
+
+  const hasMore = filters?.limit ? (filters.offset || 0) + issues.length < total : false
+
+  return { data: issues, total, hasMore }
 }
 
 // Update issue fields
@@ -834,4 +886,92 @@ export function markReminderNotified(id: string): { success: boolean; error?: st
     console.error('Error marking reminder notified:', error)
     return { success: false, error: 'Failed to mark reminder as notified' }
   }
+}
+
+// Interface for open issues with latest update summary
+export interface IssueSummary {
+  issue: Issue
+  latestUpdate: IssueHistory | null
+}
+
+// Get all open issues with their latest history entry (for quick summary view)
+export function getOpenIssuesSummary(): IssueSummary[] {
+  const db = getDatabase()
+
+  // Get all open issues
+  const issues = db.prepare(`
+    SELECT
+      i.*,
+      t.title as topic_title,
+      s.title as subcategory_title,
+      u.display_name as creator_name,
+      u2.display_name as completer_name
+    FROM issues i
+    LEFT JOIN topics t ON i.topic_id = t.id
+    LEFT JOIN subcategories s ON i.subcategory_id = s.id
+    LEFT JOIN users u ON i.created_by = u.id
+    LEFT JOIN users u2 ON i.completed_by = u2.id
+    WHERE i.status = 'open'
+    ORDER BY
+      CASE i.importance
+        WHEN 'critical' THEN 0
+        WHEN 'high' THEN 1
+        WHEN 'medium' THEN 2
+        WHEN 'low' THEN 3
+      END ASC,
+      i.updated_at DESC
+  `).all() as Issue[]
+
+  const summaries: IssueSummary[] = []
+
+  for (const issue of issues) {
+    // Get the latest history entry for this issue
+    const latestHistory = db.prepare(`
+      SELECT
+        h.*,
+        u.display_name as creator_name,
+        (SELECT COUNT(*) FROM comment_edits ce WHERE ce.history_id = h.id) as edit_count
+      FROM issue_history h
+      LEFT JOIN users u ON h.created_by = u.id
+      WHERE h.issue_id = ?
+      ORDER BY h.created_at DESC
+      LIMIT 1
+    `).get(issue.id) as IssueHistory | undefined
+
+    let latestUpdate: IssueHistory | null = null
+
+    if (latestHistory) {
+      // Fetch linked records for the latest history entry
+      const linkedRecords = db.prepare(`
+        SELECT
+          ihr.record_id,
+          r.title as record_title,
+          t.title as topic_title,
+          r.topic_id,
+          CASE
+            WHEN r.id IS NULL THEN 'record_deleted'
+            WHEN r.deleted_at IS NOT NULL AND t.deleted_at IS NOT NULL THEN 'topic_deleted'
+            WHEN r.deleted_at IS NOT NULL THEN 'record_deleted'
+            WHEN t.deleted_at IS NOT NULL THEN 'topic_deleted'
+            ELSE NULL
+          END as deleted_reason
+        FROM issue_history_records ihr
+        LEFT JOIN records r ON ihr.record_id = r.id
+        LEFT JOIN topics t ON r.topic_id = t.id
+        WHERE ihr.history_id = ?
+      `).all(latestHistory.id) as { record_id: string; record_title: string | null; topic_title: string | null; topic_id: string | null; deleted_reason: string | null }[]
+
+      latestUpdate = {
+        ...latestHistory,
+        linked_records: linkedRecords
+      }
+    }
+
+    summaries.push({
+      issue,
+      latestUpdate
+    })
+  }
+
+  return summaries
 }

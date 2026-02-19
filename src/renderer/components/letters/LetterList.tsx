@@ -1,8 +1,9 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
+import { useSearchParams, useLocation } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { useToast } from '../../context/ToastContext'
 import { useConfirm } from '../common/ConfirmDialog'
+import { useUndoRedo } from '../../context/UndoRedoContext'
 import { Letter, LetterType, LetterStatus, LetterPriority, Topic, Authority, LetterReference, ReferenceType } from '../../types'
 import { LetterCard } from './LetterCard'
 import { LetterForm } from './LetterForm'
@@ -10,6 +11,7 @@ import { LetterDetail } from './LetterDetail'
 import { AuthorityManager } from './AuthorityManager'
 import { ContactManager } from './ContactManager'
 import { Modal } from '../common/Modal'
+import { ExportButton } from '../common/ExportButton'
 
 interface PendingReference {
   targetLetter: Letter
@@ -20,17 +22,24 @@ interface PendingReference {
 type ViewMode = 'card' | 'table'
 type TabMode = 'all' | 'pending' | 'overdue' | 'authorities' | 'contacts'
 
+const PAGE_SIZE = 30
+
 export function LetterList() {
   const { user } = useAuth()
   const toast = useToast()
   const confirm = useConfirm()
+  const { recordOperation } = useUndoRedo()
   const [searchParams, setSearchParams] = useSearchParams()
+  const location = useLocation()
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const [highlightedLetterId, setHighlightedLetterId] = useState<string | null>(null)
   const [letters, setLetters] = useState<Letter[]>([])
   const [topics, setTopics] = useState<Topic[]>([])
   const [authorities, setAuthorities] = useState<Authority[]>([])
   const [loading, setLoading] = useState(true)
+  const [isLoadingMore, setIsLoadingMore] = useState(false)
+  const [hasMore, setHasMore] = useState(false)
+  const [totalCount, setTotalCount] = useState(0)
   const [viewMode, setViewMode] = useState<ViewMode>('card')
   const [tabMode, setTabMode] = useState<TabMode>('all')
   const [showCreateModal, setShowCreateModal] = useState(false)
@@ -45,30 +54,86 @@ export function LetterList() {
   const [filterPriority, setFilterPriority] = useState<LetterPriority | ''>('')
   const [filterAuthority, setFilterAuthority] = useState<string>('')
   const [filterTopic, setFilterTopic] = useState<string>('')
+  const [pinStatuses, setPinStatuses] = useState<Record<string, boolean>>({})
 
-  const loadData = useCallback(async () => {
-    setLoading(true)
+  // Load pin statuses when letters change
+  useEffect(() => {
+    const loadPinStatuses = async () => {
+      if (!user || letters.length === 0) return
+      const letterIds = letters.map(l => l.id)
+      const statuses = await window.electronAPI.pins.getPinStatuses('letter', letterIds, user.id)
+      setPinStatuses(statuses)
+    }
+    loadPinStatuses()
+  }, [letters, user])
+
+  const handleTogglePin = useCallback(async (letterId: string) => {
+    if (!user) return
+    const result = await window.electronAPI.pins.toggle('letter', letterId, user.id)
+    if (result.success) {
+      setPinStatuses(prev => ({ ...prev, [letterId]: result.pinned }))
+    }
+  }, [user])
+
+  // Sort letters with pinned items first
+  const sortedLetters = useMemo(() => {
+    return [...letters].sort((a, b) => {
+      const aPinned = pinStatuses[a.id] ? 1 : 0
+      const bPinned = pinStatuses[b.id] ? 1 : 0
+      return bPinned - aPinned
+    })
+  }, [letters, pinStatuses])
+
+  const loadData = useCallback(async (loadMore = false, currentLength = 0) => {
+    if (loadMore) {
+      setIsLoadingMore(true)
+    } else {
+      setLoading(true)
+    }
     try {
+      const currentOffset = loadMore ? currentLength : 0
+
+      // Only use pagination for 'all' tab
+      const lettersPromise = tabMode === 'pending'
+        ? window.electronAPI.letters.getPending()
+        : tabMode === 'overdue'
+        ? window.electronAPI.letters.getOverdue()
+        : window.electronAPI.letters.getAll({ limit: PAGE_SIZE, offset: currentOffset })
+
       const [lettersResult, topicsResult, authoritiesResult] = await Promise.all([
-        tabMode === 'pending'
-          ? window.electronAPI.letters.getPending()
-          : tabMode === 'overdue'
-          ? window.electronAPI.letters.getOverdue()
-          : window.electronAPI.letters.getAll(),
-        window.electronAPI.topics.getAll(),
-        window.electronAPI.authorities.getAll()
+        lettersPromise,
+        loadMore ? Promise.resolve(null) : window.electronAPI.topics.getAll({}),
+        loadMore ? Promise.resolve(null) : window.electronAPI.authorities.getAll()
       ])
-      // Ensure results are always arrays
-      setLetters(Array.isArray(lettersResult) ? lettersResult as Letter[] : [])
-      setTopics(Array.isArray(topicsResult) ? topicsResult as Topic[] : [])
-      setAuthorities(Array.isArray(authoritiesResult) ? authoritiesResult as Authority[] : [])
+
+      // Handle letters result - paginated for 'all' tab, array for others
+      if (tabMode === 'all') {
+        const paginatedResult = lettersResult as { data: Letter[]; total: number; hasMore: boolean }
+        setLetters(prev => loadMore ? [...prev, ...paginatedResult.data] : paginatedResult.data)
+        setHasMore(paginatedResult.hasMore)
+        setTotalCount(paginatedResult.total)
+      } else {
+        setLetters(Array.isArray(lettersResult) ? lettersResult as Letter[] : [])
+        setHasMore(false)
+        setTotalCount(0)
+      }
+
+      // Only update topics/authorities on initial load
+      if (!loadMore) {
+        const topicsData = (topicsResult as { data: Topic[] })?.data || topicsResult
+        setTopics(Array.isArray(topicsData) ? topicsData as Topic[] : [])
+        setAuthorities(Array.isArray(authoritiesResult) ? authoritiesResult as Authority[] : [])
+      }
     } catch (error) {
       console.error('Error loading letters:', error)
-      setLetters([])
-      setTopics([])
-      setAuthorities([])
+      if (!loadMore) {
+        setLetters([])
+        setTopics([])
+        setAuthorities([])
+      }
     } finally {
       setLoading(false)
+      setIsLoadingMore(false)
     }
   }, [tabMode])
 
@@ -77,6 +142,44 @@ export function LetterList() {
       loadData()
     }
   }, [loadData, tabMode])
+
+  // Handle search highlight from global search
+  useEffect(() => {
+    const state = location.state as any
+    if (state?.highlightType === 'letter' && state?.highlightId) {
+      const letterId = state.highlightId
+      setHighlightedLetterId(letterId)
+
+      // Switch to appropriate tab if needed
+      if (tabMode === 'authorities' || tabMode === 'contacts') {
+        setTabMode('all')
+      }
+
+      // Scroll to the letter after a short delay to allow render
+      setTimeout(() => {
+        const element = document.getElementById(`letter-${letterId}`)
+        if (element) {
+          element.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        }
+      }, 300)
+
+      // Clear highlight after 5 seconds
+      const timer = setTimeout(() => {
+        setHighlightedLetterId(null)
+      }, 5000)
+
+      // Clear the location state
+      window.history.replaceState({}, document.title)
+
+      return () => clearTimeout(timer)
+    }
+
+    // Handle contact/authority tab opening from search
+    if (state?.openContactsTab && (state?.highlightType === 'contact' || state?.highlightType === 'authority')) {
+      setTabMode(state.highlightType === 'contact' ? 'contacts' : 'authorities')
+      window.history.replaceState({}, document.title)
+    }
+  }, [location.state])
 
   const handleSearch = async () => {
     if (!searchQuery && !filterType && !filterStatus && !filterPriority && !filterAuthority && !filterTopic) {
@@ -148,6 +251,8 @@ export function LetterList() {
 
       const result = await window.electronAPI.letters.create(data, user.id)
       if (result.success && result.letter) {
+        const createdLetter = result.letter as Letter
+
         // Upload multiple files if attached
         if (filesData && filesData.length > 0) {
           for (const file of filesData) {
@@ -166,6 +271,22 @@ export function LetterList() {
             }, user.id)
           }
         }
+
+        // Record operation for undo/redo
+        recordOperation({
+          operation: 'create',
+          entityType: 'letter',
+          entityId: createdLetter.id,
+          description: `Create letter "${createdLetter.subject}"`,
+          beforeState: null,
+          afterState: {
+            entityType: 'letter',
+            entityId: createdLetter.id,
+            data: createdLetter as unknown as globalThis.Record<string, unknown>
+          },
+          userId: user.id
+        })
+
         setShowCreateModal(false)
         loadData()
       } else {
@@ -184,6 +305,9 @@ export function LetterList() {
       // Extract files data before updating letter
       const filesData = data.files as { filename: string; buffer: string; size: number }[] | undefined
       delete data.files
+
+      // Capture before state for undo
+      const beforeData = await window.electronAPI.history.getEntity('letter', id)
 
       const result = await window.electronAPI.letters.update(id, data, user.id)
       if (result.success) {
@@ -205,6 +329,31 @@ export function LetterList() {
             }, user.id)
           }
         }
+
+        // Capture after state for undo/redo
+        const afterData = await window.electronAPI.history.getEntity('letter', id)
+
+        // Record operation for undo/redo
+        if (beforeData) {
+          recordOperation({
+            operation: 'update',
+            entityType: 'letter',
+            entityId: id,
+            description: `Update letter "${data.subject || beforeData.subject}"`,
+            beforeState: {
+              entityType: 'letter',
+              entityId: id,
+              data: beforeData
+            },
+            afterState: afterData ? {
+              entityType: 'letter',
+              entityId: id,
+              data: afterData
+            } : null,
+            userId: user.id
+          })
+        }
+
         setEditingLetter(null)
         setEditingReferences([])
         loadData()
@@ -245,8 +394,28 @@ export function LetterList() {
     if (!confirmed) return
 
     try {
+      // Capture before state for undo
+      const beforeData = await window.electronAPI.history.getEntity('letter', id)
+
       const result = await window.electronAPI.letters.delete(id, user.id)
       if (result.success) {
+        // Record operation for undo/redo
+        if (beforeData) {
+          recordOperation({
+            operation: 'delete',
+            entityType: 'letter',
+            entityId: id,
+            description: `Delete letter "${beforeData.subject || 'Unknown'}"`,
+            beforeState: {
+              entityType: 'letter',
+              entityId: id,
+              data: beforeData
+            },
+            afterState: null,
+            userId: user.id
+          })
+        }
+
         setSelectedLetter(null)
         loadData()
       } else {
@@ -423,6 +592,7 @@ export function LetterList() {
                   </svg>
                 </button>
               </div>
+              <ExportButton exportType="letters" />
               <button
                 onClick={() => setShowCreateModal(true)}
                 className="btn-primary flex items-center gap-2"
@@ -558,16 +728,49 @@ export function LetterList() {
             )}
           </div>
         ) : viewMode === 'card' ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {letters.map((letter) => (
-              <LetterCard
-                key={letter.id}
-                letter={letter}
-                onClick={() => setSelectedLetter(letter)}
-                highlighted={highlightedLetterId === letter.id}
-              />
-            ))}
-          </div>
+          <>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {sortedLetters.map((letter) => (
+                <div key={letter.id} id={`letter-${letter.id}`}>
+                  <LetterCard
+                    letter={letter}
+                    onClick={() => setSelectedLetter(letter)}
+                    highlighted={highlightedLetterId === letter.id}
+                    isPinned={pinStatuses[letter.id] || false}
+                    onTogglePin={() => handleTogglePin(letter.id)}
+                  />
+                </div>
+              ))}
+            </div>
+            {tabMode === 'all' && !searchQuery && !filterType && !filterStatus && !filterPriority && !filterAuthority && !filterTopic && (hasMore || letters.length > PAGE_SIZE) && (
+              <div className="flex justify-center gap-3 mt-6">
+                {hasMore && (
+                  <button
+                    onClick={() => loadData(true, letters.length)}
+                    disabled={isLoadingMore}
+                    className="px-6 py-2 text-sm font-medium text-primary-600 bg-primary-50 rounded-lg hover:bg-primary-100 transition-colors disabled:opacity-50"
+                  >
+                    {isLoadingMore ? (
+                      <span className="flex items-center gap-2">
+                        <div className="w-4 h-4 border-2 border-primary-600 border-t-transparent rounded-full animate-spin" />
+                        Loading...
+                      </span>
+                    ) : (
+                      `Load More (${letters.length} of ${totalCount})`
+                    )}
+                  </button>
+                )}
+                {letters.length > PAGE_SIZE && (
+                  <button
+                    onClick={() => loadData(false)}
+                    className="px-6 py-2 text-sm font-medium text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+                  >
+                    Show Less
+                  </button>
+                )}
+              </div>
+            )}
+          </>
         ) : (
           <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
             <table className="min-w-full divide-y divide-gray-200">
@@ -588,9 +791,10 @@ export function LetterList() {
                 {letters.map((letter) => (
                   <tr
                     key={letter.id}
+                    id={`letter-${letter.id}`}
                     data-letter-id={letter.id}
                     onClick={() => setSelectedLetter(letter)}
-                    className={`hover:bg-gray-50 cursor-pointer transition-colors duration-700 ${highlightedLetterId === letter.id ? 'bg-primary-50 ring-2 ring-primary-300 ring-inset' : ''}`}
+                    className={`hover:bg-gray-50 cursor-pointer transition-colors duration-700 ${highlightedLetterId === letter.id ? 'bg-primary-50 ring-2 ring-primary-300 ring-inset animate-pulse' : ''}`}
                   >
                     <td className="px-4 py-3 whitespace-nowrap">
                       <div className="flex items-center gap-2">

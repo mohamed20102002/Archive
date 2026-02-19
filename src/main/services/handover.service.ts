@@ -97,7 +97,11 @@ export function getHandoverRecords(startDate: string, endDate: string): Handover
 
   // Query records directly from the records table for the date range
   // This ensures we get ALL records including email-type records
+  // Filter by record_date (the date the record is associated with)
   // Filter out deleted records and records from deleted topics
+  const startDateOnly = startDate.split('T')[0]
+  const endDateOnly = endDate.split('T')[0]
+
   const records = mainDb.prepare(`
     SELECT
       r.id,
@@ -106,6 +110,7 @@ export function getHandoverRecords(startDate: string, endDate: string): Handover
       r.type,
       r.email_id,
       r.subcategory_id,
+      r.record_date,
       r.created_by,
       r.created_at,
       r.updated_at,
@@ -122,17 +127,17 @@ export function getHandoverRecords(startDate: string, endDate: string): Handover
     WHERE r.deleted_at IS NULL
       AND (t.deleted_at IS NULL)
       AND (
-        (r.created_at BETWEEN ? AND ?)
-        OR (r.updated_at BETWEEN ? AND ? AND r.updated_at != r.created_at)
+        COALESCE(r.record_date, date(r.created_at)) BETWEEN ? AND ?
       )
-    ORDER BY r.updated_at DESC
-  `).all(startDate, endDate, startDate, endDate) as Array<{
+    ORDER BY COALESCE(r.record_date, date(r.created_at)) DESC, r.updated_at DESC
+  `).all(startDateOnly, endDateOnly) as Array<{
     id: string
     title: string
     content: string | null
     type: string
     email_id: string | null
     subcategory_id: string | null
+    record_date: string | null
     created_by: string
     created_at: string
     updated_at: string

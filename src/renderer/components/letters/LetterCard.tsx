@@ -1,13 +1,16 @@
 import React, { useState } from 'react'
+import { PinButton } from '../common/PinButton'
 import { Letter, LetterType, LetterStatus, LetterPriority } from '../../types'
 
 interface LetterCardProps {
   letter: Letter
   onClick: () => void
   highlighted?: boolean
+  isPinned?: boolean
+  onTogglePin?: () => void
 }
 
-export function LetterCard({ letter, onClick, highlighted }: LetterCardProps) {
+export function LetterCard({ letter, onClick, highlighted, isPinned = false, onTogglePin }: LetterCardProps) {
   const [copied, setCopied] = useState(false)
   const [copiedRef, setCopiedRef] = useState(false)
 
@@ -92,15 +95,25 @@ export function LetterCard({ letter, onClick, highlighted }: LetterCardProps) {
     <div
       data-letter-id={letter.id}
       onClick={onClick}
-      className={`bg-white rounded-lg border ${isOverdue ? 'border-red-300 bg-red-50' : 'border-gray-200'} p-4 hover:shadow-md transition-all duration-700 cursor-pointer ${highlighted ? 'ring-2 ring-primary-400 bg-primary-50/50' : ''}`}
+      className={`bg-white rounded-lg border ${isOverdue ? 'border-red-300 bg-red-50' : 'border-gray-200'} p-4 hover:shadow-md transition-all duration-700 cursor-pointer group ${highlighted ? 'ring-2 ring-primary-400 bg-primary-50/50' : ''} ${isPinned ? 'ring-2 ring-amber-200 bg-amber-50/30' : ''}`}
     >
       {/* Header */}
       <div className="flex items-start justify-between mb-3">
         <div className="flex items-center gap-2">
+          {isPinned && (
+            <svg className="w-4 h-4 text-amber-500" fill="currentColor" viewBox="0 0 24 24">
+              <path d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
+            </svg>
+          )}
           {getTypeIcon(letter.letter_type)}
           <span className="text-sm font-medium text-gray-600 capitalize">{letter.letter_type}</span>
         </div>
         <div className="flex items-center gap-2">
+          {onTogglePin && (
+            <span className="opacity-0 group-hover:opacity-100 transition-opacity">
+              <PinButton isPinned={isPinned} onToggle={onTogglePin} />
+            </span>
+          )}
           {getPriorityIcon(letter.priority)}
           <span className={`inline-flex px-2 py-0.5 text-xs font-medium rounded-full ${getStatusColor(letter.status)}`}>
             {letter.status.replace('_', ' ')}

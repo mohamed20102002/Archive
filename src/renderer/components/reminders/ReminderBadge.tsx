@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { format, isPast, isToday, parseISO } from 'date-fns'
+import { useSettings } from '../../context/SettingsContext'
 import type { Reminder, Issue, MomAction } from '../../types'
 
 // Unified type for items shown in the badge dropdown
@@ -25,9 +26,11 @@ export function ReminderBadge() {
   const [items, setItems] = useState<BadgeItem[]>([])
   const [totalCount, setTotalCount] = useState(0)
   const [overdueCount, setOverdueCount] = useState(0)
+  const [dueTodayCount, setDueTodayCount] = useState(0)
   const [isOpen, setIsOpen] = useState(false)
   const dropdownRef = useRef<HTMLDivElement>(null)
   const navigate = useNavigate()
+  const { formatDate } = useSettings()
 
   const loadAll = useCallback(async () => {
     try {
@@ -104,7 +107,28 @@ export function ReminderBadge() {
 
       // Count totals BEFORE slicing
       setTotalCount(all.length)
-      setOverdueCount(all.filter(item => item.is_overdue).length)
+
+      // Calculate overdue (past and not today) and due today counts
+      const overdue = all.filter(item => {
+        try {
+          const date = parseISO(item.due_date)
+          return isPast(date) && !isToday(date)
+        } catch {
+          return false
+        }
+      }).length
+
+      const dueToday = all.filter(item => {
+        try {
+          const date = parseISO(item.due_date)
+          return isToday(date)
+        } catch {
+          return false
+        }
+      }).length
+
+      setOverdueCount(overdue)
+      setDueTodayCount(dueToday)
 
       // Cap display at 8 items (show most urgent first)
       setItems(all.slice(0, 8))
@@ -152,7 +176,7 @@ export function ReminderBadge() {
         return { text: `Today ${format(date, 'h:mm a')}`, urgent: true }
       }
 
-      return { text: format(date, 'EEE h:mm a'), urgent: false }
+      return { text: formatDate(item.due_date, 'withDay'), urgent: false }
     } catch {
       return { text: item.due_date, urgent: false }
     }
@@ -169,14 +193,14 @@ export function ReminderBadge() {
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
         </svg>
 
-        {/* Badge */}
-        {totalCount > 0 && (
-          <span className={`absolute -top-0.5 -right-0.5 flex items-center justify-center w-5 h-5 text-xs font-medium rounded-full ${
+        {/* Badge - shows urgent count (overdue + due today) */}
+        {(overdueCount > 0 || dueTodayCount > 0) && (
+          <span className={`absolute -top-0.5 -right-0.5 flex items-center justify-center min-w-5 h-5 px-1 text-xs font-medium rounded-full ${
             overdueCount > 0
               ? 'bg-red-500 text-white'
-              : 'bg-primary-500 text-white'
+              : 'bg-orange-500 text-white'
           }`}>
-            {totalCount}
+            {overdueCount + dueTodayCount}
           </span>
         )}
       </button>
@@ -187,11 +211,18 @@ export function ReminderBadge() {
           <div className="px-4 py-3 border-b border-gray-100 bg-gray-50">
             <div className="flex items-center justify-between">
               <h3 className="font-medium text-gray-900">Reminders</h3>
-              {overdueCount > 0 && (
-                <span className="text-xs px-2 py-0.5 bg-red-100 text-red-700 rounded-full">
-                  {overdueCount} overdue
-                </span>
-              )}
+              <div className="flex items-center gap-2">
+                {overdueCount > 0 && (
+                  <span className="text-xs px-2 py-0.5 bg-red-100 text-red-700 rounded-full">
+                    {overdueCount} overdue
+                  </span>
+                )}
+                {dueTodayCount > 0 && (
+                  <span className="text-xs px-2 py-0.5 bg-orange-100 text-orange-700 rounded-full">
+                    {dueTodayCount} today
+                  </span>
+                )}
+              </div>
             </div>
           </div>
 

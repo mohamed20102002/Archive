@@ -1,6 +1,10 @@
 {
   "name": "project-data-archiving-system",
-  "version": "1.0.0",
+  "version": "1.0.2",
+  "author": {
+    "name": "Mohamed Darwish",
+    "company": "NPPA"
+  },
   "description": "Portable, offline-first desktop application for archiving departmental emails and records",
   "main": "dist/main/index.js",
   "scripts": {
@@ -11,6 +15,8 @@
     "preview": "electron-vite preview",
     "package": "electron-builder",
     "package:win": "electron-builder --win",
+    "publish": "electron-vite build && dotenv -- electron-builder --win nsis --publish always",
+    "publish:draft": "electron-vite build && dotenv -- electron-builder --win nsis --publish onTagOrDraft",
     "typecheck": "tsc --noEmit",
     "postinstall": "electron-builder install-app-deps",
     "seed": "node scripts/seed-data.js",
@@ -26,13 +32,15 @@
     "date-fns": "^3.0.0",
     "docx": "^9.5.1",
     "jsonwebtoken": "^9.0.0",
-    "node-llama-cpp": "^3.15.1",
+    "pdfmake": "^0.3.3",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-router-dom": "^6.21.0",
+    "recharts": "^3.7.0",
     "three": "^0.152.0",
     "uuid": "^9.0.0",
     "winax": "^3.4.2",
+    "xlsx": "^0.18.5",
     "yauzl": "^3.2.0"
   },
   "devDependencies": {
@@ -48,6 +56,7 @@
     "@types/yauzl": "^2.10.3",
     "@vitejs/plugin-react": "^4.2.0",
     "autoprefixer": "^10.4.0",
+    "dotenv-cli": "^11.0.0",
     "electron": "^25.9.8",
     "electron-builder": "^24.13.3",
     "electron-vite": "^2.0.0",
@@ -68,32 +77,30 @@
     ],
     "extraResources": [
       {
-        "from": "data",
-        "to": "data",
-        "filter": [
-          "**/*",
-          "!system/rollback/**",
-          "!system/backups/**"
-        ]
-      },
-      {
-        "from": "emails",
-        "to": "emails",
-        "filter": [
-          "**/*"
-        ]
+        "from": "build/app-update.yml",
+        "to": "app-update.yml"
       }
     ],
+    "publish": {
+      "provider": "github",
+      "owner": "mohamed20102002",
+      "repo": "Archive",
+      "releaseType": "release"
+    },
     "win": {
       "target": [
-        "nsis",
-        "portable"
+        {
+          "target": "dir",
+          "arch": [
+            "x64"
+          ]
+        }
       ],
-      "icon": "build/icon.ico"
+      "icon": "build/icon.ico",
+      "signAndEditExecutable": false
     },
     "nsis": {
-      "oneClick": false,
-      "allowToChangeInstallationDirectory": true
+      "differentialPackage": true
     }
   }
 }

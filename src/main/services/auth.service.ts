@@ -15,6 +15,7 @@ export interface User {
   is_active: boolean
   employee_number: string | null
   shift_id: string | null
+  sort_order: number
   created_at: string
   updated_at: string
   last_login_at: string | null
@@ -43,10 +44,99 @@ export interface TokenPayload {
 // In-memory session store for active tokens
 const activeSessions = new Map<string, { userId: string; expiresAt: number }>()
 
+// Brute-force protection settings
+const MAX_FAILED_ATTEMPTS = 5
+const LOCKOUT_DURATION_MS = 15 * 60 * 1000 // 15 minutes
+
+// Password strength validation
+function validatePasswordStrength(password: string): string | null {
+  if (password.length < 8) {
+    return 'Password must be at least 8 characters'
+  }
+  if (!/[a-z]/.test(password)) {
+    return 'Password must contain at least one lowercase letter'
+  }
+  if (!/[A-Z]/.test(password)) {
+    return 'Password must contain at least one uppercase letter'
+  }
+  if (!/[0-9]/.test(password)) {
+    return 'Password must contain at least one number'
+  }
+  return null
+}
+
+// Track failed login attempts per username
+interface FailedAttempt {
+  attempts: number
+  lastAttemptTime: number
+  lockedUntil: number | null
+}
+const failedAttempts = new Map<string, FailedAttempt>()
+
+// Check if user is locked out
+function isLockedOut(username: string): { locked: boolean; remainingSeconds?: number } {
+  const record = failedAttempts.get(username.toLowerCase())
+  if (!record || !record.lockedUntil) {
+    return { locked: false }
+  }
+
+  const now = Date.now()
+  if (now < record.lockedUntil) {
+    const remainingSeconds = Math.ceil((record.lockedUntil - now) / 1000)
+    return { locked: true, remainingSeconds }
+  }
+
+  // Lockout expired, reset
+  failedAttempts.delete(username.toLowerCase())
+  return { locked: false }
+}
+
+// Record a failed login attempt
+function recordFailedAttempt(username: string): { locked: boolean; remainingAttempts: number; remainingSeconds?: number } {
+  const key = username.toLowerCase()
+  const now = Date.now()
+  let record = failedAttempts.get(key)
+
+  if (!record) {
+    record = { attempts: 0, lastAttemptTime: now, lockedUntil: null }
+  }
+
+  // Reset if last attempt was long ago (more than lockout duration)
+  if (now - record.lastAttemptTime > LOCKOUT_DURATION_MS) {
+    record = { attempts: 0, lastAttemptTime: now, lockedUntil: null }
+  }
+
+  record.attempts++
+  record.lastAttemptTime = now
+
+  if (record.attempts >= MAX_FAILED_ATTEMPTS) {
+    record.lockedUntil = now + LOCKOUT_DURATION_MS
+    failedAttempts.set(key, record)
+    const remainingSeconds = Math.ceil(LOCKOUT_DURATION_MS / 1000)
+    return { locked: true, remainingAttempts: 0, remainingSeconds }
+  }
+
+  failedAttempts.set(key, record)
+  return { locked: false, remainingAttempts: MAX_FAILED_ATTEMPTS - record.attempts }
+}
+
+// Clear failed attempts on successful login
+function clearFailedAttempts(username: string): void {
+  failedAttempts.delete(username.toLowerCase())
+}
+
+// Clear all sessions (used after database restore to force re-login)
+export function clearAllSessions(): void {
+  const sessionCount = activeSessions.size
+  activeSessions.clear()
+  console.log(`[auth] Cleared ${sessionCount} active sessions`)
+}
+
 export function checkUsernameExists(username: string): { exists: boolean; isActive: boolean } {
   const db = getDatabase()
+  // Use exact case-sensitive match for username
   const user = db.prepare(
-    'SELECT id, is_active FROM users WHERE LOWER(username) = LOWER(?) AND deleted_at IS NULL'
+    'SELECT id, is_active FROM users WHERE username = ? AND deleted_at IS NULL'
   ).get(username) as { id: string; is_active: number } | undefined
 
   if (!user) {
@@ -71,9 +161,16 @@ export async function createUser(
   }
 
   // Validate password strength
-  if (password.length < 8) {
-    return { success: false, error: 'Password must be at least 8 characters' }
+  const passwordError = validatePasswordStrength(password)
+  if (passwordError) {
+    return { success: false, error: passwordError }
   }
+
+  // Calculate next sort_order (max + 1, or 1 if no users)
+  const maxSortResult = db.prepare(
+    'SELECT MAX(sort_order) as max_sort FROM users WHERE deleted_at IS NULL'
+  ).get() as { max_sort: number | null }
+  const nextSortOrder = (maxSortResult.max_sort ?? 0) + 1
 
   const id = generateId()
   const passwordHash = await hashPassword(password)
@@ -81,9 +178,9 @@ export async function createUser(
 
   try {
     db.prepare(`
-      INSERT INTO users (id, username, password_hash, display_name, role, is_active, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, 1, ?, ?)
-    `).run(id, username, passwordHash, displayName, role, now, now)
+      INSERT INTO users (id, username, password_hash, display_name, role, is_active, sort_order, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?)
+    `).run(id, username, passwordHash, displayName, role, nextSortOrder, now, now)
 
     const user: User = {
       id,
@@ -93,6 +190,7 @@ export async function createUser(
       is_active: true,
       employee_number: null,
       shift_id: null,
+      sort_order: nextSortOrder,
       created_at: now,
       updated_at: now,
       last_login_at: null
@@ -118,21 +216,42 @@ export async function createUser(
 export async function login(username: string, password: string): Promise<AuthResult> {
   const db = getDatabase()
 
+  // Check for lockout first
+  const lockoutStatus = isLockedOut(username)
+  if (lockoutStatus.locked) {
+    const minutes = Math.ceil((lockoutStatus.remainingSeconds || 0) / 60)
+    logAudit('USER_LOGIN_FAILED', null, username, 'user', null, { reason: 'Account locked out' })
+    return { success: false, error: `Account temporarily locked. Try again in ${minutes} minute${minutes !== 1 ? 's' : ''}.` }
+  }
+
   const user = db.prepare(`
     SELECT * FROM users WHERE username = ? AND is_active = 1 AND deleted_at IS NULL
   `).get(username) as UserWithPassword | undefined
 
   if (!user) {
+    const failResult = recordFailedAttempt(username)
     logAudit('USER_LOGIN_FAILED', null, username, 'user', null, { reason: 'User not found or deleted' })
-    return { success: false, error: 'Invalid username or password' }
+    if (failResult.locked) {
+      const minutes = Math.ceil((failResult.remainingSeconds || 0) / 60)
+      return { success: false, error: `Account temporarily locked. Try again in ${minutes} minute${minutes !== 1 ? 's' : ''}.` }
+    }
+    return { success: false, error: `Invalid username or password. ${failResult.remainingAttempts} attempt${failResult.remainingAttempts !== 1 ? 's' : ''} remaining.` }
   }
 
   const validPassword = await verifyPassword(user.password_hash, password)
 
   if (!validPassword) {
+    const failResult = recordFailedAttempt(username)
     logAudit('USER_LOGIN_FAILED', user.id, username, 'user', user.id, { reason: 'Invalid password' })
-    return { success: false, error: 'Invalid username or password' }
+    if (failResult.locked) {
+      const minutes = Math.ceil((failResult.remainingSeconds || 0) / 60)
+      return { success: false, error: `Account temporarily locked. Try again in ${minutes} minute${minutes !== 1 ? 's' : ''}.` }
+    }
+    return { success: false, error: `Invalid username or password. ${failResult.remainingAttempts} attempt${failResult.remainingAttempts !== 1 ? 's' : ''} remaining.` }
   }
+
+  // Clear failed attempts on successful login
+  clearFailedAttempts(username)
 
   // Update last login
   const now = new Date().toISOString()
@@ -167,6 +286,7 @@ export async function login(username: string, password: string): Promise<AuthRes
     is_active: true,
     employee_number: (user as any).employee_number || null,
     shift_id: (user as any).shift_id || null,
+    sort_order: (user as any).sort_order ?? 100,
     created_at: user.created_at,
     updated_at: user.updated_at,
     last_login_at: now
@@ -224,12 +344,17 @@ export function getUsername(userId: string): string | null {
   return user?.username || null
 }
 
+export function getUserDisplayName(userId: string): string | null {
+  const user = getUserById(userId)
+  return user?.display_name || null
+}
+
 export function getAllUsers(): User[] {
   const db = getDatabase()
   return db.prepare(`
-    SELECT id, username, display_name, role, is_active, employee_number, shift_id, created_at, updated_at, last_login_at, deleted_at
+    SELECT id, username, display_name, arabic_name, role, is_active, employee_number, shift_id, sort_order, created_at, updated_at, last_login_at, deleted_at
     FROM users
-    ORDER BY deleted_at IS NOT NULL, created_at ASC
+    ORDER BY deleted_at IS NOT NULL, sort_order ASC, created_at ASC
   `).all() as User[]
 }
 
@@ -238,10 +363,12 @@ export async function updateUser(
   updates: {
     username?: string
     display_name?: string
+    arabic_name?: string | null
     role?: 'admin' | 'user'
     is_active?: boolean
     employee_number?: string | null
     shift_id?: string | null
+    sort_order?: number
   },
   updatedBy: string
 ): Promise<{ success: boolean; error?: string }> {
@@ -270,6 +397,11 @@ export async function updateUser(
     values.push(updates.display_name)
   }
 
+  if (updates.arabic_name !== undefined) {
+    fields.push('arabic_name = ?')
+    values.push(updates.arabic_name)
+  }
+
   if (updates.role !== undefined) {
     fields.push('role = ?')
     values.push(updates.role)
@@ -288,6 +420,18 @@ export async function updateUser(
   if (updates.shift_id !== undefined) {
     fields.push('shift_id = ?')
     values.push(updates.shift_id)
+  }
+
+  if (updates.sort_order !== undefined) {
+    // Check for duplicate sort_order
+    const duplicate = db.prepare(
+      'SELECT id, display_name FROM users WHERE sort_order = ? AND id != ? AND deleted_at IS NULL'
+    ).get(updates.sort_order, id) as { id: string; display_name: string } | undefined
+    if (duplicate) {
+      return { success: false, error: `Sort order ${updates.sort_order} is already used by "${duplicate.display_name}"` }
+    }
+    fields.push('sort_order = ?')
+    values.push(updates.sort_order)
   }
 
   if (fields.length === 0) {
@@ -334,8 +478,9 @@ export async function changePassword(
     return { success: false, error: 'Current password is incorrect' }
   }
 
-  if (newPassword.length < 8) {
-    return { success: false, error: 'New password must be at least 8 characters' }
+  const passwordError = validatePasswordStrength(newPassword)
+  if (passwordError) {
+    return { success: false, error: passwordError }
   }
 
   const newHash = await hashPassword(newPassword)
@@ -372,8 +517,9 @@ export async function resetPassword(
     return { success: false, error: 'User not found' }
   }
 
-  if (newPassword.length < 8) {
-    return { success: false, error: 'Password must be at least 8 characters' }
+  const passwordError = validatePasswordStrength(newPassword)
+  if (passwordError) {
+    return { success: false, error: passwordError }
   }
 
   const newHash = await hashPassword(newPassword)

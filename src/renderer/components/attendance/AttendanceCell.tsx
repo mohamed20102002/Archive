@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import { AttendanceEntry, AttendanceCondition } from '../../types'
-import { format } from 'date-fns'
+import { useSettings } from '../../context/SettingsContext'
 
 interface AttendanceCellProps {
   day: number
@@ -40,6 +40,7 @@ export function AttendanceCell({
   onClick
 }: AttendanceCellProps) {
   const [showTooltip, setShowTooltip] = useState(false)
+  const { formatDate } = useSettings()
 
   if (!exists) {
     return (
@@ -65,7 +66,7 @@ export function AttendanceCell({
   // Format date for tooltip
   const date = new Date(year, month - 1, day)
   const dayName = DAY_NAMES[date.getDay()]
-  const formattedDate = format(date, 'dd/MM/yyyy')
+  const formattedDate = formatDate(date.toISOString())
 
   // Cell background
   let bgStyle: React.CSSProperties = {}

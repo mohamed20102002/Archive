@@ -45,8 +45,8 @@ export function ReminderForm({ reminder, topicId, onSubmit, onClose }: ReminderF
 
   const loadTopics = async () => {
     try {
-      const data = await window.electronAPI.topics.getAll()
-      setTopics(data as Topic[])
+      const result = await window.electronAPI.topics.getAll({}) as { data: Topic[] }
+      setTopics(result.data || [])
     } catch (err) {
       console.error('Error loading topics:', err)
     }

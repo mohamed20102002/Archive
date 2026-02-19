@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { useAuth } from '../../context/AuthContext'
+import { useSettings } from '../../context/SettingsContext'
 
 interface LogEntry {
   timestamp: string
@@ -9,6 +10,7 @@ interface LogEntry {
 
 export function FloatingConsole() {
   const { user } = useAuth()
+  const { settings } = useSettings()
   const [isOpen, setIsOpen] = useState(false)
   const [logs, setLogs] = useState<LogEntry[]>([])
   const [logStats, setLogStats] = useState<{ total: number; errors: number; warnings: number } | null>(null)
@@ -17,8 +19,8 @@ export function FloatingConsole() {
   const [copied, setCopied] = useState(false)
   const consoleRef = useRef<HTMLDivElement>(null)
 
-  // Only show for admin users
-  const isAdmin = user?.role === 'admin'
+  // Only show for admin users AND if the setting is enabled
+  const isAdmin = user?.role === 'admin' && settings.show_floating_console
 
   const loadLogs = async () => {
     setLoadingLogs(true)
@@ -48,11 +50,13 @@ export function FloatingConsole() {
   }
 
   const handleCopyLogs = async () => {
-    const text = logs.map(log =>
-      `[${new Date(log.timestamp).toLocaleTimeString()}] [${log.level.toUpperCase()}] ${log.message}`
-    ).join('\n')
-
     try {
+      // Fetch ALL logs (no limit) for copying
+      const allLogs = await window.electronAPI.logger.getLogs({ limit: 10000 })
+      const text = allLogs.map((log: LogEntry) =>
+        `[${new Date(log.timestamp).toLocaleTimeString()}] [${log.level.toUpperCase()}] ${log.message}`
+      ).join('\n')
+
       await navigator.clipboard.writeText(text)
       setCopied(true)
       setTimeout(() => setCopied(false), 2000)

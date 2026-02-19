@@ -6,6 +6,9 @@ import { getDatabase } from '../database/connection'
 import { getBasePath } from '../utils/fileSystem'
 import { logAudit } from '../database/audit'
 
+// File size limit: 100MB
+const MAX_FILE_SIZE_BYTES = 100 * 1024 * 1024
+
 export interface RecordAttachment {
   id: string
   record_id: string
@@ -80,6 +83,12 @@ export function addAttachment(data: AddAttachmentData, userId: string): { succes
 
   try {
     const { recordId, filename, buffer, topicTitle } = data
+
+    // Check file size limit
+    if (buffer.length > MAX_FILE_SIZE_BYTES) {
+      const sizeMB = Math.round(buffer.length / (1024 * 1024))
+      return { success: false, error: `File too large (${sizeMB}MB). Maximum allowed size is 100MB.` }
+    }
 
     // Get record info to build folder path
     const record = db.prepare(`

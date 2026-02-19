@@ -1,14 +1,15 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
-import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
+import { useParams, useNavigate, useSearchParams, useLocation } from 'react-router-dom'
 import { format, isToday, isYesterday, isThisWeek, parseISO } from 'date-fns'
 import { RecordCard } from './RecordCard'
 import { RecordForm } from './RecordForm'
 import { SubcategoryManager } from './SubcategoryManager'
-import { TopicSummary } from '../topics/TopicSummary'
 import { useTopic } from '../../hooks/useTopics'
 import { useToast } from '../../context/ToastContext'
 import { useConfirm } from '../common/ConfirmDialog'
 import { useAuth } from '../../context/AuthContext'
+import { useSettings } from '../../context/SettingsContext'
+import { useUndoRedo } from '../../context/UndoRedoContext'
 import { notifyDataChanged, onDataTypeChanged } from '../../utils/dataEvents'
 import type { Record, Subcategory } from '../../types'
 
@@ -16,11 +17,16 @@ type RecordTypeFilter = 'all' | 'note' | 'email' | 'document' | 'event' | 'decis
 type SubcategoryFilter = 'all' | 'general' | string // 'all' for all, 'general' for no subcategory, or subcategory id
 type ViewMode = 'timeline' | 'table'
 
-function groupRecordsByDate(records: Record[]): Map<string, Record[]> {
+function groupRecordsByDate(
+  records: Record[],
+  formatDate: (date: string | Date | null | undefined, style?: 'default' | 'withTime' | 'short' | 'withDay' | 'full') => string
+): Map<string, Record[]> {
   const groups = new Map<string, Record[]>()
 
   records.forEach(record => {
-    const date = parseISO(record.created_at)
+    // Use record_date for grouping (falls back to created_at date if not set)
+    const dateStr = record.record_date || record.created_at.split('T')[0]
+    const date = parseISO(dateStr)
     let key: string
 
     if (isToday(date)) {
@@ -30,7 +36,7 @@ function groupRecordsByDate(records: Record[]): Map<string, Record[]> {
     } else if (isThisWeek(date)) {
       key = format(date, 'EEEE') // Day name
     } else {
-      key = format(date, 'MMMM d, yyyy')
+      key = formatDate(date, 'full')
     }
 
     if (!groups.has(key)) {
@@ -78,14 +84,20 @@ function CopyIdCell({ id }: { id: string }) {
   )
 }
 
+// Track Timeline mounts for debugging
+let timelineMountCount = 0
+
 export function Timeline() {
   const { topicId } = useParams<{ topicId: string }>()
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
+  const location = useLocation()
   const { topic, isLoading: topicLoading } = useTopic(topicId)
   const { user } = useAuth()
   const { success, error } = useToast()
   const confirm = useConfirm()
+  const { formatDate } = useSettings()
+  const { recordOperation } = useUndoRedo()
 
   const [records, setRecords] = useState<Record[]>([])
   const [subcategories, setSubcategories] = useState<Subcategory[]>([])
@@ -93,6 +105,19 @@ export function Timeline() {
   const hasInitiallyLoadedRef = useRef(false)
   const currentTopicIdRef = useRef<string | undefined>(undefined)
   const [showForm, setShowForm] = useState(false)
+
+  // Track component mounts for debugging - persist to main process
+  useEffect(() => {
+    timelineMountCount++
+    const mountMsg = `[Timeline] MOUNTED (count: ${timelineMountCount}) topicId=${topicId} at ${new Date().toISOString()}`
+    console.log(mountMsg)
+    window.electronAPI?.logger?.log?.('warn', mountMsg)
+    return () => {
+      const unmountMsg = `[Timeline] UNMOUNTED (count: ${timelineMountCount}) topicId=${topicId} at ${new Date().toISOString()}`
+      console.log(unmountMsg)
+      window.electronAPI?.logger?.log?.('warn', unmountMsg)
+    }
+  }, [])
   const [editingRecord, setEditingRecord] = useState<Record | null>(null)
   const [filterType, setFilterType] = useState<RecordTypeFilter>('all')
   const [filterSubcategory, setFilterSubcategory] = useState<SubcategoryFilter>('all')
@@ -114,6 +139,8 @@ export function Timeline() {
 
   const loadRecords = async (showLoading = false) => {
     if (!topicId) return
+
+    console.log(`[Timeline] loadRecords called, showLoading=${showLoading}, topicId=${topicId}, stack:`, new Error().stack?.split('\n').slice(1, 5).join(' <- '))
 
     // Check if topic changed - if so, reset the initial load flag
     if (currentTopicIdRef.current !== topicId) {
@@ -153,19 +180,49 @@ export function Timeline() {
     loadRecords()
   }, [topicId, filterSubcategory])
 
-  // Listen for external data changes (from other components)
+  // Listen for external data changes (from other components) with debounce
   useEffect(() => {
+    let debounceTimer: NodeJS.Timeout | null = null
+    let lastEventTime = 0
+
     const unsubscribe = onDataTypeChanged(['record', 'topic', 'all'], (event) => {
-      // Only refresh if it's relevant to this topic or if it's a general refresh
-      if (event.type === 'all' || event.type === 'record') {
-        loadRecords()
+      const now = Date.now()
+      console.log(`[Timeline] Data change event received:`, event, `topicId=${topicId}, timeSinceLastEvent=${now - lastEventTime}ms`)
+
+      // Debounce: ignore events within 500ms of each other
+      if (now - lastEventTime < 500) {
+        console.log(`[Timeline] Ignoring event (debounced)`)
+        return
       }
-      if (event.type === 'topic' && event.action === 'update') {
-        // Topic was updated, might need to reload subcategories
-        loadSubcategories()
+      lastEventTime = now
+
+      // Clear any pending debounce timer
+      if (debounceTimer) {
+        clearTimeout(debounceTimer)
       }
+
+      // Debounce the actual reload by 300ms
+      debounceTimer = setTimeout(() => {
+        // Only refresh if it's relevant to this topic or if it's a general refresh
+        if (event.type === 'all' || event.type === 'record') {
+          console.log(`[Timeline] DATA CHANGE LISTENER: Reloading records due to event:`, event)
+          loadRecords()
+        }
+        if (event.type === 'topic' && event.action === 'update') {
+          // Topic was updated, might need to reload subcategories
+          console.log(`[Timeline] DATA CHANGE LISTENER: Reloading subcategories due to topic update`)
+          loadSubcategories()
+        }
+        console.log(`[Timeline] DATA CHANGE LISTENER: Debounced handler completed`)
+      }, 300)
     })
-    return unsubscribe
+
+    return () => {
+      unsubscribe()
+      if (debounceTimer) {
+        clearTimeout(debounceTimer)
+      }
+    }
   }, [topicId, filterSubcategory])
 
   // Scroll to and highlight a specific record when navigated with ?recordId=
@@ -190,6 +247,31 @@ export function Timeline() {
     return () => clearTimeout(timer)
   }, [isLoading, records, searchParams])
 
+  // Handle search highlight from global search
+  useEffect(() => {
+    const state = location.state as any
+    if (state?.highlightType === 'record' && state?.highlightId) {
+      const recordId = state.highlightId
+      setHighlightedRecordId(recordId)
+
+      // Wait for render, then scroll into view
+      setTimeout(() => {
+        const el = scrollContainerRef.current?.querySelector(`[data-record-id="${recordId}"]`)
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        }
+      }, 300)
+
+      // Clear highlight after 5 seconds
+      const timer = setTimeout(() => setHighlightedRecordId(null), 5000)
+
+      // Clear the location state
+      window.history.replaceState({}, document.title)
+
+      return () => clearTimeout(timer)
+    }
+  }, [location.state, records])
+
   const filteredRecords = records.filter(record => {
     // Support multi-type records (comma-separated)
     if (filterType !== 'all' && !record.type.includes(filterType)) {
@@ -205,9 +287,9 @@ export function Timeline() {
     return true
   })
 
-  const groupedRecords = groupRecordsByDate(filteredRecords)
+  const groupedRecords = groupRecordsByDate(filteredRecords, formatDate)
 
-  const handleCreate = async (data: { type: string; title: string; content?: string; subcategory_id?: string }): Promise<{ recordId?: string }> => {
+  const handleCreate = async (data: { type: string; title: string; content?: string; subcategory_id?: string; linked_mom_ids?: string[]; linked_letter_ids?: string[]; record_date?: string }): Promise<{ recordId?: string }> => {
     if (!user || !topicId) return {}
 
     // Use the selected subcategory filter as default if not 'all' or 'general'
@@ -217,24 +299,74 @@ export function Timeline() {
     }
 
     const result = await window.electronAPI.records.create(
-      { ...data, topic_id: topicId, subcategory_id: subcategoryId },
+      {
+        type: data.type,
+        title: data.title,
+        content: data.content,
+        topic_id: topicId,
+        subcategory_id: subcategoryId,
+        record_date: data.record_date
+      },
       user.id
     )
 
     if (result.success) {
+      const recordId = (result.record as any)?.id
+      const createdRecord = result.record as Record
+
+      // Link MOMs
+      if (data.linked_mom_ids && data.linked_mom_ids.length > 0) {
+        for (const momId of data.linked_mom_ids) {
+          await window.electronAPI.records.linkMom(recordId, momId, user.id)
+        }
+      }
+
+      // Link Letters
+      if (data.linked_letter_ids && data.linked_letter_ids.length > 0) {
+        for (const letterId of data.linked_letter_ids) {
+          await window.electronAPI.records.linkLetter(recordId, letterId, user.id)
+        }
+      }
+
+      // Record operation for undo/redo
+      recordOperation({
+        operation: 'create',
+        entityType: 'record',
+        entityId: recordId,
+        description: `Create record "${data.title}"`,
+        beforeState: null,
+        afterState: {
+          entityType: 'record',
+          entityId: recordId,
+          data: createdRecord as unknown as globalThis.Record<string, unknown>
+        },
+        userId: user.id
+      })
+
       success('Record created', `"${data.title}" has been added to the timeline`)
       setShowForm(false)
       loadRecords()
-      notifyDataChanged('record', 'create', (result.record as any)?.id)
-      return { recordId: (result.record as any)?.id }
+      notifyDataChanged('record', 'create', recordId)
+      return { recordId }
     } else {
       error('Failed to create record', result.error)
       throw new Error(result.error)
     }
   }
 
-  const handleUpdate = async (data: { type: string; title: string; content?: string; subcategory_id?: string }): Promise<{ recordId?: string }> => {
+  const handleUpdate = async (data: { type: string; title: string; content?: string; subcategory_id?: string; linked_mom_ids?: string[]; linked_letter_ids?: string[]; record_date?: string }): Promise<{ recordId?: string }> => {
     if (!user || !editingRecord) return {}
+
+    // Log to both console AND main process (main process logs persist across page reloads)
+    const persistLog = (msg: string) => {
+      console.log(msg)
+      window.electronAPI?.logger?.log?.('info', msg)
+    }
+
+    persistLog(`[Timeline] handleUpdate START - recordId: ${editingRecord.id} at ${new Date().toISOString()}`)
+
+    // Capture before state for undo
+    const beforeData = await window.electronAPI.history.getEntity('record', editingRecord.id)
 
     const result = await window.electronAPI.records.update(
       editingRecord.id,
@@ -242,17 +374,90 @@ export function Timeline() {
         type: data.type,
         title: data.title,
         content: data.content,
-        subcategory_id: data.subcategory_id === '' ? null : data.subcategory_id
+        subcategory_id: data.subcategory_id === '' ? null : data.subcategory_id,
+        record_date: data.record_date
       },
       user.id
     )
 
     if (result.success) {
+      persistLog('[Timeline] handleUpdate - record update successful, syncing links...')
+
+      // Sync MOM links - get existing and compare
+      const existingMomIds = editingRecord.linked_moms?.map(m => m.id) || []
+      const newMomIds = data.linked_mom_ids || []
+
+      // Unlink removed MOMs
+      for (const momId of existingMomIds) {
+        if (!newMomIds.includes(momId)) {
+          persistLog('[Timeline] handleUpdate - unlinking MOM: ' + momId)
+          await window.electronAPI.records.unlinkMom(editingRecord.id, momId, user.id)
+        }
+      }
+
+      // Link new MOMs
+      for (const momId of newMomIds) {
+        if (!existingMomIds.includes(momId)) {
+          persistLog('[Timeline] handleUpdate - linking MOM: ' + momId)
+          await window.electronAPI.records.linkMom(editingRecord.id, momId, user.id)
+        }
+      }
+
+      // Sync Letter links
+      const existingLetterIds = editingRecord.linked_letters?.map(l => l.id) || []
+      const newLetterIds = data.linked_letter_ids || []
+
+      // Unlink removed Letters
+      for (const letterId of existingLetterIds) {
+        if (!newLetterIds.includes(letterId)) {
+          persistLog('[Timeline] handleUpdate - unlinking Letter: ' + letterId)
+          await window.electronAPI.records.unlinkLetter(editingRecord.id, letterId, user.id)
+        }
+      }
+
+      // Link new Letters
+      for (const letterId of newLetterIds) {
+        if (!existingLetterIds.includes(letterId)) {
+          persistLog('[Timeline] handleUpdate - linking Letter: ' + letterId)
+          await window.electronAPI.records.linkLetter(editingRecord.id, letterId, user.id)
+        }
+      }
+
+      persistLog('[Timeline] handleUpdate - links synced, closing form...')
+
+      // Capture after state for undo/redo
+      const afterData = await window.electronAPI.history.getEntity('record', editingRecord.id)
+
+      // Record operation for undo/redo
+      if (beforeData) {
+        recordOperation({
+          operation: 'update',
+          entityType: 'record',
+          entityId: editingRecord.id,
+          description: `Update record "${data.title}"`,
+          beforeState: {
+            entityType: 'record',
+            entityId: editingRecord.id,
+            data: beforeData
+          },
+          afterState: afterData ? {
+            entityType: 'record',
+            entityId: editingRecord.id,
+            data: afterData
+          } : null,
+          userId: user.id
+        })
+      }
+
       success('Record updated')
       setEditingRecord(null)
+      persistLog('[Timeline] handleUpdate - calling loadRecords()...')
       loadRecords()
+      persistLog('[Timeline] handleUpdate - calling loadSubcategories()...')
       loadSubcategories() // Refresh subcategory counts
+      persistLog('[Timeline] handleUpdate - calling notifyDataChanged()...')
       notifyDataChanged('record', 'update', editingRecord.id)
+      persistLog('[Timeline] handleUpdate COMPLETE at ' + new Date().toISOString())
       return { recordId: editingRecord.id }
     } else {
       error('Failed to update record', result.error)
@@ -271,9 +476,29 @@ export function Timeline() {
     })
     if (!confirmed) return
 
+    // Capture before state for undo
+    const beforeData = await window.electronAPI.history.getEntity('record', record.id)
+
     const result = await window.electronAPI.records.delete(record.id, user.id)
 
     if (result.success) {
+      // Record operation for undo/redo
+      if (beforeData) {
+        recordOperation({
+          operation: 'delete',
+          entityType: 'record',
+          entityId: record.id,
+          description: `Delete record "${record.title}"`,
+          beforeState: {
+            entityType: 'record',
+            entityId: record.id,
+            data: beforeData
+          },
+          afterState: null,
+          userId: user.id
+        })
+      }
+
       success('Record deleted')
       loadRecords()
       notifyDataChanged('record', 'delete', record.id)
@@ -294,6 +519,9 @@ export function Timeline() {
   }
 
   if (topicLoading || isLoading) {
+    // Log when showing loading state - this could be causing the "blink"
+    console.log(`[Timeline] SHOWING LOADING SPINNER - topicLoading=${topicLoading}, isLoading=${isLoading} at ${new Date().toISOString()}`)
+    window.electronAPI?.logger?.log?.('warn', `[Timeline] SHOWING LOADING SPINNER - topicLoading=${topicLoading}, isLoading=${isLoading}`)
     return (
       <div className="flex items-center justify-center h-64">
         <div className="animate-spin w-8 h-8 border-4 border-primary-600 border-t-transparent rounded-full" />
@@ -302,6 +530,9 @@ export function Timeline() {
   }
 
   if (!topic) {
+    // Log when topic is null - this could be causing the "blink"
+    console.log(`[Timeline] SHOWING TOPIC NOT FOUND at ${new Date().toISOString()}`)
+    window.electronAPI?.logger?.log?.('warn', `[Timeline] SHOWING TOPIC NOT FOUND`)
     return (
       <div className="text-center py-12">
         <h3 className="text-lg font-medium text-gray-900 mb-2">Topic not found</h3>
@@ -335,7 +566,6 @@ export function Timeline() {
           </div>
 
           <div className="flex items-center gap-2">
-            {topicId && <TopicSummary topicId={topicId} />}
             <button
               onClick={() => setShowForm(true)}
               className="btn-primary flex items-center gap-2"
@@ -566,7 +796,7 @@ export function Timeline() {
                     </td>
                     <td className="px-4 py-3">
                       <span className="text-sm text-gray-500">
-                        {format(parseISO(record.created_at), 'MMM d, yyyy')}
+                        {formatDate(record.created_at)}
                       </span>
                     </td>
                     <td className="px-4 py-3 text-right">

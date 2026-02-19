@@ -303,24 +303,24 @@ function extractDisplayName(address: string, fallbackName?: string): string {
 }
 
 // Convert Outlook date to ISO string
-// Outlook COM returns dates as local time via VT_DATE
+// Outlook COM returns dates via VT_DATE which winax converts to JS Date
+// The conversion treats the date as UTC, but Outlook stores it as local time
+// So we need to use UTC methods to get the original local time values
 function formatOutlookDate(date: any): string {
   if (!date) return ''
   try {
-    // The date from Outlook COM is in local time
-    // We need to create an ISO string that represents this local time
     const d = new Date(date)
 
-    // Get local date components
-    const year = d.getFullYear()
-    const month = String(d.getMonth() + 1).padStart(2, '0')
-    const day = String(d.getDate()).padStart(2, '0')
-    const hours = String(d.getHours()).padStart(2, '0')
-    const minutes = String(d.getMinutes()).padStart(2, '0')
-    const seconds = String(d.getSeconds()).padStart(2, '0')
+    // Use UTC methods because winax interprets VT_DATE as UTC
+    // but Outlook actually stores local time values
+    const year = d.getUTCFullYear()
+    const month = String(d.getUTCMonth() + 1).padStart(2, '0')
+    const day = String(d.getUTCDate()).padStart(2, '0')
+    const hours = String(d.getUTCHours()).padStart(2, '0')
+    const minutes = String(d.getUTCMinutes()).padStart(2, '0')
+    const seconds = String(d.getUTCSeconds()).padStart(2, '0')
 
-    // Return as ISO-like format but in local time (without Z suffix)
-    // This will be parsed correctly by the frontend
+    // Return as ISO-like format without Z suffix (local time representation)
     return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}`
   } catch {
     return ''
@@ -559,6 +559,8 @@ export function saveEmailToFile(entryId: string, storeId: string, filePath: stri
   }
 
   try {
+    const fs = require('fs')
+    const path = require('path')
     const namespace = outlookApp.GetNamespace('MAPI')
     const item = namespace.GetItemFromID(entryId, storeId)
 
@@ -566,8 +568,54 @@ export function saveEmailToFile(entryId: string, storeId: string, filePath: stri
       return { success: false, error: 'Email not found' }
     }
 
-    // Save as MSG format (Outlook message format)
-    item.SaveAs(filePath, 3) // 3 = olMSG format
+    // Save as MSG Unicode format to preserve Arabic and other Unicode characters
+    // olMSGUnicode = 9 (Unicode .msg), olMSG = 3 (ANSI - causes ?????? for non-ASCII)
+    // Note: olMHTML = 10 (different format, don't use)
+    item.SaveAs(filePath, 9)
+
+    // Also save HTML body separately with UTF-8 encoding to preserve Arabic/Unicode text
+    // This provides a readable backup when the MSG file shows ?????? for non-ASCII characters
+    try {
+      const htmlBody = item.HTMLBody || ''
+      const plainBody = item.Body || ''
+
+      if (htmlBody || plainBody) {
+        const dir = path.dirname(filePath)
+        const htmlPath = path.join(dir, 'email-content.html')
+
+        // Create a complete HTML document with proper UTF-8 encoding
+        const htmlContent = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${(item.Subject || 'Email').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 20px; direction: auto; }
+    .header { background: #f5f5f5; padding: 15px; margin-bottom: 20px; border-radius: 5px; }
+    .header p { margin: 5px 0; }
+    .label { font-weight: bold; color: #555; }
+    .body-content { line-height: 1.6; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <p><span class="label">Subject:</span> ${(item.Subject || '').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</p>
+    <p><span class="label">From:</span> ${(item.SenderName || item.SenderEmailAddress || '').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</p>
+    <p><span class="label">Date:</span> ${item.ReceivedTime ? new Date(item.ReceivedTime).toLocaleString() : ''}</p>
+  </div>
+  <div class="body-content">
+    ${htmlBody || plainBody.replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>')}
+  </div>
+</body>
+</html>`
+
+        fs.writeFileSync(htmlPath, htmlContent, 'utf8')
+      }
+    } catch (htmlError) {
+      // Non-critical - just log and continue
+      console.warn('Could not save HTML backup:', htmlError)
+    }
 
     return { success: true }
   } catch (error: any) {
@@ -601,4 +649,123 @@ export function saveAttachment(entryId: string, storeId: string, attachmentIndex
     console.error('Error saving attachment:', error)
     return { success: false, error: `Failed to save attachment: ${error.message}` }
   }
+}
+
+// Arabic day names
+const ARABIC_DAYS = ['الأحد', 'الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت']
+
+// Format date for Arabic email (DD/MM/YYYY)
+function formatArabicDate(dateStr: string): string {
+  const [year, month, day] = dateStr.split('-')
+  return `${day}/${month}/${year}`
+}
+
+// Get Arabic day name from date
+function getArabicDayName(dateStr: string): string {
+  const date = new Date(dateStr)
+  return ARABIC_DAYS[date.getDay()]
+}
+
+// Replace placeholders in template
+function replacePlaceholders(template: string, date: string): string {
+  const dayName = getArabicDayName(date)
+  const formattedDate = formatArabicDate(date)
+  const [year, month, day] = date.split('-')
+
+  return template
+    .replace(/{day_name}/g, dayName)
+    .replace(/{date}/g, formattedDate)
+    .replace(/{date_en}/g, `${year}-${month}-${day}`)
+}
+
+export interface ComposeEmailOptions {
+  to: string
+  cc?: string
+  subject: string
+  body: string
+  bodyFormat?: 'plain' | 'html'
+  attachmentPath?: string
+}
+
+export async function composeEmailWithAttachment(options: ComposeEmailOptions): Promise<{ success: boolean; error?: string }> {
+  console.log('=== outlookService.composeEmailWithAttachment called ===')
+  console.log('options:', JSON.stringify({ ...options, body: options.body.substring(0, 100) + '...' }, null, 2))
+
+  try {
+    await ensureConnection()
+
+    // Create new mail item (0 = olMailItem)
+    const mailItem = outlookApp.CreateItem(0)
+
+    // Set recipients
+    if (options.to) {
+      mailItem.To = options.to
+    }
+    if (options.cc) {
+      mailItem.CC = options.cc
+    }
+
+    // Set subject
+    mailItem.Subject = options.subject
+
+    // Set body - use HTML if it contains HTML tags, otherwise plain text
+    if (options.bodyFormat === 'html' || options.body.includes('<') && options.body.includes('>')) {
+      mailItem.HTMLBody = options.body
+    } else {
+      mailItem.Body = options.body
+    }
+
+    // Add attachment if provided
+    if (options.attachmentPath) {
+      const fs = require('fs')
+      if (fs.existsSync(options.attachmentPath)) {
+        mailItem.Attachments.Add(options.attachmentPath)
+        console.log('Attachment added:', options.attachmentPath)
+      } else {
+        console.warn('Attachment file not found:', options.attachmentPath)
+        return { success: false, error: `Attachment file not found: ${options.attachmentPath}` }
+      }
+    }
+
+    // Display the email for user review (don't send automatically)
+    mailItem.Display()
+
+    console.log('Email composed and displayed successfully')
+    return { success: true }
+  } catch (error: any) {
+    console.error('Error composing email:', error)
+    return { success: false, error: `Failed to compose email: ${error.message}` }
+  }
+}
+
+// Compose attendance report email with customizable template
+export async function composeAttendanceReportEmail(
+  date: string,
+  attachmentPath: string,
+  toEmails: string,
+  ccEmails?: string,
+  subjectTemplate?: string,
+  bodyTemplate?: string
+): Promise<{ success: boolean; error?: string }> {
+  // Default templates if not provided
+  const defaultSubject = 'الموقف اليومي لإدارة الأمان النووي عن يوم {day_name} الموافق {date}'
+  const defaultBody = `السادة الزملاء بإدارة الشئون الإدارية
+تحية طيبة وبعد ،،،
+مرفق لسيادتكم الموقف اليومي لإدارة الأمان النووي عن يوم {day_name} الموافق {date}.
+وتفضلوا بقبول وافر الاحترام والتقدير ،،،`
+
+  const subject = replacePlaceholders(subjectTemplate || defaultSubject, date)
+  const body = replacePlaceholders(bodyTemplate || defaultBody, date)
+
+  // Check if body is HTML (contains HTML tags)
+  const isHtml = body.includes('<') && body.includes('>')
+
+  return composeEmailWithAttachment({
+    to: toEmails,
+    cc: ccEmails,
+    subject,
+    body,
+    bodyFormat: isHtml ? 'html' : 'plain',
+    attachmentPath
+  })
 }

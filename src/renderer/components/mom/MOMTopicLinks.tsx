@@ -56,12 +56,13 @@ export function MOMTopicLinks({ momInternalId, onLinksChanged }: MOMTopicLinksPr
       const [topics, records, allT, letters] = await Promise.all([
         window.electronAPI.moms.getLinkedTopics(momInternalId),
         window.electronAPI.moms.getLinkedRecords(momInternalId),
-        window.electronAPI.topics.getAll(),
+        window.electronAPI.topics.getAll({}),
         window.electronAPI.moms.getLinkedLetters(momInternalId)
       ])
       setLinkedTopics(topics as TopicLink[])
       setLinkedRecords(records as RecordLink[])
-      setAllTopics((allT as Topic[]).filter(t => !t.deleted_at))
+      const topicsData = (allT as { data: Topic[] }).data || allT
+      setAllTopics((topicsData as Topic[]).filter(t => !t.deleted_at))
       setLinkedLetters(letters as MomLetterLink[])
     } catch (err) {
       console.error('Error loading links:', err)

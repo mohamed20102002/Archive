@@ -1,44 +1,81 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { TopicCard } from './TopicCard'
 import { TopicForm } from './TopicForm'
 import { useToast } from '../../context/ToastContext'
 import { useConfirm } from '../common/ConfirmDialog'
 import { useAuth } from '../../context/AuthContext'
+import { useUndoRedo } from '../../context/UndoRedoContext'
 import { onDataTypeChanged } from '../../utils/dataEvents'
+import { ExportButton } from '../common/ExportButton'
 import type { Topic } from '../../types'
 
 type FilterStatus = 'all' | 'active' | 'archived' | 'closed'
 type SortOption = 'updated' | 'created' | 'title' | 'priority'
 type ViewMode = 'card' | 'table'
 
+const PAGE_SIZE = 30
+
 export function TopicList() {
   const [topics, setTopics] = useState<Topic[]>([])
   const [filteredTopics, setFilteredTopics] = useState<Topic[]>([])
   const [isLoading, setIsLoading] = useState(true)
+  const [isLoadingMore, setIsLoadingMore] = useState(false)
   const [showForm, setShowForm] = useState(false)
   const [editingTopic, setEditingTopic] = useState<Topic | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [filterStatus, setFilterStatus] = useState<FilterStatus>('all')
   const [sortBy, setSortBy] = useState<SortOption>('updated')
   const [viewMode, setViewMode] = useState<ViewMode>('card')
+  const [pinStatuses, setPinStatuses] = useState<Record<string, boolean>>({})
+  const [hasMore, setHasMore] = useState(false)
+  const [totalCount, setTotalCount] = useState(0)
 
   const { success, error } = useToast()
   const confirm = useConfirm()
   const { user } = useAuth()
+  const { recordOperation } = useUndoRedo()
   const navigate = useNavigate()
 
-  const loadTopics = async () => {
+  const loadTopics = async (loadMore = false, currentLength = 0) => {
     try {
-      const data = await window.electronAPI.topics.getAll()
-      setTopics(data as Topic[])
+      if (loadMore) {
+        setIsLoadingMore(true)
+      }
+
+      const offset = loadMore ? currentLength : 0
+      const result = await window.electronAPI.topics.getAll({
+        limit: PAGE_SIZE,
+        offset
+      }) as { data: Topic[]; total: number; hasMore: boolean }
+
+      setTopics(prev => loadMore ? [...prev, ...result.data] : result.data)
+      setHasMore(result.hasMore)
+      setTotalCount(result.total)
+
+      // Load pin statuses for new topics
+      if (user && result.data.length > 0) {
+        const topicIds = result.data.map(t => t.id)
+        const statuses = await window.electronAPI.pins.getPinStatuses('topic', topicIds, user.id)
+        setPinStatuses(prev => loadMore ? { ...prev, ...statuses } : statuses)
+      }
     } catch (err) {
       console.error('Error loading topics:', err)
       error('Failed to load topics')
     } finally {
       setIsLoading(false)
+      setIsLoadingMore(false)
     }
   }
+
+  const handleTogglePin = useCallback(async (topicId: string) => {
+    if (!user) return
+
+    const result = await window.electronAPI.pins.toggle('topic', topicId, user.id)
+    if (result.success) {
+      setPinStatuses(prev => ({ ...prev, [topicId]: result.pinned }))
+    }
+  }, [user])
 
   useEffect(() => {
     loadTopics()
@@ -46,10 +83,31 @@ export function TopicList() {
 
   // Listen for data changes (record create/delete affects topic record counts)
   useEffect(() => {
+    let debounceTimer: NodeJS.Timeout | null = null
+    let lastEventTime = 0
+
     const unsubscribe = onDataTypeChanged(['record', 'topic', 'all'], () => {
-      loadTopics()
+      const now = Date.now()
+      // Debounce: ignore events within 500ms of each other
+      if (now - lastEventTime < 500) {
+        return
+      }
+      lastEventTime = now
+
+      if (debounceTimer) {
+        clearTimeout(debounceTimer)
+      }
+      debounceTimer = setTimeout(() => {
+        loadTopics()
+      }, 300)
     })
-    return unsubscribe
+
+    return () => {
+      unsubscribe()
+      if (debounceTimer) {
+        clearTimeout(debounceTimer)
+      }
+    }
   }, [])
 
   useEffect(() => {
@@ -71,6 +129,11 @@ export function TopicList() {
 
     // Sort
     result.sort((a, b) => {
+      // Pinned items always come first
+      const aPinned = pinStatuses[a.id] ? 1 : 0
+      const bPinned = pinStatuses[b.id] ? 1 : 0
+      if (aPinned !== bPinned) return bPinned - aPinned
+
       switch (sortBy) {
         case 'title':
           return a.title.localeCompare(b.title)
@@ -88,13 +151,30 @@ export function TopicList() {
     })
 
     setFilteredTopics(result)
-  }, [topics, searchQuery, filterStatus, sortBy])
+  }, [topics, searchQuery, filterStatus, sortBy, pinStatuses])
 
   const handleCreate = async (data: { title: string; description?: string; priority?: string }) => {
     if (!user) return
 
     const result = await window.electronAPI.topics.create(data, user.id)
     if (result.success) {
+      const createdTopic = result.topic as Topic
+
+      // Record operation for undo/redo
+      recordOperation({
+        operation: 'create',
+        entityType: 'topic',
+        entityId: createdTopic.id,
+        description: `Create topic "${data.title}"`,
+        beforeState: null,
+        afterState: {
+          entityType: 'topic',
+          entityId: createdTopic.id,
+          data: createdTopic as unknown as globalThis.Record<string, unknown>
+        },
+        userId: user.id
+      })
+
       success('Topic created', `"${data.title}" has been created`)
       setShowForm(false)
       loadTopics()
@@ -106,8 +186,35 @@ export function TopicList() {
   const handleUpdate = async (data: { title: string; description?: string; priority?: string }) => {
     if (!user || !editingTopic) return
 
+    // Capture before state for undo
+    const beforeData = await window.electronAPI.history.getEntity('topic', editingTopic.id)
+
     const result = await window.electronAPI.topics.update(editingTopic.id, data, user.id)
     if (result.success) {
+      // Capture after state for undo/redo
+      const afterData = await window.electronAPI.history.getEntity('topic', editingTopic.id)
+
+      // Record operation for undo/redo
+      if (beforeData) {
+        recordOperation({
+          operation: 'update',
+          entityType: 'topic',
+          entityId: editingTopic.id,
+          description: `Update topic "${data.title}"`,
+          beforeState: {
+            entityType: 'topic',
+            entityId: editingTopic.id,
+            data: beforeData
+          },
+          afterState: afterData ? {
+            entityType: 'topic',
+            entityId: editingTopic.id,
+            data: afterData
+          } : null,
+          userId: user.id
+        })
+      }
+
       success('Topic updated', `"${data.title}" has been updated`)
       setEditingTopic(null)
       loadTopics()
@@ -127,8 +234,28 @@ export function TopicList() {
     })
     if (!confirmed) return
 
+    // Capture before state for undo
+    const beforeData = await window.electronAPI.history.getEntity('topic', topic.id)
+
     const result = await window.electronAPI.topics.delete(topic.id, user.id)
     if (result.success) {
+      // Record operation for undo/redo
+      if (beforeData) {
+        recordOperation({
+          operation: 'delete',
+          entityType: 'topic',
+          entityId: topic.id,
+          description: `Delete topic "${topic.title}"`,
+          beforeState: {
+            entityType: 'topic',
+            entityId: topic.id,
+            data: beforeData
+          },
+          afterState: null,
+          userId: user.id
+        })
+      }
+
       success('Topic deleted', `"${topic.title}" has been deleted`)
       loadTopics()
     } else {
@@ -216,16 +343,19 @@ export function TopicList() {
             </div>
           </div>
 
-          {/* Create Button */}
-          <button
-            onClick={() => setShowForm(true)}
-            className="btn-primary flex items-center gap-2"
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-            </svg>
-            New Topic
-          </button>
+          {/* Action Buttons */}
+          <div className="flex items-center gap-2">
+            <ExportButton exportType="topics" />
+            <button
+              onClick={() => setShowForm(true)}
+              className="btn-primary flex items-center gap-2"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+              New Topic
+            </button>
+          </div>
         </div>
       </div>
 
@@ -252,16 +382,48 @@ export function TopicList() {
           )}
         </div>
       ) : viewMode === 'card' ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filteredTopics.map((topic) => (
-            <TopicCard
-              key={topic.id}
-              topic={topic}
-              onEdit={() => setEditingTopic(topic)}
-              onDelete={() => handleDelete(topic)}
-            />
-          ))}
-        </div>
+        <>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {filteredTopics.map((topic) => (
+              <TopicCard
+                key={topic.id}
+                topic={topic}
+                isPinned={pinStatuses[topic.id] || false}
+                onEdit={() => setEditingTopic(topic)}
+                onDelete={() => handleDelete(topic)}
+                onTogglePin={() => handleTogglePin(topic.id)}
+              />
+            ))}
+          </div>
+          {!searchQuery && filterStatus === 'all' && (hasMore || topics.length > PAGE_SIZE) && (
+            <div className="flex justify-center gap-3 mt-6">
+              {hasMore && (
+                <button
+                  onClick={() => loadTopics(true, topics.length)}
+                  disabled={isLoadingMore}
+                  className="px-6 py-2 text-sm font-medium text-primary-600 bg-primary-50 rounded-lg hover:bg-primary-100 transition-colors disabled:opacity-50"
+                >
+                  {isLoadingMore ? (
+                    <span className="flex items-center gap-2">
+                      <div className="w-4 h-4 border-2 border-primary-600 border-t-transparent rounded-full animate-spin" />
+                      Loading...
+                    </span>
+                  ) : (
+                    `Load More (${topics.length} of ${totalCount})`
+                  )}
+                </button>
+              )}
+              {topics.length > PAGE_SIZE && (
+                <button
+                  onClick={() => loadTopics(false)}
+                  className="px-6 py-2 text-sm font-medium text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+                >
+                  Show Less
+                </button>
+              )}
+            </div>
+          )}
+        </>
       ) : (
         <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
           <table className="w-full">

@@ -329,11 +329,28 @@ export function getLetterById(id: string): Letter | null {
   }
 }
 
+export interface LetterFilters {
+  limit?: number
+  offset?: number
+}
+
+export interface PaginatedLetters {
+  data: Letter[]
+  total: number
+  hasMore: boolean
+}
+
 // Get all letters
-export function getAllLetters(): Letter[] {
+export function getAllLetters(filters?: LetterFilters): PaginatedLetters {
   const db = getDatabase()
 
-  const letters = db.prepare(`
+  // Get total count first
+  const countResult = db.prepare(`
+    SELECT COUNT(*) as count FROM letters WHERE deleted_at IS NULL
+  `).get() as { count: number }
+  const total = countResult.count
+
+  let query = `
     SELECT l.*,
            a.name as authority_name,
            a.short_name as authority_short_name,
@@ -354,9 +371,25 @@ export function getAllLetters(): Letter[] {
     LEFT JOIN users u ON l.created_by = u.id
     WHERE l.deleted_at IS NULL
     ORDER BY l.created_at DESC
-  `).all() as (Letter & { is_overdue: number; authority_is_internal: number })[]
+  `
 
-  return letters.map(l => ({ ...l, is_overdue: l.is_overdue === 1, authority_is_internal: l.authority_is_internal === 1 }))
+  const queryValues: unknown[] = []
+
+  if (filters?.limit) {
+    query += ' LIMIT ?'
+    queryValues.push(filters.limit)
+    if (filters?.offset) {
+      query += ' OFFSET ?'
+      queryValues.push(filters.offset)
+    }
+  }
+
+  const letters = db.prepare(query).all(...queryValues) as (Letter & { is_overdue: number; authority_is_internal: number })[]
+
+  const data = letters.map(l => ({ ...l, is_overdue: l.is_overdue === 1, authority_is_internal: l.authority_is_internal === 1 }))
+  const hasMore = filters?.limit ? (filters.offset || 0) + data.length < total : false
+
+  return { data, total, hasMore }
 }
 
 // Get letters by topic

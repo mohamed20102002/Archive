@@ -1,6 +1,7 @@
 import { v4 as uuidv4 } from 'uuid'
-import { getDatabase, getEmailsPath, refreshDatabase } from '../database/connection'
+import { getDatabase, getAuditDatabase, getEmailsPath, getDataPath, refreshDatabase } from '../database/connection'
 import { getBasePath } from '../utils/fileSystem'
+import { encryptPassword } from './secure-resources-crypto'
 import * as fs from 'fs'
 import * as path from 'path'
 
@@ -536,17 +537,21 @@ export async function seedDatabase(userId: string, options: SeedOptions = {}): P
       counts.reminders++
     }
 
-    // 14. Create Credentials (with placeholder encrypted values)
+    // 14. Create Credentials (with properly encrypted values)
     const systems = ['Email Server', 'Database Server', 'Web Application', 'VPN Gateway', 'File Server', 'Backup System', 'Monitoring Tool', 'CRM System', 'ERP System', 'Project Management']
     for (let i = 0; i < opts.credentials; i++) {
       const id = uuidv4()
       const system = systems[i % systems.length]
       const category = randomItem(credentialCategories)
 
+      // Generate a sample password and encrypt it properly
+      const samplePassword = `SamplePass${i + 1}!@#`
+      const { encrypted, iv, tag } = encryptPassword(samplePassword)
+
       db.prepare(`
         INSERT INTO credentials (id, system_name, username, encrypted_password, password_iv, password_tag, category, description, created_by, created_at, updated_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
-      `).run(id, system, `admin_${i + 1}`, 'placeholder_encrypted', 'placeholder_iv', 'placeholder_tag', category, `Credentials for ${system}`, userId)
+      `).run(id, system, `admin_${i + 1}`, encrypted, iv, tag, category, `Credentials for ${system}`, userId)
       counts.credentials++
     }
 
@@ -593,26 +598,38 @@ export async function clearAllData(userId: string): Promise<{ success: boolean; 
     db.exec('PRAGMA foreign_keys = OFF')
     db.exec('BEGIN TRANSACTION')
 
-    // Clear all data tables
+    // Clear all data tables (order matters due to foreign keys)
+    // First clear link/junction tables
     db.exec("DELETE FROM attendance_entry_conditions")
-    db.exec("DELETE FROM attendance_entries")
-    db.exec("DELETE FROM reminders")
+    db.exec("DELETE FROM record_linked_moms")
+    db.exec("DELETE FROM record_linked_letters")
     db.exec("DELETE FROM mom_record_links")
     db.exec("DELETE FROM mom_topic_links")
     db.exec("DELETE FROM mom_letter_links")
+    db.exec("DELETE FROM topic_tags")
+    db.exec("DELETE FROM letter_references")
+    db.exec("DELETE FROM letter_attachments")
+    db.exec("DELETE FROM record_attachments")
+    db.exec("DELETE FROM comment_edits")
+    db.exec("DELETE FROM issue_history_records")
+
+    // Then clear main data tables
+    db.exec("DELETE FROM attendance_entries")
+    db.exec("DELETE FROM reminders")
+    db.exec("DELETE FROM email_schedule_instances")
+    db.exec("DELETE FROM email_schedules")
+    db.exec("DELETE FROM emails")
     db.exec("DELETE FROM mom_actions")
     db.exec("DELETE FROM mom_drafts")
     db.exec("DELETE FROM mom_history")
     db.exec("DELETE FROM moms")
-    db.exec("DELETE FROM issue_history_records")
     db.exec("DELETE FROM issue_history")
     db.exec("DELETE FROM issues")
-    db.exec("DELETE FROM letter_references")
-    db.exec("DELETE FROM letter_attachments")
     db.exec("DELETE FROM letter_drafts")
     db.exec("DELETE FROM letters")
     db.exec("DELETE FROM contacts")
     db.exec("DELETE FROM authorities")
+    db.exec("DELETE FROM tags")
     db.exec("DELETE FROM records")
     db.exec("DELETE FROM subcategories")
     db.exec("DELETE FROM topics")
@@ -620,12 +637,28 @@ export async function clearAllData(userId: string): Promise<{ success: boolean; 
     db.exec("DELETE FROM secure_references")
     db.exec("DELETE FROM credentials")
     db.exec("DELETE FROM handovers")
-    // Keep admin user
-    db.exec(`DELETE FROM users WHERE role != 'admin'`)
+    // Keep only active admin users (remove deleted admins and all non-admins)
+    db.exec(`DELETE FROM users WHERE role != 'admin' OR deleted_at IS NOT NULL`)
+    // Clear shift_id for remaining users before deleting shifts (to avoid FK issues)
+    db.exec(`UPDATE users SET shift_id = NULL`)
+    // Now safe to delete shifts and other config tables
+    db.exec("DELETE FROM shifts")
+    db.exec("DELETE FROM attendance_conditions")
+    db.exec("DELETE FROM mom_locations")
 
     db.exec('COMMIT')
     // Re-enable foreign key checks
     db.exec('PRAGMA foreign_keys = ON')
+
+    // Clear audit history
+    const auditDb = getAuditDatabase()
+    auditDb.exec('DELETE FROM audit_log')
+
+    // Delete the audit checksum file to reset the chain
+    const auditChecksumFile = path.join(getDataPath(), 'audit.checksum')
+    if (fs.existsSync(auditChecksumFile)) {
+      fs.unlinkSync(auditChecksumFile)
+    }
 
     // Clear file storage directories
     const basePath = getBasePath()

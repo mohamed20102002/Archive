@@ -17,12 +17,10 @@ export function isRestoreInProgress(): boolean {
 }
 
 export function getDataPath(): string {
-  // Use portable path relative to executable in production
-  // In development, use project root
+  // Simple portable mode - data folder next to exe
   const basePath = app.isPackaged
     ? path.dirname(app.getPath('exe'))
     : process.cwd()
-
   return path.join(basePath, 'data')
 }
 
@@ -30,7 +28,6 @@ export function getEmailsPath(): string {
   const basePath = app.isPackaged
     ? path.dirname(app.getPath('exe'))
     : process.cwd()
-
   return path.join(basePath, 'emails')
 }
 

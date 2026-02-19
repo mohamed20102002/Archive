@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react'
-import { format, parseISO } from 'date-fns'
 import { useAuth } from '../../context/AuthContext'
 import { useToast } from '../../context/ToastContext'
+import { useSettings } from '../../context/SettingsContext'
 import { notifyReminderDataChanged } from '../reminders/ReminderBadge'
 import type { MomAction } from '../../types'
 
@@ -19,6 +19,7 @@ function isOverdue(deadline: string | null): boolean {
 export function MOMActions({ momInternalId, momId, onActionsChanged }: MOMActionsProps) {
   const { user } = useAuth()
   const toast = useToast()
+  const { formatDate } = useSettings()
   const [actions, setActions] = useState<MomAction[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -473,7 +474,7 @@ export function MOMActions({ momInternalId, momId, onActionsChanged }: MOMAction
                           )}
                           {action.deadline && (
                             <span className={`text-xs ${overdue ? 'text-red-600 font-medium' : 'text-gray-500'}`}>
-                              Due: {format(parseISO(action.deadline), 'MMM d, yyyy')}
+                              Due: {formatDate(action.deadline)}
                             </span>
                           )}
                           {action.reminder_date && (
@@ -481,7 +482,7 @@ export function MOMActions({ momInternalId, momId, onActionsChanged }: MOMAction
                               <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                               </svg>
-                              {format(parseISO(action.reminder_date), 'MMM d')}
+                              {formatDate(action.reminder_date, 'short')}
                             </span>
                           )}
                         </div>

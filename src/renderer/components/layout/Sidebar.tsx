@@ -3,15 +3,27 @@ import { NavLink, useLocation } from 'react-router-dom'
 import { formatDistanceToNow } from 'date-fns'
 import { useAuth } from '../../context/AuthContext'
 import { useSettings } from '../../context/SettingsContext'
+import { ScheduledEmailBadge } from '../scheduled-emails/ScheduledEmailBadge'
 
 interface NavItem {
   path: string
   label: string
   icon: React.ReactNode
   adminOnly?: boolean
+  showConnectionIndicator?: boolean
+  showScheduledEmailBadge?: boolean
 }
 
 const navItems: NavItem[] = [
+  {
+    path: '/dashboard',
+    label: 'Dashboard',
+    icon: (
+      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+      </svg>
+    )
+  },
   {
     path: '/topics',
     label: 'Topics',
@@ -40,6 +52,24 @@ const navItems: NavItem[] = [
     )
   },
   {
+    path: '/calendar',
+    label: 'Calendar',
+    icon: (
+      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+      </svg>
+    )
+  },
+  {
+    path: '/search',
+    label: 'Advanced Search',
+    icon: (
+      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+      </svg>
+    )
+  },
+  {
     path: '/mom',
     label: 'Minutes of Meeting',
     icon: (
@@ -64,7 +94,19 @@ const navItems: NavItem[] = [
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
       </svg>
-    )
+    ),
+    showConnectionIndicator: true
+  },
+  {
+    path: '/scheduled-emails',
+    label: 'Scheduled Emails',
+    icon: (
+      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8" />
+      </svg>
+    ),
+    showScheduledEmailBadge: true
   },
   {
     path: '/handover',
@@ -120,6 +162,32 @@ export function Sidebar() {
   const { user } = useAuth()
   const { settings } = useSettings()
   const [lastBackupLabel, setLastBackupLabel] = useState<string | null>(null)
+  const [isOutlookConnected, setIsOutlookConnected] = useState(false)
+
+  // Check Outlook connection status
+  useEffect(() => {
+    const checkOutlookConnection = async () => {
+      try {
+        const connected = await window.electronAPI.outlook.isConnected()
+        setIsOutlookConnected(connected)
+      } catch {
+        setIsOutlookConnected(false)
+      }
+    }
+
+    checkOutlookConnection()
+    // Check every 5 seconds
+    const interval = setInterval(checkOutlookConnection, 5000)
+
+    // Listen for connection changes
+    const handleOutlookChange = () => checkOutlookConnection()
+    window.addEventListener('outlook-connection-changed', handleOutlookChange)
+
+    return () => {
+      clearInterval(interval)
+      window.removeEventListener('outlook-connection-changed', handleOutlookChange)
+    }
+  }, [])
 
   useEffect(() => {
     window.electronAPI.backup.getStatus().then((status: any) => {
@@ -133,9 +201,14 @@ export function Sidebar() {
     }).catch(() => {})
   }, [location.pathname])
 
-  const filteredItems = navItems.filter(
-    item => !item.adminOnly || user?.role === 'admin'
-  )
+  const filteredItems = navItems.filter(item => {
+    // Check admin-only restriction
+    if (item.adminOnly && user?.role !== 'admin') return false
+    // Check visible_tabs setting (empty array = all visible, adminOnly items always visible for admins)
+    if (item.adminOnly) return true
+    if (settings.visible_tabs.length === 0) return true
+    return settings.visible_tabs.includes(item.path)
+  })
 
   return (
     <aside className="w-64 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 flex flex-col relative z-[60]">
@@ -166,10 +239,25 @@ export function Sidebar() {
             <NavLink
               key={item.path}
               to={item.path}
-              className={isActive ? 'sidebar-item-active' : 'sidebar-item'}
+              className={`${isActive ? 'sidebar-item-active' : 'sidebar-item'} relative`}
             >
               {item.icon}
               <span>{item.label}</span>
+              {/* Outlook connection indicator */}
+              {item.showConnectionIndicator && (
+                <span
+                  className={`absolute right-3 w-2 h-2 rounded-full ${
+                    isOutlookConnected
+                      ? 'bg-green-500 animate-pulse-slow'
+                      : 'bg-red-500'
+                  }`}
+                  title={isOutlookConnected ? 'Connected to Outlook' : 'Not connected to Outlook'}
+                />
+              )}
+              {/* Scheduled Email badge */}
+              {item.showScheduledEmailBadge && (
+                <ScheduledEmailBadge className="absolute right-3" />
+              )}
             </NavLink>
           )
         })}

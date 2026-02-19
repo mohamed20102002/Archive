@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, Notification } from 'electron'
+import { app, BrowserWindow, ipcMain, Notification, Menu } from 'electron'
 import * as path from 'path'
 import { initializeLogger } from './services/logger.service'
 import { initializeSchema, hasUsers } from './database/schema'
@@ -6,6 +6,9 @@ import { initializeAuditSchema, logAudit } from './database/audit'
 import { runMigrations } from './database/migrations'
 import { closeDatabase, getDatabase } from './database/connection'
 import { registerIpcHandlers } from './ipc/handlers'
+import { clearTempFolder } from './services/secure-resources-crypto'
+import { registerUpdaterHandlers } from './services/updater.service'
+import { generateMissedInstances } from './services/scheduled-email.service'
 
 // Initialize logger before anything else
 initializeLogger()
@@ -13,6 +16,9 @@ initializeLogger()
 let mainWindow: BrowserWindow | null = null
 
 function createWindow() {
+  // Remove the default menu bar
+  Menu.setApplicationMenu(null)
+
   mainWindow = new BrowserWindow({
     width: 1400,
     height: 900,
@@ -24,7 +30,8 @@ function createWindow() {
       preload: path.join(__dirname, '../preload/index.js'),
       nodeIntegration: false,
       contextIsolation: true,
-      sandbox: false
+      sandbox: false,
+      spellcheck: true
     },
     show: false,
     backgroundColor: '#f8fafc'
@@ -68,6 +75,102 @@ function createWindow() {
   mainWindow.on('closed', () => {
     mainWindow = null
   })
+
+  // === DEBUG: Track renderer crashes and reloads ===
+  mainWindow.webContents.on('render-process-gone', (event, details) => {
+    console.error('[MAIN] Renderer process gone!', details)
+  })
+
+  mainWindow.webContents.on('crashed', (event, killed) => {
+    console.error('[MAIN] Renderer crashed! killed:', killed)
+  })
+
+  mainWindow.webContents.on('unresponsive', () => {
+    console.error('[MAIN] Renderer became unresponsive!')
+  })
+
+  mainWindow.webContents.on('responsive', () => {
+    console.log('[MAIN] Renderer became responsive again')
+  })
+
+  mainWindow.webContents.on('did-start-loading', () => {
+    console.log('[MAIN] Renderer started loading at', new Date().toISOString())
+  })
+
+  mainWindow.webContents.on('did-finish-load', () => {
+    console.log('[MAIN] Renderer finished loading at', new Date().toISOString())
+  })
+
+  mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription) => {
+    console.error('[MAIN] Renderer failed to load:', errorCode, errorDescription)
+  })
+
+  mainWindow.webContents.on('dom-ready', () => {
+    console.log('[MAIN] DOM ready at', new Date().toISOString())
+  })
+
+  // Track navigation events
+  mainWindow.webContents.on('did-navigate', (event, url) => {
+    console.log('[MAIN] Did navigate to:', url, 'at', new Date().toISOString())
+  })
+
+  mainWindow.webContents.on('did-navigate-in-page', (event, url) => {
+    console.log('[MAIN] Did navigate in-page to:', url)
+  })
+
+  mainWindow.webContents.on('will-navigate', (event, url) => {
+    console.log('[MAIN] Will navigate to:', url)
+  })
+
+  // Track reload events
+  mainWindow.webContents.on('devtools-reload-page', () => {
+    console.log('[MAIN] DevTools triggered reload!')
+  })
+
+  // Spellcheck context menu - shows spelling suggestions on right-click
+  mainWindow.webContents.on('context-menu', (event, params) => {
+    const menuItems: Electron.MenuItemConstructorOptions[] = []
+
+    // Add spelling suggestions if there's a misspelled word
+    if (params.misspelledWord) {
+      if (params.dictionarySuggestions.length > 0) {
+        params.dictionarySuggestions.forEach((suggestion) => {
+          menuItems.push({
+            label: suggestion,
+            click: () => mainWindow?.webContents.replaceMisspelling(suggestion)
+          })
+        })
+        menuItems.push({ type: 'separator' })
+      }
+
+      menuItems.push({
+        label: 'Add to Dictionary',
+        click: () => mainWindow?.webContents.session.addWordToSpellCheckerDictionary(params.misspelledWord)
+      })
+      menuItems.push({ type: 'separator' })
+    }
+
+    // Standard edit operations
+    if (params.isEditable) {
+      menuItems.push(
+        { label: 'Cut', role: 'cut', enabled: params.editFlags.canCut },
+        { label: 'Copy', role: 'copy', enabled: params.editFlags.canCopy },
+        { label: 'Paste', role: 'paste', enabled: params.editFlags.canPaste },
+        { label: 'Select All', role: 'selectAll', enabled: params.editFlags.canSelectAll }
+      )
+    } else if (params.selectionText) {
+      // If text is selected but not in editable field
+      menuItems.push(
+        { label: 'Copy', role: 'copy' }
+      )
+    }
+
+    // Only show menu if there are items
+    if (menuItems.length > 0) {
+      const menu = Menu.buildFromTemplate(menuItems)
+      menu.popup()
+    }
+  })
 }
 
 
@@ -85,6 +188,25 @@ async function initializeApp() {
 
   // Register IPC handlers
   registerIpcHandlers()
+  registerUpdaterHandlers()
+
+  // Clear any leftover decrypted temp files from previous sessions
+  console.log('[MAIN] Clearing secure resources temp folder...')
+  clearTempFolder()
+
+  // Recover missed scheduled email instances (for days when app was closed)
+  console.log('[MAIN] Checking for missed scheduled emails...')
+  try {
+    const missed = generateMissedInstances()
+    if (missed.generated > 0) {
+      console.log(`[MAIN] Generated ${missed.generated} missed scheduled email instances`)
+      if (missed.missedDates.length > 0) {
+        console.log(`[MAIN] Overdue dates: ${missed.missedDates.join(', ')}`)
+      }
+    }
+  } catch (error) {
+    console.error('[MAIN] Error generating missed scheduled email instances:', error)
+  }
 
   // Log system startup
   logAudit('SYSTEM_STARTUP', null, null, 'system', null, {
@@ -105,6 +227,10 @@ app.whenReady().then(async () => {
 })
 
 app.on('window-all-closed', () => {
+  // Clear decrypted temp files before closing
+  console.log('[MAIN] Clearing secure resources temp folder on shutdown...')
+  clearTempFolder()
+
   // Log system shutdown
   logAudit('SYSTEM_SHUTDOWN', null, null, 'system', null, null)
 
@@ -117,6 +243,8 @@ app.on('window-all-closed', () => {
 })
 
 app.on('before-quit', () => {
+  // Clear decrypted temp files
+  clearTempFolder()
   closeDatabase()
 })
 

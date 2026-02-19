@@ -1,5 +1,6 @@
 import React from 'react'
-import { format, isToday, isYesterday } from 'date-fns'
+import { isToday, isYesterday } from 'date-fns'
+import { useSettings } from '../../context/SettingsContext'
 import type { OutlookEmail } from '../../types'
 
 interface EmailListProps {
@@ -10,21 +11,22 @@ interface EmailListProps {
   onSelectEmail: (email: OutlookEmail) => void
 }
 
-function formatEmailDate(dateStr: string): string {
-  const date = new Date(dateStr)
-
-  if (isToday(date)) {
-    return format(date, 'h:mm a')
-  }
-
-  if (isYesterday(date)) {
-    return 'Yesterday'
-  }
-
-  return format(date, 'MMM d')
-}
-
 export function EmailList({ emails, selectedEmail, isLoading, archivedEmailIds, onSelectEmail }: EmailListProps) {
+  const { formatDate } = useSettings()
+
+  const formatEmailDate = (dateStr: string): string => {
+    const date = new Date(dateStr)
+
+    if (isToday(date)) {
+      return formatDate(dateStr, 'short')
+    }
+
+    if (isYesterday(date)) {
+      return 'Yesterday'
+    }
+
+    return formatDate(dateStr, 'short')
+  }
   if (isLoading) {
     return (
       <div className="bg-white rounded-xl border border-gray-200 h-full flex items-center justify-center">

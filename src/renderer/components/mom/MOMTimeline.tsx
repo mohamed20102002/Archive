@@ -1,5 +1,5 @@
 import React from 'react'
-import { format, parseISO } from 'date-fns'
+import { useSettings } from '../../context/SettingsContext'
 import type { MomHistory, MomHistoryAction } from '../../types'
 
 interface MOMTimelineProps {
@@ -129,15 +129,13 @@ function getActionDescription(entry: MomHistory): string {
   }
 }
 
-function formatTimestamp(dateStr: string): string {
-  try {
-    return format(parseISO(dateStr), 'MMM d, yyyy h:mm a')
-  } catch {
-    return dateStr
-  }
-}
-
 export function MOMTimeline({ history }: MOMTimelineProps) {
+  const { formatDate } = useSettings()
+
+  const formatTimestamp = (dateStr: string): string => {
+    return formatDate(dateStr, 'withTime')
+  }
+
   if (history.length === 0) {
     return (
       <div className="text-center py-8 text-gray-500">

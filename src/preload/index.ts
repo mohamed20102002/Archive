@@ -41,6 +41,21 @@ export interface ElectronAPI {
     deleteUser: (userId: string, adminId: string) => Promise<{ success: boolean; error?: string }>
     checkUsername: (username: string) => Promise<{ exists: boolean; isActive: boolean }>
   }
+  search: {
+    global: (query: string, limit?: number) => Promise<{
+      topics: unknown[]
+      records: unknown[]
+      letters: unknown[]
+      moms: unknown[]
+      momActions: unknown[]
+      issues: unknown[]
+      credentials: unknown[]
+      secureReferences: unknown[]
+      contacts: unknown[]
+      authorities: unknown[]
+      totalCount: number
+    }>
+  }
   topics: {
     create: (data: unknown, userId: string) => Promise<{ success: boolean; topic?: unknown; error?: string }>
     getAll: () => Promise<unknown[]>
@@ -56,6 +71,12 @@ export interface ElectronAPI {
     update: (id: string, data: unknown, userId: string) => Promise<{ success: boolean; error?: string }>
     delete: (id: string, userId: string) => Promise<{ success: boolean; error?: string }>
     search: (query: string, topicId?: string) => Promise<unknown[]>
+    linkMom: (recordId: string, momId: string, userId: string) => Promise<{ success: boolean; error?: string }>
+    unlinkMom: (recordId: string, momId: string, userId: string) => Promise<{ success: boolean; error?: string }>
+    linkLetter: (recordId: string, letterId: string, userId: string) => Promise<{ success: boolean; error?: string }>
+    unlinkLetter: (recordId: string, letterId: string, userId: string) => Promise<{ success: boolean; error?: string }>
+    getLinkedMoms: (recordId: string) => Promise<unknown[]>
+    getLinkedLetters: (recordId: string) => Promise<unknown[]>
   }
   recordAttachments: {
     getByRecord: (recordId: string) => Promise<unknown[]>
@@ -92,6 +113,7 @@ export interface ElectronAPI {
     getFolders: (mailboxId: string) => Promise<unknown[]>
     getEmails: (folderId: string, storeId: string, limit?: number) => Promise<unknown[]>
     getEmailDetails: (entryId: string, storeId: string) => Promise<unknown | null>
+    composeAttendanceEmail: (date: string, attachmentPath: string, toEmails: string, ccEmails?: string, subjectTemplate?: string, bodyTemplate?: string) => Promise<{ success: boolean; error?: string }>
   }
   reminders: {
     create: (data: unknown, userId: string) => Promise<{ success: boolean; reminder?: unknown; error?: string }>
@@ -211,6 +233,7 @@ export interface ElectronAPI {
     addLinkedRecords: (historyId: string, recordIds: string[], userId: string) => Promise<{ success: boolean; error?: string }>
     getCommentEdits: (historyId: string) => Promise<{ id: string; history_id: string; old_comment: string; edited_by: string; edited_at: string; editor_name?: string }[]>
     getHistory: (issueId: string) => Promise<unknown[]>
+    getOpenSummary: () => Promise<{ issue: unknown; latestUpdate: unknown }[]>
     getStats: () => Promise<unknown>
     getDueReminders: () => Promise<unknown[]>
     getWithReminders: (days?: number) => Promise<unknown[]>
@@ -236,6 +259,20 @@ export interface ElectronAPI {
     getFilePath: (fileId: string) => Promise<string | null>
     getStats: () => Promise<unknown>
   }
+  keyfile: {
+    exists: () => Promise<boolean>
+    export: () => Promise<{ success: boolean; error?: string }>
+    import: () => Promise<{ success: boolean; error?: string }>
+  }
+  categories: {
+    getAll: () => Promise<unknown[]>
+    getByType: (type: 'credential' | 'reference') => Promise<unknown[]>
+    getById: (id: string) => Promise<unknown | null>
+    create: (data: { name: string; type: 'credential' | 'reference'; display_order?: number }, userId: string) => Promise<{ success: boolean; category?: unknown; error?: string }>
+    update: (id: string, data: { name?: string; display_order?: number }, userId: string) => Promise<{ success: boolean; error?: string }>
+    delete: (id: string, reassignTo: string, userId: string) => Promise<{ success: boolean; error?: string }>
+    reorder: (ids: string[], userId: string) => Promise<{ success: boolean; error?: string }>
+  }
   attendance: {
     createCondition: (data: unknown, userId: string) => Promise<{ success: boolean; condition?: unknown; error?: string }>
     updateCondition: (id: string, data: unknown, userId: string) => Promise<{ success: boolean; error?: string }>
@@ -244,6 +281,7 @@ export interface ElectronAPI {
     saveEntry: (data: unknown, userId: string) => Promise<{ success: boolean; entry?: unknown; error?: string }>
     saveBulkEntries: (data: unknown, userId: string) => Promise<{ success: boolean; count?: number; error?: string }>
     deleteEntry: (entryId: string, userId: string) => Promise<{ success: boolean; error?: string }>
+    deleteBulkEntries: (shiftId: string, entryDate: string, userId: string) => Promise<{ success: boolean; count?: number; error?: string }>
     getEntry: (userId: string, entryDate: string) => Promise<unknown | null>
     getEntriesForYear: (filters: unknown) => Promise<unknown[]>
     getSummary: (userId: string, year: number) => Promise<unknown>
@@ -256,6 +294,9 @@ export interface ElectronAPI {
     getShifts: (includeDeleted?: boolean) => Promise<unknown[]>
     exportUserPdfDialog: (targetUserId: string, year: number, userId: string) => Promise<{ success: boolean; filePath?: string; error?: string }>
     exportPdfDialog: (year: number, userId: string) => Promise<{ success: boolean; filePath?: string; error?: string }>
+    exportDepartmentReportDialog: (date: string, userId: string) => Promise<{ success: boolean; filePath?: string; error?: string }>
+    getDepartmentReportInfo: (date: string) => Promise<{ exists: boolean; path: string | null; size: number | null; createdAt: string | null }>
+    openDepartmentReport: (date: string) => Promise<{ success: boolean; error?: string }>
   }
   momLocations: {
     create: (data: unknown, userId: string) => Promise<{ success: boolean; location?: unknown; error?: string }>
@@ -322,8 +363,11 @@ export interface ElectronAPI {
     restore: (zipPath: string, userId: string, username: string, displayName: string) => Promise<{ success: boolean; error?: string }>
     getStatus: () => Promise<unknown>
     getEmailsSize: () => Promise<{ totalBytes: number; fileCount: number }>
+    checkReminder: (reminderDays: number) => Promise<{ shouldRemind: boolean; daysSinceBackup: number | null; lastBackupDate: string | null }>
     onProgress: (callback: (progress: unknown) => void) => void
     offProgress: () => void
+    onSessionInvalidated: (callback: () => void) => void
+    offSessionInvalidated: () => void
   }
   database: {
     refresh: () => Promise<{ success: boolean; error?: string }>
@@ -343,11 +387,6 @@ export interface ElectronAPI {
     update: (key: string, value: string, userId: string) => Promise<{ success: boolean; error?: string }>
     updateAll: (settings: Record<string, string>, userId: string) => Promise<{ success: boolean; error?: string }>
   }
-  ai: {
-    getStatus: () => Promise<{ available: boolean; modelLoaded: boolean; modelName: string | null; error?: string }>
-    summarize: (topicId: string, mode?: string) => Promise<{ success: boolean; summary?: string; error?: string }>
-    dispose: () => Promise<void>
-  }
   dialog: {
     openFile: (options?: {
       title?: string
@@ -357,6 +396,13 @@ export interface ElectronAPI {
       canceled: boolean
       files?: { path: string; filename: string; buffer: string; size: number }[]
     }>
+    showMessage: (options: {
+      type?: 'none' | 'info' | 'error' | 'question' | 'warning'
+      title?: string
+      message: string
+      detail?: string
+      buttons?: string[]
+    }) => Promise<{ response: number }>
   }
   file: {
     openExternal: (filePath: string) => Promise<{ success: boolean; error?: string }>
@@ -366,6 +412,93 @@ export interface ElectronAPI {
     getLogs: (filter?: { level?: string; limit?: number }) => Promise<{ timestamp: string; level: string; message: string }[]>
     clearLogs: () => Promise<{ success: boolean }>
     getStats: () => Promise<{ total: number; errors: number; warnings: number }>
+    log: (level: string, message: string) => void
+  }
+  scheduledEmails: {
+    create: (data: unknown, userId: string) => Promise<{ success: boolean; schedule?: unknown; error?: string }>
+    getAll: (includeInactive?: boolean) => Promise<unknown[]>
+    getById: (id: string) => Promise<unknown | null>
+    update: (id: string, data: unknown, userId: string) => Promise<{ success: boolean; error?: string }>
+    delete: (id: string, userId: string) => Promise<{ success: boolean; error?: string }>
+    getInstances: (startDate?: string, endDate?: string, status?: string) => Promise<unknown[]>
+    getTodayInstances: () => Promise<unknown[]>
+    getPendingCounts: () => Promise<{ pending: number; overdue: number; total: number }>
+    generateInstances: (date: string) => Promise<number>
+    markSent: (instanceId: string, userId: string) => Promise<{ success: boolean; error?: string }>
+    dismiss: (instanceId: string, userId: string, notes?: string) => Promise<{ success: boolean; error?: string }>
+    reset: (instanceId: string, userId: string) => Promise<{ success: boolean; error?: string }>
+    getInstanceById: (instanceId: string) => Promise<unknown | null>
+    composeEmail: (instanceId: string, userId: string) => Promise<{ success: boolean; subject?: string; body?: string; to?: string; cc?: string; error?: string }>
+    getHistory: (scheduleId: string) => Promise<unknown[]>
+    previewPlaceholders: (text: string, date: string, language: 'en' | 'ar', userId: string) => Promise<string>
+  }
+  updater: {
+    getVersion: () => Promise<string>
+    importZip: () => Promise<{ success: boolean; message?: string; error?: string }>
+    applyUpdate: () => Promise<{ success: boolean; error?: string }>
+    cancelUpdate: () => Promise<{ success: boolean; error?: string }>
+    checkPending: () => Promise<{ pending: boolean }>
+  }
+  dashboard: {
+    getStats: () => Promise<unknown>
+    getDiskSpace: () => Promise<{ available: number; total: number; used: number; percentUsed: number; isLow: boolean; drive: string } | null>
+    getRecentActivity: (limit?: number) => Promise<unknown[]>
+    getActivityByMonth: (year: number) => Promise<unknown[]>
+    getTopTopics: (limit?: number) => Promise<unknown[]>
+  }
+  calendar: {
+    getEvents: (year: number, month: number) => Promise<unknown[]>
+    getEventsForDate: (date: string) => Promise<unknown[]>
+    getUpcoming: (days?: number) => Promise<unknown[]>
+  }
+  tags: {
+    create: (data: unknown, userId: string) => Promise<{ success: boolean; tag?: unknown; error?: string }>
+    getAll: () => Promise<unknown[]>
+    getById: (id: string) => Promise<unknown | null>
+    update: (id: string, data: unknown, userId: string) => Promise<{ success: boolean; error?: string }>
+    delete: (id: string, userId: string) => Promise<{ success: boolean; error?: string }>
+    getRecordTags: (recordId: string) => Promise<unknown[]>
+    setRecordTags: (recordId: string, tagIds: string[], userId: string) => Promise<{ success: boolean; error?: string }>
+    getIssueTags: (issueId: string) => Promise<unknown[]>
+    setIssueTags: (issueId: string, tagIds: string[], userId: string) => Promise<{ success: boolean; error?: string }>
+    getLetterTags: (letterId: string) => Promise<unknown[]>
+    setLetterTags: (letterId: string, tagIds: string[], userId: string) => Promise<{ success: boolean; error?: string }>
+    getRecordsByTag: (tagId: string) => Promise<unknown[]>
+    getIssuesByTag: (tagId: string) => Promise<unknown[]>
+    getLettersByTag: (tagId: string) => Promise<unknown[]>
+  }
+  advancedSearch: {
+    search: (filters: unknown) => Promise<{ results: unknown[]; total: number; offset: number; limit: number }>
+    createSaved: (userId: string, name: string, filters: unknown) => Promise<{ success: boolean; search?: unknown; error?: string }>
+    getSaved: (userId: string) => Promise<unknown[]>
+    getSavedById: (id: string) => Promise<unknown | null>
+    updateSaved: (id: string, name: string, filters: unknown) => Promise<{ success: boolean; error?: string }>
+    deleteSaved: (id: string) => Promise<{ success: boolean; error?: string }>
+  }
+  history: {
+    undoCreate: (entityType: string, entityId: string, userId: string) => Promise<{ success: boolean; error?: string }>
+    undoUpdate: (entityType: string, entityId: string, previousData: Record<string, unknown>, userId: string) => Promise<{ success: boolean; error?: string }>
+    undoDelete: (entityType: string, entityId: string, userId: string) => Promise<{ success: boolean; error?: string }>
+    redoCreate: (entityType: string, entityId: string, userId: string) => Promise<{ success: boolean; error?: string }>
+    redoUpdate: (entityType: string, entityId: string, afterData: Record<string, unknown>, userId: string) => Promise<{ success: boolean; error?: string }>
+    redoDelete: (entityType: string, entityId: string, userId: string) => Promise<{ success: boolean; error?: string }>
+    getEntity: (entityType: string, entityId: string) => Promise<Record<string, unknown> | null>
+  }
+  pins: {
+    toggle: (entityType: string, entityId: string, userId: string) => Promise<{ success: boolean; pinned: boolean; error?: string }>
+    isPinned: (entityType: string, entityId: string, userId: string) => Promise<boolean>
+    getPinnedIds: (entityType: string, userId: string) => Promise<string[]>
+    getPinStatuses: (entityType: string, entityIds: string[], userId: string) => Promise<Record<string, boolean>>
+  }
+  export: {
+    topics: () => Promise<{ success: boolean; filePath?: string; error?: string }>
+    letters: () => Promise<{ success: boolean; filePath?: string; error?: string }>
+    moms: () => Promise<{ success: boolean; filePath?: string; error?: string }>
+    issues: () => Promise<{ success: boolean; filePath?: string; error?: string }>
+    attendance: (year: number, month?: number) => Promise<{ success: boolean; filePath?: string; error?: string }>
+    searchResults: (results: any[]) => Promise<{ success: boolean; filePath?: string; error?: string }>
+    recordsByTopic: (topicId: string) => Promise<{ success: boolean; filePath?: string; error?: string }>
+    customData: (data: any[], sheetName: string, filename: string) => Promise<{ success: boolean; filePath?: string; error?: string }>
   }
 }
 
@@ -397,9 +530,12 @@ const electronAPI: ElectronAPI = {
       ipcRenderer.invoke('auth:deleteUser', userId, adminId),
     checkUsername: (username) => ipcRenderer.invoke('auth:checkUsername', username)
   },
+  search: {
+    global: (query, limit) => ipcRenderer.invoke('search:global', query, limit)
+  },
   topics: {
     create: (data, userId) => ipcRenderer.invoke('topics:create', data, userId),
-    getAll: () => ipcRenderer.invoke('topics:getAll'),
+    getAll: (filters?) => ipcRenderer.invoke('topics:getAll', filters),
     getById: (id) => ipcRenderer.invoke('topics:getById', id),
     update: (id, data, userId) => ipcRenderer.invoke('topics:update', id, data, userId),
     delete: (id, userId) => ipcRenderer.invoke('topics:delete', id, userId),
@@ -411,7 +547,13 @@ const electronAPI: ElectronAPI = {
     getById: (id) => ipcRenderer.invoke('records:getById', id),
     update: (id, data, userId) => ipcRenderer.invoke('records:update', id, data, userId),
     delete: (id, userId) => ipcRenderer.invoke('records:delete', id, userId),
-    search: (query, topicId) => ipcRenderer.invoke('records:search', query, topicId)
+    search: (query, topicId) => ipcRenderer.invoke('records:search', query, topicId),
+    linkMom: (recordId, momId, userId) => ipcRenderer.invoke('records:linkMom', recordId, momId, userId),
+    unlinkMom: (recordId, momId, userId) => ipcRenderer.invoke('records:unlinkMom', recordId, momId, userId),
+    linkLetter: (recordId, letterId, userId) => ipcRenderer.invoke('records:linkLetter', recordId, letterId, userId),
+    unlinkLetter: (recordId, letterId, userId) => ipcRenderer.invoke('records:unlinkLetter', recordId, letterId, userId),
+    getLinkedMoms: (recordId) => ipcRenderer.invoke('records:getLinkedMoms', recordId),
+    getLinkedLetters: (recordId) => ipcRenderer.invoke('records:getLinkedLetters', recordId)
   },
   recordAttachments: {
     getByRecord: (recordId) => ipcRenderer.invoke('recordAttachments:getByRecord', recordId),
@@ -447,7 +589,8 @@ const electronAPI: ElectronAPI = {
     getMailboxes: () => ipcRenderer.invoke('outlook:getMailboxes'),
     getFolders: (mailboxId) => ipcRenderer.invoke('outlook:getFolders', mailboxId),
     getEmails: (folderId, storeId, limit) => ipcRenderer.invoke('outlook:getEmails', folderId, storeId, limit),
-    getEmailDetails: (entryId, storeId) => ipcRenderer.invoke('outlook:getEmailDetails', entryId, storeId)
+    getEmailDetails: (entryId, storeId) => ipcRenderer.invoke('outlook:getEmailDetails', entryId, storeId),
+    composeAttendanceEmail: (date, attachmentPath, toEmails, ccEmails, subjectTemplate, bodyTemplate) => ipcRenderer.invoke('outlook:composeAttendanceEmail', date, attachmentPath, toEmails, ccEmails, subjectTemplate, bodyTemplate)
   },
   reminders: {
     create: (data, userId) => ipcRenderer.invoke('reminders:create', data, userId),
@@ -495,7 +638,7 @@ const electronAPI: ElectronAPI = {
   },
   letters: {
     create: (data, userId) => ipcRenderer.invoke('letters:create', data, userId),
-    getAll: () => ipcRenderer.invoke('letters:getAll'),
+    getAll: (filters?) => ipcRenderer.invoke('letters:getAll', filters),
     getById: (id) => ipcRenderer.invoke('letters:getById', id),
     getByTopic: (topicId, subcategoryId) => ipcRenderer.invoke('letters:getByTopic', topicId, subcategoryId),
     getByAuthority: (authorityId) => ipcRenderer.invoke('letters:getByAuthority', authorityId),
@@ -567,6 +710,7 @@ const electronAPI: ElectronAPI = {
     addLinkedRecords: (historyId, recordIds, userId) => ipcRenderer.invoke('issues:addLinkedRecords', historyId, recordIds, userId),
     getCommentEdits: (historyId) => ipcRenderer.invoke('issues:getCommentEdits', historyId),
     getHistory: (issueId) => ipcRenderer.invoke('issues:getHistory', issueId),
+    getOpenSummary: () => ipcRenderer.invoke('issues:getOpenSummary'),
     getStats: () => ipcRenderer.invoke('issues:getStats'),
     getDueReminders: () => ipcRenderer.invoke('issues:getDueReminders'),
     getWithReminders: (days) => ipcRenderer.invoke('issues:getWithReminders', days),
@@ -590,7 +734,21 @@ const electronAPI: ElectronAPI = {
     getFiles: (refId) => ipcRenderer.invoke('secureReferences:getFiles', refId),
     deleteFile: (fileId, userId) => ipcRenderer.invoke('secureReferences:deleteFile', fileId, userId),
     getFilePath: (fileId) => ipcRenderer.invoke('secureReferences:getFilePath', fileId),
-    getStats: () => ipcRenderer.invoke('secureReferences:getStats')
+    getStats: (isAdmin?: boolean) => ipcRenderer.invoke('secureReferences:getStats', isAdmin)
+  },
+  keyfile: {
+    exists: () => ipcRenderer.invoke('keyfile:exists'),
+    export: () => ipcRenderer.invoke('keyfile:export'),
+    import: () => ipcRenderer.invoke('keyfile:import')
+  },
+  categories: {
+    getAll: () => ipcRenderer.invoke('categories:getAll'),
+    getByType: (type) => ipcRenderer.invoke('categories:getByType', type),
+    getById: (id) => ipcRenderer.invoke('categories:getById', id),
+    create: (data, userId) => ipcRenderer.invoke('categories:create', data, userId),
+    update: (id, data, userId) => ipcRenderer.invoke('categories:update', id, data, userId),
+    delete: (id, reassignTo, userId) => ipcRenderer.invoke('categories:delete', id, reassignTo, userId),
+    reorder: (ids, userId) => ipcRenderer.invoke('categories:reorder', ids, userId)
   },
   attendance: {
     createCondition: (data, userId) => ipcRenderer.invoke('attendance:createCondition', data, userId),
@@ -600,6 +758,7 @@ const electronAPI: ElectronAPI = {
     saveEntry: (data, userId) => ipcRenderer.invoke('attendance:saveEntry', data, userId),
     saveBulkEntries: (data, userId) => ipcRenderer.invoke('attendance:saveBulkEntries', data, userId),
     deleteEntry: (entryId, userId) => ipcRenderer.invoke('attendance:deleteEntry', entryId, userId),
+    deleteBulkEntries: (shiftId, entryDate, userId) => ipcRenderer.invoke('attendance:deleteBulkEntries', shiftId, entryDate, userId),
     getEntry: (userId, entryDate) => ipcRenderer.invoke('attendance:getEntry', userId, entryDate),
     getEntriesForYear: (filters) => ipcRenderer.invoke('attendance:getEntriesForYear', filters),
     getSummary: (userId, year) => ipcRenderer.invoke('attendance:getSummary', userId, year),
@@ -611,7 +770,10 @@ const electronAPI: ElectronAPI = {
     deleteShift: (id, userId) => ipcRenderer.invoke('attendance:deleteShift', id, userId),
     getShifts: (includeDeleted) => ipcRenderer.invoke('attendance:getShifts', includeDeleted),
     exportUserPdfDialog: (targetUserId, year, userId) => ipcRenderer.invoke('attendance:exportUserPdfDialog', targetUserId, year, userId),
-    exportPdfDialog: (year, userId) => ipcRenderer.invoke('attendance:exportPdfDialog', year, userId)
+    exportPdfDialog: (year, userId) => ipcRenderer.invoke('attendance:exportPdfDialog', year, userId),
+    exportDepartmentReportDialog: (date, userId) => ipcRenderer.invoke('attendance:exportDepartmentReportDialog', date, userId),
+    getDepartmentReportInfo: (date) => ipcRenderer.invoke('attendance:getDepartmentReportInfo', date),
+    openDepartmentReport: (date) => ipcRenderer.invoke('attendance:openDepartmentReport', date)
   },
   momLocations: {
     create: (data, userId) => ipcRenderer.invoke('momLocations:create', data, userId),
@@ -678,15 +840,26 @@ const electronAPI: ElectronAPI = {
     restore: (zipPath, userId, username, displayName) => ipcRenderer.invoke('backup:restore', zipPath, userId, username, displayName),
     getStatus: () => ipcRenderer.invoke('backup:getStatus'),
     getEmailsSize: () => ipcRenderer.invoke('backup:getEmailsSize'),
+    checkReminder: (reminderDays) => ipcRenderer.invoke('backup:checkReminder', reminderDays),
     onProgress: (callback) => {
       ipcRenderer.on('backup:progress', (_event, progress) => callback(progress))
     },
     offProgress: () => {
       ipcRenderer.removeAllListeners('backup:progress')
+    },
+    onSessionInvalidated: (callback) => {
+      ipcRenderer.on('backup:sessionInvalidated', () => callback())
+    },
+    offSessionInvalidated: () => {
+      ipcRenderer.removeAllListeners('backup:sessionInvalidated')
     }
   },
   database: {
-    refresh: () => ipcRenderer.invoke('database:refresh')
+    refresh: () => {
+      console.log('[Preload] database.refresh called at', new Date().toISOString())
+      console.log('[Preload] database.refresh call stack:', new Error().stack)
+      return ipcRenderer.invoke('database:refresh')
+    }
   },
   seed: {
     run: (userId, options) => ipcRenderer.invoke('seed:run', userId, options),
@@ -698,13 +871,9 @@ const electronAPI: ElectronAPI = {
     update: (key, value, userId) => ipcRenderer.invoke('settings:update', key, value, userId),
     updateAll: (settings, userId) => ipcRenderer.invoke('settings:updateAll', settings, userId)
   },
-  ai: {
-    getStatus: () => ipcRenderer.invoke('ai:getStatus'),
-    summarize: (topicId, mode) => ipcRenderer.invoke('ai:summarize', topicId, mode),
-    dispose: () => ipcRenderer.invoke('ai:dispose')
-  },
   dialog: {
-    openFile: (options) => ipcRenderer.invoke('dialog:openFile', options)
+    openFile: (options) => ipcRenderer.invoke('dialog:openFile', options),
+    showMessage: (options) => ipcRenderer.invoke('dialog:showMessage', options)
   },
   file: {
     openExternal: (filePath) => ipcRenderer.invoke('file:openExternal', filePath),
@@ -713,7 +882,94 @@ const electronAPI: ElectronAPI = {
   logger: {
     getLogs: (filter) => ipcRenderer.invoke('logger:getLogs', filter),
     clearLogs: () => ipcRenderer.invoke('logger:clearLogs'),
-    getStats: () => ipcRenderer.invoke('logger:getStats')
+    getStats: () => ipcRenderer.invoke('logger:getStats'),
+    log: (level, message) => ipcRenderer.send('logger:log', level, message)
+  },
+  scheduledEmails: {
+    create: (data, userId) => ipcRenderer.invoke('scheduledEmails:create', data, userId),
+    getAll: (includeInactive) => ipcRenderer.invoke('scheduledEmails:getAll', includeInactive),
+    getById: (id) => ipcRenderer.invoke('scheduledEmails:getById', id),
+    update: (id, data, userId) => ipcRenderer.invoke('scheduledEmails:update', id, data, userId),
+    delete: (id, userId) => ipcRenderer.invoke('scheduledEmails:delete', id, userId),
+    getInstances: (startDate, endDate, status) => ipcRenderer.invoke('scheduledEmails:getInstances', startDate, endDate, status),
+    getTodayInstances: () => ipcRenderer.invoke('scheduledEmails:getTodayInstances'),
+    getPendingCounts: () => ipcRenderer.invoke('scheduledEmails:getPendingCounts'),
+    generateInstances: (date) => ipcRenderer.invoke('scheduledEmails:generateInstances', date),
+    markSent: (instanceId, userId) => ipcRenderer.invoke('scheduledEmails:markSent', instanceId, userId),
+    dismiss: (instanceId, userId, notes) => ipcRenderer.invoke('scheduledEmails:dismiss', instanceId, userId, notes),
+    reset: (instanceId, userId) => ipcRenderer.invoke('scheduledEmails:reset', instanceId, userId),
+    getInstanceById: (instanceId) => ipcRenderer.invoke('scheduledEmails:getInstanceById', instanceId),
+    composeEmail: (instanceId, userId) => ipcRenderer.invoke('scheduledEmails:composeEmail', instanceId, userId),
+    getHistory: (scheduleId) => ipcRenderer.invoke('scheduledEmails:getHistory', scheduleId),
+    previewPlaceholders: (text, date, language, userId) => ipcRenderer.invoke('scheduledEmails:previewPlaceholders', text, date, language, userId)
+  },
+  updater: {
+    getVersion: () => ipcRenderer.invoke('updater:getVersion'),
+    importZip: () => ipcRenderer.invoke('updater:importZip'),
+    applyUpdate: () => ipcRenderer.invoke('updater:applyUpdate'),
+    cancelUpdate: () => ipcRenderer.invoke('updater:cancelUpdate'),
+    checkPending: () => ipcRenderer.invoke('updater:checkPending')
+  },
+  dashboard: {
+    getStats: () => ipcRenderer.invoke('dashboard:getStats'),
+    getDiskSpace: () => ipcRenderer.invoke('dashboard:getDiskSpace'),
+    getRecentActivity: (limit) => ipcRenderer.invoke('dashboard:getRecentActivity', limit),
+    getActivityByMonth: (year) => ipcRenderer.invoke('dashboard:getActivityByMonth', year),
+    getTopTopics: (limit) => ipcRenderer.invoke('dashboard:getTopTopics', limit)
+  },
+  calendar: {
+    getEvents: (year, month) => ipcRenderer.invoke('calendar:getEvents', year, month),
+    getEventsForDate: (date) => ipcRenderer.invoke('calendar:getEventsForDate', date),
+    getUpcoming: (days) => ipcRenderer.invoke('calendar:getUpcoming', days)
+  },
+  tags: {
+    create: (data, userId) => ipcRenderer.invoke('tags:create', data, userId),
+    getAll: () => ipcRenderer.invoke('tags:getAll'),
+    getById: (id) => ipcRenderer.invoke('tags:getById', id),
+    update: (id, data, userId) => ipcRenderer.invoke('tags:update', id, data, userId),
+    delete: (id, userId) => ipcRenderer.invoke('tags:delete', id, userId),
+    getRecordTags: (recordId) => ipcRenderer.invoke('tags:getRecordTags', recordId),
+    setRecordTags: (recordId, tagIds, userId) => ipcRenderer.invoke('tags:setRecordTags', recordId, tagIds, userId),
+    getIssueTags: (issueId) => ipcRenderer.invoke('tags:getIssueTags', issueId),
+    setIssueTags: (issueId, tagIds, userId) => ipcRenderer.invoke('tags:setIssueTags', issueId, tagIds, userId),
+    getLetterTags: (letterId) => ipcRenderer.invoke('tags:getLetterTags', letterId),
+    setLetterTags: (letterId, tagIds, userId) => ipcRenderer.invoke('tags:setLetterTags', letterId, tagIds, userId),
+    getRecordsByTag: (tagId) => ipcRenderer.invoke('tags:getRecordsByTag', tagId),
+    getIssuesByTag: (tagId) => ipcRenderer.invoke('tags:getIssuesByTag', tagId),
+    getLettersByTag: (tagId) => ipcRenderer.invoke('tags:getLettersByTag', tagId)
+  },
+  advancedSearch: {
+    search: (filters) => ipcRenderer.invoke('search:advanced', filters),
+    createSaved: (userId, name, filters) => ipcRenderer.invoke('search:createSaved', userId, name, filters),
+    getSaved: (userId) => ipcRenderer.invoke('search:getSaved', userId),
+    getSavedById: (id) => ipcRenderer.invoke('search:getSavedById', id),
+    updateSaved: (id, name, filters) => ipcRenderer.invoke('search:updateSaved', id, name, filters),
+    deleteSaved: (id) => ipcRenderer.invoke('search:deleteSaved', id)
+  },
+  history: {
+    undoCreate: (entityType, entityId, userId) => ipcRenderer.invoke('history:undoCreate', entityType, entityId, userId),
+    undoUpdate: (entityType, entityId, previousData, userId) => ipcRenderer.invoke('history:undoUpdate', entityType, entityId, previousData, userId),
+    undoDelete: (entityType, entityId, userId) => ipcRenderer.invoke('history:undoDelete', entityType, entityId, userId),
+    redoCreate: (entityType, entityId, userId) => ipcRenderer.invoke('history:redoCreate', entityType, entityId, userId),
+    redoUpdate: (entityType, entityId, afterData, userId) => ipcRenderer.invoke('history:redoUpdate', entityType, entityId, afterData, userId),
+    redoDelete: (entityType, entityId, userId) => ipcRenderer.invoke('history:redoDelete', entityType, entityId, userId),
+    getEntity: (entityType, entityId) => ipcRenderer.invoke('history:getEntity', entityType, entityId)
+  },
+  pins: {
+    toggle: (entityType, entityId, userId) => ipcRenderer.invoke('pins:toggle', entityType, entityId, userId),
+    isPinned: (entityType, entityId, userId) => ipcRenderer.invoke('pins:isPinned', entityType, entityId, userId),
+    getPinnedIds: (entityType, userId) => ipcRenderer.invoke('pins:getPinnedIds', entityType, userId),
+    getPinStatuses: (entityType, entityIds, userId) => ipcRenderer.invoke('pins:getPinStatuses', entityType, entityIds, userId)
+  },
+  export: {
+    topics: () => ipcRenderer.invoke('export:topics'),
+    letters: () => ipcRenderer.invoke('export:letters'),
+    moms: () => ipcRenderer.invoke('export:moms'),
+    issues: () => ipcRenderer.invoke('export:issues'),
+    attendance: (year, month) => ipcRenderer.invoke('export:attendance', year, month),
+    searchResults: (results) => ipcRenderer.invoke('export:searchResults', results),
+    recordsByTopic: (topicId) => ipcRenderer.invoke('export:recordsByTopic', topicId),
+    customData: (data, sheetName, filename) => ipcRenderer.invoke('export:customData', data, sheetName, filename)
   }
 }
 

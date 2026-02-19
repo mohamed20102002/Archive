@@ -7,7 +7,19 @@ import { AttendanceCalendar } from './AttendanceCalendar'
 import { AttendanceSummary } from './AttendanceSummary'
 import { AttendanceEntryDialog } from './AttendanceEntryDialog'
 import { AttendanceConditionSettings } from './AttendanceConditionSettings'
+import { AttendanceEmailSettings } from './AttendanceEmailSettings'
 import { BulkEntryDialog } from './BulkEntryDialog'
+import { ReportResultDialog } from './ReportResultDialog'
+
+interface ReportDialogState {
+  isOpen: boolean
+  title: string
+  message: string
+  detail?: string
+  type: 'success' | 'error' | 'warning' | 'question'
+  buttons: { label: string; primary?: boolean; danger?: boolean }[]
+  onButtonClick: (index: number) => void
+}
 
 export function AttendancePage() {
   const { user } = useAuth()
@@ -36,6 +48,19 @@ export function AttendancePage() {
   const [dialogEntry, setDialogEntry] = useState<AttendanceEntry | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [bulkDialogOpen, setBulkDialogOpen] = useState(false)
+  const [emailSettingsOpen, setEmailSettingsOpen] = useState(false)
+
+  // Report result dialog state
+  const [reportDialog, setReportDialog] = useState<ReportDialogState>({
+    isOpen: false,
+    title: '',
+    message: '',
+    type: 'success',
+    buttons: [],
+    onButtonClick: () => {}
+  })
+
+  const closeReportDialog = () => setReportDialog(prev => ({ ...prev, isOpen: false }))
 
   // Initial load
   useEffect(() => {
@@ -122,7 +147,7 @@ export function AttendancePage() {
     setDialogOpen(true)
   }, [selectedUserId, isEditable])
 
-  const handleSaveEntry = async (conditionIds: string[], note: string) => {
+  const handleSaveEntry = async (conditionIds: string[], note: string, signInTime: string, signOutTime: string) => {
     if (!user) return
     try {
       // Fetch fresh user data from DB to get current shift_id
@@ -136,6 +161,8 @@ export function AttendancePage() {
           entry_date: dialogDate,
           shift_id: shiftId,
           condition_ids: conditionIds,
+          sign_in_time: signInTime || undefined,
+          sign_out_time: signOutTime || undefined,
           note: note || undefined
         },
         user.id
@@ -175,14 +202,222 @@ export function AttendancePage() {
     try {
       const result = await window.electronAPI.attendance.exportUserPdfDialog(selectedUserId, selectedYear, user.id)
       if (result.success && result.filePath) {
-        toast.success('PDF exported', `File saved to ${result.filePath}`)
+        await window.electronAPI.dialog.showMessage({
+          type: 'info',
+          title: 'PDF Exported',
+          message: 'Attendance PDF exported successfully',
+          detail: `File saved to:\n${result.filePath}`
+        })
       } else if (result.error && result.error !== 'Export canceled') {
-        toast.error('Export failed', result.error || 'Could not export PDF')
+        await window.electronAPI.dialog.showMessage({
+          type: 'error',
+          title: 'Export Failed',
+          message: 'Could not export PDF',
+          detail: result.error
+        })
       }
     } catch (err: any) {
-      toast.error('Export failed', err.message)
+      await window.electronAPI.dialog.showMessage({
+        type: 'error',
+        title: 'Export Failed',
+        message: 'An error occurred while exporting',
+        detail: err.message
+      })
     } finally {
       setExporting(false)
+    }
+  }
+
+  const handleExportDepartmentReport = async (date: string) => {
+    if (!user) return
+    setExporting(true)
+    try {
+      // Check if report already exists
+      const existingInfo = await window.electronAPI.attendance.getDepartmentReportInfo(date)
+      if (existingInfo.exists) {
+        // Show custom dialog for existing report
+        setReportDialog({
+          isOpen: true,
+          title: 'Report Already Exists',
+          message: `A report for ${date} already exists.`,
+          detail: `${existingInfo.path}`,
+          type: 'question',
+          buttons: [
+            { label: 'Cancel' },
+            { label: 'Open Existing' },
+            { label: 'Replace', primary: true }
+          ],
+          onButtonClick: async (index) => {
+            closeReportDialog()
+            if (index === 1) {
+              // Open existing
+              await window.electronAPI.attendance.openDepartmentReport(date)
+              setExporting(false)
+            } else if (index === 2) {
+              // Replace - generate new
+              await generateAndShowResult(date)
+            } else {
+              setExporting(false)
+            }
+          }
+        })
+        return
+      }
+
+      // No existing report, generate directly
+      await generateAndShowResult(date)
+    } catch (err: any) {
+      setReportDialog({
+        isOpen: true,
+        title: 'Export Failed',
+        message: 'An error occurred while exporting',
+        detail: err.message,
+        type: 'error',
+        buttons: [{ label: 'OK', primary: true }],
+        onButtonClick: () => { closeReportDialog(); setExporting(false) }
+      })
+    }
+  }
+
+  const generateAndShowResult = async (date: string) => {
+    try {
+      const result = await window.electronAPI.attendance.exportDepartmentReportDialog(date, user!.id)
+      if (result.success && result.filePath) {
+        setReportDialog({
+          isOpen: true,
+          title: 'Report Saved',
+          message: 'Department report saved to archive',
+          detail: result.filePath,
+          type: 'success',
+          buttons: [
+            { label: 'OK' },
+            { label: 'Open Report' },
+            { label: 'Send Email', primary: true }
+          ],
+          onButtonClick: async (index) => {
+            closeReportDialog()
+            setExporting(false)
+            if (index === 1) {
+              await window.electronAPI.attendance.openDepartmentReport(date)
+            } else if (index === 2) {
+              await composeReportEmail(date, result.filePath!)
+            }
+          }
+        })
+      } else if (result.error) {
+        setReportDialog({
+          isOpen: true,
+          title: 'Export Failed',
+          message: 'Could not export department report',
+          detail: result.error,
+          type: 'error',
+          buttons: [{ label: 'OK', primary: true }],
+          onButtonClick: () => { closeReportDialog(); setExporting(false) }
+        })
+      }
+    } catch (err: any) {
+      setReportDialog({
+        isOpen: true,
+        title: 'Export Failed',
+        message: 'An error occurred while exporting',
+        detail: err.message,
+        type: 'error',
+        buttons: [{ label: 'OK', primary: true }],
+        onButtonClick: () => { closeReportDialog(); setExporting(false) }
+      })
+    }
+  }
+
+  const handleEmailReport = async (date: string) => {
+    if (!user) return
+    setExporting(true)
+    try {
+      // Check if report exists
+      const existingInfo = await window.electronAPI.attendance.getDepartmentReportInfo(date)
+
+      if (!existingInfo.exists) {
+        // No report exists - show warning dialog
+        setExporting(false)
+        setReportDialog({
+          isOpen: true,
+          title: 'No Report Found',
+          message: `No report has been generated for ${date} yet.`,
+          detail: 'Please generate the PDF report first before sending an email.',
+          type: 'warning',
+          buttons: [
+            { label: 'Cancel' },
+            { label: 'Generate Report', primary: true }
+          ],
+          onButtonClick: async (index) => {
+            closeReportDialog()
+            if (index === 1) {
+              // Generate report - call the PDF generation handler
+              await handleExportDepartmentReport(date)
+            }
+          }
+        })
+        return
+      }
+
+      // Report exists - compose email directly
+      setExporting(false)
+      await composeReportEmail(date, existingInfo.path!)
+    } catch (err: any) {
+      setReportDialog({
+        isOpen: true,
+        title: 'Error',
+        message: 'An error occurred',
+        detail: err.message,
+        type: 'error',
+        buttons: [{ label: 'OK', primary: true }],
+        onButtonClick: () => { closeReportDialog(); setExporting(false) }
+      })
+    }
+  }
+
+  const composeReportEmail = async (date: string, filePath: string) => {
+    try {
+      // Get email settings including templates
+      const [toEmails, ccEmails, subjectTemplate, bodyTemplate] = await Promise.all([
+        window.electronAPI.settings.get('attendance_report_email_to'),
+        window.electronAPI.settings.get('attendance_report_email_cc'),
+        window.electronAPI.settings.get('attendance_report_email_subject'),
+        window.electronAPI.settings.get('attendance_report_email_body')
+      ])
+
+      if (!toEmails) {
+        await window.electronAPI.dialog.showMessage({
+          type: 'warning',
+          title: 'Email Not Configured',
+          message: 'No recipient email address configured',
+          detail: 'Please configure the TO email address in Email Settings to use this feature.\n\nClick the gear icon next to the Email button to configure.'
+        })
+        return
+      }
+
+      const emailResult = await window.electronAPI.outlook.composeAttendanceEmail(
+        date,
+        filePath,
+        toEmails,
+        ccEmails || undefined,
+        subjectTemplate || undefined,
+        bodyTemplate || undefined
+      )
+      if (!emailResult.success) {
+        await window.electronAPI.dialog.showMessage({
+          type: 'error',
+          title: 'Email Error',
+          message: 'Could not compose email',
+          detail: emailResult.error || 'Failed to open Outlook'
+        })
+      }
+    } catch (err: any) {
+      await window.electronAPI.dialog.showMessage({
+        type: 'error',
+        title: 'Email Error',
+        message: 'An error occurred while composing email',
+        detail: err.message
+      })
     }
   }
 
@@ -198,7 +433,7 @@ export function AttendancePage() {
     setShifts(allShifts as Shift[])
   }
 
-  const handleBulkSave = async (shiftId: string, date: string, conditionIds: string[], note: string) => {
+  const handleBulkSave = async (shiftId: string, date: string, conditionIds: string[], note: string, signInTime: string, signOutTime: string) => {
     if (!user) return
     try {
       const result = await window.electronAPI.attendance.saveBulkEntries(
@@ -206,6 +441,8 @@ export function AttendancePage() {
           shift_id: shiftId,
           entry_date: date,
           condition_ids: conditionIds,
+          sign_in_time: signInTime || undefined,
+          sign_out_time: signOutTime || undefined,
           note: note || undefined
         },
         user.id
@@ -220,6 +457,27 @@ export function AttendancePage() {
       }
     } catch (err: any) {
       toast.error('Bulk save failed', err.message)
+    }
+  }
+
+  const handleBulkDelete = async (shiftId: string, date: string) => {
+    if (!user) return
+    try {
+      const result = await window.electronAPI.attendance.deleteBulkEntries(shiftId, date, user.id)
+      if (result.success) {
+        setBulkDialogOpen(false)
+        if (result.count === 0) {
+          toast.info('No entries', 'No entries found to delete for this shift on this date')
+        } else {
+          toast.success('Entries deleted', `Deleted ${result.count} entry/entries`)
+        }
+        await loadEntries()
+        await loadSummary()
+      } else {
+        toast.error('Delete failed', result.error || 'Could not delete entries')
+      }
+    } catch (err: any) {
+      toast.error('Delete failed', err.message)
     }
   }
 
@@ -259,6 +517,9 @@ export function AttendancePage() {
         isEditable={isEditable}
         onSettingsClick={() => setSettingsOpen(true)}
         onExportClick={handleExportPdf}
+        onDeptReportClick={handleExportDepartmentReport}
+        onEmailClick={handleEmailReport}
+        onEmailSettingsClick={() => setEmailSettingsOpen(true)}
         exporting={exporting}
         onBulkEntryClick={() => setBulkDialogOpen(true)}
       />
@@ -343,6 +604,7 @@ export function AttendancePage() {
         shifts={shifts}
         conditions={conditions}
         onSave={handleBulkSave}
+        onDelete={handleBulkDelete}
         onClose={() => setBulkDialogOpen(false)}
       />
 
@@ -352,6 +614,23 @@ export function AttendancePage() {
         onClose={() => { setSettingsOpen(false); reloadUsers() }}
         onConditionsChanged={handleConditionsChanged}
         onShiftsChanged={handleShiftsChanged}
+      />
+
+      {/* Email Settings Modal */}
+      <AttendanceEmailSettings
+        isOpen={emailSettingsOpen}
+        onClose={() => setEmailSettingsOpen(false)}
+      />
+
+      {/* Report Result Dialog */}
+      <ReportResultDialog
+        isOpen={reportDialog.isOpen}
+        title={reportDialog.title}
+        message={reportDialog.message}
+        detail={reportDialog.detail}
+        type={reportDialog.type}
+        buttons={reportDialog.buttons}
+        onButtonClick={reportDialog.onButtonClick}
       />
     </div>
   )

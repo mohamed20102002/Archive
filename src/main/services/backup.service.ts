@@ -8,6 +8,7 @@ import { getCurrentVersion, runMigrations } from '../database/migrations'
 import { initializeSchema } from '../database/schema'
 import { initializeAuditSchema } from '../database/audit'
 import { logAudit } from '../database/audit'
+import { clearAllSessions } from './auth.service'
 
 // ── Types ──
 
@@ -24,6 +25,8 @@ export interface BackupModuleCounts {
   authorities: number
   credentials: number
   secure_references: number
+  secure_reference_files: number
+  scheduled_emails: number
   users: number
 }
 
@@ -107,9 +110,14 @@ function getAppVersion(): string {
 
 function isExcludedPath(relativePath: string): boolean {
   const normalized = relativePath.replace(/\\/g, '/')
-  if (normalized.startsWith('secure-resources/') || normalized === 'secure-resources') return true
+  // Exclude system folder
   if (normalized.startsWith('system/') || normalized === 'system') return true
+  // Exclude WAL/SHM files
   if (normalized.endsWith('.db-wal') || normalized.endsWith('.db-shm')) return true
+  // Exclude secure-resources/.temp folder (decrypted temp files)
+  if (normalized.startsWith('secure-resources/.temp/') || normalized === 'secure-resources/.temp') return true
+  // Include secure-resources/references and .keyfile (for backup)
+  // Everything else in secure-resources is included now
   return false
 }
 
@@ -225,6 +233,16 @@ export function getModuleCounts(): BackupModuleCounts {
     }
   }
 
+  // Simple count without deleted_at filter (for tables that don't have it)
+  const countSimple = (table: string): number => {
+    try {
+      const result = db.prepare(`SELECT COUNT(*) as c FROM ${table}`).get() as { c: number }
+      return result.c
+    } catch {
+      return 0
+    }
+  }
+
   return {
     topics: count('topics'),
     records: count('records'),
@@ -238,6 +256,8 @@ export function getModuleCounts(): BackupModuleCounts {
     authorities: count('authorities'),
     credentials: count('credentials'),
     secure_references: count('secure_references'),
+    secure_reference_files: countSimple('secure_reference_files'),
+    scheduled_emails: count('email_schedules'),
     users: count('users')
   }
 }
@@ -270,6 +290,36 @@ export function getBackupStatus(): BackupStatusFile | null {
     return JSON.parse(fs.readFileSync(statusPath, 'utf-8'))
   } catch {
     return null
+  }
+}
+
+// Check if backup reminder should be shown based on settings and last backup date
+export function checkBackupReminder(reminderDays: number): {
+  shouldRemind: boolean
+  daysSinceBackup: number | null
+  lastBackupDate: string | null
+} {
+  // If reminder is disabled
+  if (reminderDays <= 0) {
+    return { shouldRemind: false, daysSinceBackup: null, lastBackupDate: null }
+  }
+
+  const status = getBackupStatus()
+
+  // If never backed up
+  if (!status || !status.last_backup_date) {
+    return { shouldRemind: true, daysSinceBackup: null, lastBackupDate: null }
+  }
+
+  const lastBackup = new Date(status.last_backup_date)
+  const now = new Date()
+  const diffMs = now.getTime() - lastBackup.getTime()
+  const daysSinceBackup = Math.floor(diffMs / (1000 * 60 * 60 * 24))
+
+  return {
+    shouldRemind: daysSinceBackup >= reminderDays,
+    daysSinceBackup,
+    lastBackupDate: status.last_backup_date
   }
 }
 
@@ -430,7 +480,7 @@ function extractZipStreaming(
 
         // Skip metadata and guarded paths
         if (normalized === 'backup_info.json' ||
-            normalized.startsWith('secure-resources/') ||
+            normalized.startsWith('secure-resources/.temp/') ||
             normalized.startsWith('system/')) {
           extracted++
           zipfile!.readEntry()
@@ -759,9 +809,16 @@ async function clearDataDirectory(dataPath: string): Promise<void> {
     const fullPath = path.join(dataPath, entry.name)
     const relPath = entry.name
 
-    // Never touch these directories
-    if (relPath === 'secure-resources' || relPath === 'system') {
+    // Never touch system directory
+    if (relPath === 'system') {
       console.log(`[clearDataDirectory] Skipping protected: ${relPath}`)
+      continue
+    }
+
+    // For secure-resources, clear references and .keyfile but keep .temp
+    if (relPath === 'secure-resources') {
+      console.log(`[clearDataDirectory] Clearing secure-resources contents (except .temp)...`)
+      await clearSecureResourcesForRestore(fullPath)
       continue
     }
 
@@ -779,6 +836,114 @@ async function clearDataDirectory(dataPath: string): Promise<void> {
     }
   }
   console.log(`[clearDataDirectory] Completed clearing: ${dataPath}`)
+}
+
+// Clear secure-resources folder for restore, but preserve .temp folder
+async function clearSecureResourcesForRestore(secureResourcesPath: string): Promise<void> {
+  if (!fs.existsSync(secureResourcesPath)) return
+
+  const entries = fs.readdirSync(secureResourcesPath, { withFileTypes: true })
+
+  for (const entry of entries) {
+    const fullPath = path.join(secureResourcesPath, entry.name)
+
+    // Keep .temp folder (local decrypted files)
+    if (entry.name === '.temp') {
+      console.log(`[clearSecureResourcesForRestore] Keeping .temp folder`)
+      continue
+    }
+
+    if (entry.isDirectory()) {
+      console.log(`[clearSecureResourcesForRestore] Removing directory: ${entry.name}`)
+      await rmDirWithRetry(fullPath)
+    } else {
+      console.log(`[clearSecureResourcesForRestore] Removing file: ${entry.name}`)
+      await unlinkWithRetry(fullPath)
+    }
+  }
+}
+
+// ── Fix Foreign Key Violations ──
+
+export function fixForeignKeyViolations(
+  currentUserId: string,
+  currentUsername: string,
+  currentDisplayName: string
+): { fixed: string[]; errors: string[] } {
+  const db = getDatabase()
+  const fixed: string[] = []
+  const errors: string[] = []
+
+  try {
+    // Check for FK violations
+    const fkErrors = db.pragma('foreign_key_check') as {
+      table: string
+      rowid: number
+      parent: string
+      fkid: number
+    }[]
+
+    if (fkErrors.length === 0) {
+      console.log('[fixForeignKeyViolations] No foreign key violations found')
+      return { fixed, errors }
+    }
+
+    console.log(`[fixForeignKeyViolations] Found ${fkErrors.length} violations:`, fkErrors)
+
+    // Check if current user exists in the restored database
+    const userExists = db.prepare('SELECT id FROM users WHERE id = ?').get(currentUserId)
+
+    if (!userExists) {
+      // The current logged-in user doesn't exist in the restored database
+      // This is the most common cause of FK violations after restore
+      console.log(`[fixForeignKeyViolations] Current user ${currentUserId} not found in restored database`)
+
+      // Create a placeholder for the current user so they can continue working
+      // They'll need to re-login to get proper credentials
+      try {
+        const now = new Date().toISOString()
+        db.prepare(`
+          INSERT INTO users (id, username, password_hash, display_name, role, is_active, created_at, updated_at)
+          VALUES (?, ?, 'NEEDS_RESET', ?, 'admin', 1, ?, ?)
+        `).run(currentUserId, currentUsername, currentDisplayName, now, now)
+
+        fixed.push(`Created placeholder user: ${currentUsername}`)
+        console.log(`[fixForeignKeyViolations] Created placeholder user: ${currentUsername}`)
+      } catch (userErr: any) {
+        // User might exist with different ID - username conflict
+        if (userErr.message?.includes('UNIQUE constraint failed')) {
+          errors.push(`Username "${currentUsername}" already exists with a different ID. You may need to login with the existing account.`)
+        } else {
+          errors.push(`Failed to create placeholder user: ${userErr.message}`)
+        }
+      }
+    }
+
+    // Group violations by table and parent table
+    const violationsByTable = new Map<string, typeof fkErrors>()
+    for (const err of fkErrors) {
+      const key = `${err.table}->${err.parent}`
+      if (!violationsByTable.has(key)) {
+        violationsByTable.set(key, [])
+      }
+      violationsByTable.get(key)!.push(err)
+    }
+
+    // Log summary of remaining violations (if any after user fix)
+    for (const [key, violations] of violationsByTable) {
+      if (key.includes('->users')) {
+        // Skip user-related violations if we already fixed them
+        continue
+      }
+      errors.push(`${violations.length} orphaned records in ${key}`)
+    }
+
+  } catch (error: any) {
+    console.error('[fixForeignKeyViolations] Error:', error)
+    errors.push(`Error checking foreign keys: ${error.message}`)
+  }
+
+  return { fixed, errors }
 }
 
 // ── Restore Backup ──
@@ -884,6 +1049,15 @@ export async function restoreBackup(
     try {
       const db = getDatabase()
       db.prepare('SELECT COUNT(*) FROM users').get()
+
+      // Fix any foreign key violations (e.g., if current user doesn't exist in restored DB)
+      const fkFixResult = fixForeignKeyViolations(userId, username, displayName)
+      if (fkFixResult.fixed.length > 0) {
+        console.log('[restoreBackup] FK fixes applied:', fkFixResult.fixed)
+      }
+      if (fkFixResult.errors.length > 0) {
+        console.warn('[restoreBackup] FK fix warnings:', fkFixResult.errors)
+      }
     } catch (verifyError: any) {
       // Attempt rollback
       if (rollbackPath) {
@@ -916,6 +1090,16 @@ export async function restoreBackup(
       backup_date: analysis.info.backup_date,
       backup_by: analysis.info.backup_by_username
     })
+
+    // Clear all active sessions to force re-login
+    // This prevents FK errors when the current user's ID doesn't exist in the restored database
+    clearAllSessions()
+
+    // Notify renderer to refresh session (will trigger re-login if session is invalid)
+    const windows = BrowserWindow.getAllWindows()
+    if (windows.length > 0) {
+      windows[0].webContents.send('backup:sessionInvalidated')
+    }
 
     sendProgress({ phase: 'complete', percentage: 100, message: 'Restore completed successfully!' })
 
