@@ -5,6 +5,9 @@ export function useBackupProgress() {
   const [progress, setProgress] = useState<BackupProgress | null>(null)
 
   useEffect(() => {
+    // Clear any previous listener before registering new one
+    window.electronAPI.backup.offProgress()
+
     window.electronAPI.backup.onProgress((data: unknown) => {
       setProgress(data as BackupProgress)
     })

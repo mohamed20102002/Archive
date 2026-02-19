@@ -129,8 +129,10 @@ export function getAllCredentials(filters?: CredentialFilters): CredentialView[]
   }
 
   if (filters?.query?.trim()) {
+    // Limit query length to prevent DoS attacks
+    const trimmedQuery = filters.query.trim().substring(0, 200)
     conditions.push('(c.system_name LIKE ? OR c.username LIKE ? OR c.description LIKE ?)')
-    const q = `%${filters.query.trim()}%`
+    const q = `%${trimmedQuery}%`
     values.push(q, q, q)
   }
 

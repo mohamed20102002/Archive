@@ -115,7 +115,10 @@ export function IssueDetail({ issue: initialIssue, onClose, onUpdated }: IssueDe
           selectedTopicId || undefined
         )
         setRecordResults(results.filter(r => !linkedRecords.some(lr => lr.id === r.id)))
-      } catch { setRecordResults([]) }
+      } catch (err) {
+        console.error('Error searching records for linking:', err)
+        setRecordResults([])
+      }
     }, 300)
     return () => clearTimeout(timer)
   }, [recordSearch, linkedRecords, selectedTopicId])

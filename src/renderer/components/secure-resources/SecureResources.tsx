@@ -154,36 +154,66 @@ export function SecureResources() {
   // Handle search highlight from global search
   useEffect(() => {
     const state = location.state as any
-    if ((state?.highlightType === 'credential' || state?.highlightType === 'secure_reference') && state?.highlightId) {
+    if ((state?.highlightType === 'credential' || state?.highlightType === 'secure_reference') && state?.highlightId && !loading) {
       const itemId = state.highlightId
       const itemType = state.highlightType
 
-      // Switch to the correct tab
-      if (itemType === 'credential' && tabMode !== 'credentials') {
-        setTabMode('credentials')
-      } else if (itemType === 'secure_reference' && tabMode !== 'references') {
-        setTabMode('references')
+      const handleResourceHighlight = async () => {
+        // Verify the item exists
+        let item = null
+        if (itemType === 'credential') {
+          item = await window.electronAPI.credentials.getById(itemId)
+        } else {
+          item = await window.electronAPI.secureReferences.getById(itemId)
+        }
+
+        if (!item) {
+          window.history.replaceState({}, document.title)
+          return
+        }
+
+        // Determine if we need to switch tabs
+        const needsTabSwitch = (itemType === 'credential' && tabMode !== 'credentials') ||
+                               (itemType === 'secure_reference' && tabMode !== 'references')
+
+        // Clear filters to ensure visibility
+        if (hasActiveFilters) {
+          setSearchQuery('')
+          setFilterCategory('')
+        }
+
+        // Switch to the correct tab if needed
+        if (needsTabSwitch) {
+          if (itemType === 'credential') {
+            setTabMode('credentials')
+          } else {
+            setTabMode('references')
+          }
+        }
+
+        // Wait for tab switch/filter clear and data reload
+        setTimeout(() => {
+          setHighlightedId(itemId)
+
+          // Scroll to the item
+          setTimeout(() => {
+            const element = document.getElementById(`resource-${itemId}`)
+            if (element) {
+              element.scrollIntoView({ behavior: 'smooth', block: 'center' })
+            }
+          }, 100)
+
+          // Clear highlight after 5 seconds
+          setTimeout(() => setHighlightedId(null), 5000)
+        }, needsTabSwitch || hasActiveFilters ? 500 : 100)
+
+        // Clear the location state
+        window.history.replaceState({}, document.title)
       }
 
-      setHighlightedId(itemId)
-
-      // Scroll to the item after a short delay
-      setTimeout(() => {
-        const element = document.getElementById(`resource-${itemId}`)
-        if (element) {
-          element.scrollIntoView({ behavior: 'smooth', block: 'center' })
-        }
-      }, 300)
-
-      // Clear highlight after 5 seconds
-      const timer = setTimeout(() => setHighlightedId(null), 5000)
-
-      // Clear the location state
-      window.history.replaceState({}, document.title)
-
-      return () => clearTimeout(timer)
+      handleResourceHighlight()
     }
-  }, [location.state])
+  }, [location.state, loading, tabMode, hasActiveFilters])
 
   const handleCreateCredential = async (data: CreateCredentialData) => {
     if (!user) return

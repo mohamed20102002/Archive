@@ -28,7 +28,6 @@ export interface GlobalSearchResults {
 
 export function globalSearch(query: string, limit: number = 10): GlobalSearchResults {
   const db = getDatabase()
-  const searchTerm = `%${query}%`
 
   const results: GlobalSearchResults = {
     topics: [],
@@ -47,6 +46,10 @@ export function globalSearch(query: string, limit: number = 10): GlobalSearchRes
   if (!query || query.trim().length < 2) {
     return results
   }
+
+  // Limit query length to prevent DoS attacks
+  const safeQuery = query.trim().substring(0, 200)
+  const searchTerm = `%${safeQuery}%`
 
   // Search Topics
   const topics = db.prepare(`
@@ -317,7 +320,9 @@ export function advancedSearch(filters: AdvancedSearchFilters): AdvancedSearchRe
   const results: AdvancedSearchResult[] = []
   const limit = filters.limit || 50
   const offset = filters.offset || 0
-  const searchTerm = filters.query ? `%${filters.query}%` : null
+  // Limit query length to prevent DoS attacks
+  const safeQuery = filters.query ? filters.query.trim().substring(0, 200) : null
+  const searchTerm = safeQuery ? `%${safeQuery}%` : null
 
   const types = filters.types && filters.types.length > 0
     ? filters.types

@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useCallback, useEffect, ReactNode } from 'react'
+import React, { createContext, useContext, useState, useCallback, useEffect, useRef, ReactNode } from 'react'
 import { useAuth } from './AuthContext'
 import { useToast } from './ToastContext'
 import { notifyDataChanged } from '../utils/dataEvents'
@@ -203,7 +203,23 @@ export function UndoRedoProvider({ children }: { children: ReactNode }) {
     return redoStack[0].description
   }, [redoStack])
 
-  // Global keyboard shortcuts
+  // Use refs for stable references in keyboard handler
+  const undoRef = useRef(undo)
+  const redoRef = useRef(redo)
+  const undoStackLengthRef = useRef(undoStack.length)
+  const redoStackLengthRef = useRef(redoStack.length)
+  const toastRef = useRef(toast)
+
+  // Keep refs updated
+  useEffect(() => {
+    undoRef.current = undo
+    redoRef.current = redo
+    undoStackLengthRef.current = undoStack.length
+    redoStackLengthRef.current = redoStack.length
+    toastRef.current = toast
+  }, [undo, redo, undoStack.length, redoStack.length, toast])
+
+  // Global keyboard shortcuts - stable listener that doesn't re-register
   useEffect(() => {
     const handleKeyDown = async (e: KeyboardEvent) => {
       // Check if user is typing in an input field
@@ -219,12 +235,12 @@ export function UndoRedoProvider({ children }: { children: ReactNode }) {
       // Ctrl+Z for undo
       if (e.ctrlKey && !e.shiftKey && e.key === 'z') {
         e.preventDefault()
-        if (undoStack.length > 0) {
-          const result = await undo()
+        if (undoStackLengthRef.current > 0) {
+          const result = await undoRef.current()
           if (result.success && result.entry) {
-            toast.info('Undone', result.entry.description)
+            toastRef.current.info('Undone', result.entry.description)
           } else if (!result.success && result.error) {
-            toast.error('Undo failed', result.error)
+            toastRef.current.error('Undo failed', result.error)
           }
         }
       }
@@ -232,12 +248,12 @@ export function UndoRedoProvider({ children }: { children: ReactNode }) {
       // Ctrl+Y or Ctrl+Shift+Z for redo
       if ((e.ctrlKey && e.key === 'y') || (e.ctrlKey && e.shiftKey && e.key === 'z') || (e.ctrlKey && e.shiftKey && e.key === 'Z')) {
         e.preventDefault()
-        if (redoStack.length > 0) {
-          const result = await redo()
+        if (redoStackLengthRef.current > 0) {
+          const result = await redoRef.current()
           if (result.success && result.entry) {
-            toast.info('Redone', result.entry.description)
+            toastRef.current.info('Redone', result.entry.description)
           } else if (!result.success && result.error) {
-            toast.error('Redo failed', result.error)
+            toastRef.current.error('Redo failed', result.error)
           }
         }
       }
@@ -245,7 +261,7 @@ export function UndoRedoProvider({ children }: { children: ReactNode }) {
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [undo, redo, undoStack.length, redoStack.length, toast])
+  }, []) // Empty deps - listener is stable
 
   const value: UndoRedoContextType = {
     undoStack,

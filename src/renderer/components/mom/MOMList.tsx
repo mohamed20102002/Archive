@@ -153,47 +153,97 @@ export function MOMList() {
   // Handle ?momId= param for cross-link navigation
   useEffect(() => {
     const momId = searchParams.get('momId')
-    if (!momId || loading || moms.length === 0) return
+    if (!momId || loading) return
 
-    setHighlightedMomId(momId)
-    setSearchParams({}, { replace: true })
-
-    // Scroll to highlighted card
-    requestAnimationFrame(() => {
-      const el = scrollContainerRef.current?.querySelector(`[data-mom-id="${momId}"]`)
-      if (el) {
-        el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    const handleMomNavigation = async () => {
+      // Fetch the MOM to check its status
+      const mom = await window.electronAPI.moms.getById(momId) as Mom | null
+      if (!mom) {
+        setSearchParams({}, { replace: true })
+        return
       }
-    })
 
-    const timer = setTimeout(() => setHighlightedMomId(null), 4000)
-    return () => clearTimeout(timer)
-  }, [loading, moms, searchParams])
+      // Check if we need to switch tabs
+      const momStatus = mom.status === 'closed' ? 'closed' : 'open'
+      if (momStatus !== tabMode) {
+        setTabMode(momStatus)
+        // Wait for tab switch and data reload
+        setTimeout(() => {
+          setHighlightedMomId(momId)
+          requestAnimationFrame(() => {
+            const el = scrollContainerRef.current?.querySelector(`[data-mom-id="${momId}"]`)
+            if (el) {
+              el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+            }
+          })
+        }, 500)
+      } else {
+        // Same tab, just highlight
+        setHighlightedMomId(momId)
+        requestAnimationFrame(() => {
+          const el = scrollContainerRef.current?.querySelector(`[data-mom-id="${momId}"]`)
+          if (el) {
+            el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+          }
+        })
+      }
+
+      setSearchParams({}, { replace: true })
+      setTimeout(() => setHighlightedMomId(null), 4000)
+    }
+
+    handleMomNavigation()
+  }, [searchParams, loading, tabMode])
 
   // Handle search highlight from global search
   useEffect(() => {
     const state = location.state as any
     if ((state?.highlightType === 'mom' || state?.highlightType === 'mom_action') && state?.highlightId) {
       const momId = state.highlightId
-      setHighlightedMomId(momId)
 
-      // Scroll to the MOM after a short delay
-      setTimeout(() => {
-        const el = scrollContainerRef.current?.querySelector(`[data-mom-id="${momId}"]`)
-        if (el) {
-          el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      const handleHighlight = async () => {
+        // Fetch the MOM to check its status
+        const mom = await window.electronAPI.moms.getById(momId) as Mom | null
+        if (!mom) {
+          window.history.replaceState({}, document.title)
+          return
         }
-      }, 300)
 
-      // Clear highlight after 5 seconds
-      const timer = setTimeout(() => setHighlightedMomId(null), 5000)
+        // Check if we need to switch tabs
+        const momStatus = mom.status === 'closed' ? 'closed' : 'open'
+        if (momStatus !== tabMode) {
+          setTabMode(momStatus)
+          // Wait for tab switch and data reload
+          setTimeout(() => {
+            setHighlightedMomId(momId)
+            requestAnimationFrame(() => {
+              const el = scrollContainerRef.current?.querySelector(`[data-mom-id="${momId}"]`)
+              if (el) {
+                el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+              }
+            })
+          }, 500)
+        } else {
+          // Same tab, just highlight
+          setHighlightedMomId(momId)
+          setTimeout(() => {
+            const el = scrollContainerRef.current?.querySelector(`[data-mom-id="${momId}"]`)
+            if (el) {
+              el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+            }
+          }, 300)
+        }
 
-      // Clear the location state
-      window.history.replaceState({}, document.title)
+        // Clear the location state
+        window.history.replaceState({}, document.title)
 
-      return () => clearTimeout(timer)
+        // Clear highlight after 5 seconds
+        setTimeout(() => setHighlightedMomId(null), 5000)
+      }
+
+      handleHighlight()
     }
-  }, [location.state])
+  }, [location.state, tabMode])
 
   const handleCreateMom = async (data: CreateMomData) => {
     if (!user) return

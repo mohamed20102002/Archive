@@ -41,6 +41,15 @@ export function undoCreate(
   }
 }
 
+// Required fields for each entity type (minimum fields that must exist)
+const REQUIRED_FIELDS: Record<EntityType, string[]> = {
+  record: ['title', 'type', 'topic_id'],
+  topic: ['title'],
+  letter: ['subject', 'letter_type'],
+  mom: ['title', 'mom_id'],
+  issue: ['title', 'importance', 'status']
+}
+
 // Undo Update = Restore previous state
 export function undoUpdate(
   entityType: EntityType,
@@ -53,6 +62,18 @@ export function undoUpdate(
   const username = getUsername(userId)
 
   try {
+    // Validate previousData is not null/undefined
+    if (!previousData || typeof previousData !== 'object') {
+      return { success: false, error: 'Invalid previous data: must be an object' }
+    }
+
+    // Validate required fields exist for entity type
+    const requiredFields = REQUIRED_FIELDS[entityType] || []
+    const missingFields = requiredFields.filter(field => !(field in previousData))
+    if (missingFields.length > 0) {
+      return { success: false, error: `Missing required fields for ${entityType}: ${missingFields.join(', ')}` }
+    }
+
     const table = getTableName(entityType)
 
     // Build dynamic update query from previousData

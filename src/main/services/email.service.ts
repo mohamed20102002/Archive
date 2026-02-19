@@ -55,7 +55,7 @@ export async function archiveEmail(
   topicId: string,
   userId: string,
   subcategoryId?: string
-): Promise<{ success: boolean; email?: ArchivedEmail; recordId?: string; error?: string }> {
+): Promise<{ success: boolean; email?: ArchivedEmail; recordId?: string; error?: string; warning?: string }> {
   const db = getDatabase()
 
   if (!emailData.entryId || !emailData.storeId) {
@@ -108,7 +108,8 @@ export async function archiveEmail(
     console.error('Error calculating checksum:', error)
   }
 
-  // Save attachments
+  // Save attachments and track failures
+  const failedAttachments: string[] = []
   if (emailData.hasAttachments && emailData.attachmentCount > 0) {
     const attachmentsDir = path.join(storagePath, 'attachments')
     fs.mkdirSync(attachmentsDir, { recursive: true })
@@ -120,7 +121,8 @@ export async function archiveEmail(
       try {
         outlookService.saveAttachment(emailData.entryId, emailData.storeId, i, attachmentPath)
       } catch (error) {
-        console.error(`Error saving attachment ${i}:`, error)
+        console.error(`Error saving attachment ${i} (${attachmentName}):`, error)
+        failedAttachments.push(attachmentName)
       }
     }
   }
@@ -260,7 +262,18 @@ export async function archiveEmail(
       }
     )
 
-    return { success: true, email, recordId }
+    // Build result with optional warning about failed attachments
+    const result: { success: boolean; email: ArchivedEmail; recordId: string; warning?: string } = {
+      success: true,
+      email,
+      recordId
+    }
+
+    if (failedAttachments.length > 0) {
+      result.warning = `Some attachments could not be saved: ${failedAttachments.join(', ')}`
+    }
+
+    return result
   } catch (error: any) {
     // Clean up on failure
     fs.rmSync(storagePath, { recursive: true, force: true })

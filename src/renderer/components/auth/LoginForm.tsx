@@ -25,9 +25,15 @@ export function LoginForm({ onSuccess }: LoginFormProps) {
   const [isLoading, setIsLoading] = useState(false)
   const [usernameStatus, setUsernameStatus] = useState<{ exists: boolean; isActive: boolean } | null>(null)
   const [checkingUsername, setCheckingUsername] = useState(false)
+  const [appVersion, setAppVersion] = useState('')
 
   const appTitle = settings.department_name?.trim() || 'Project Archive'
   const greeting = getGreeting()
+
+  // Get app version
+  useEffect(() => {
+    window.electronAPI.updater.getVersion().then(setAppVersion).catch(() => {})
+  }, [])
 
   // Check if username exists with debounce
   useEffect(() => {
@@ -220,11 +226,16 @@ export function LoginForm({ onSuccess }: LoginFormProps) {
           </div>
         </div>
 
-        {/* Developer Credit */}
-        <div className="mt-6 text-center">
+        {/* Developer Credit & Version */}
+        <div className="mt-6 text-center space-y-1">
           <p className="text-xs text-gray-400">
             Developed by <span className="font-medium text-blue-400">Mohamed Darwish</span>
           </p>
+          {appVersion && (
+            <p className="text-xs text-gray-500">
+              Version {appVersion}
+            </p>
+          )}
         </div>
       </div>
     </div>

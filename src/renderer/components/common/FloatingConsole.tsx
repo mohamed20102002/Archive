@@ -82,7 +82,9 @@ export function FloatingConsole() {
   // Load stats on mount for badge
   useEffect(() => {
     if (isAdmin) {
-      window.electronAPI.logger.getStats().then(setLogStats)
+      window.electronAPI.logger.getStats()
+        .then(setLogStats)
+        .catch((err) => console.error('Failed to load log stats:', err))
     }
   }, [isAdmin])
 

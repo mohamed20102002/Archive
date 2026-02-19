@@ -228,49 +228,90 @@ export function Timeline() {
   // Scroll to and highlight a specific record when navigated with ?recordId=
   useEffect(() => {
     const recordId = searchParams.get('recordId')
-    if (!recordId || isLoading || records.length === 0) return
+    if (!recordId || isLoading) return
 
-    setHighlightedRecordId(recordId)
-    // Clear the query param so refreshing doesn't re-highlight
-    setSearchParams({}, { replace: true })
-
-    // Wait for render, then scroll into view
-    requestAnimationFrame(() => {
-      const el = scrollContainerRef.current?.querySelector(`[data-record-id="${recordId}"]`)
-      if (el) {
-        el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    const handleRecordNavigation = async () => {
+      // Fetch the record to verify it exists
+      const record = await window.electronAPI.records.getById(recordId) as Record | null
+      if (!record) {
+        setSearchParams({}, { replace: true })
+        return
       }
-    })
 
-    // Clear highlight after a few seconds
-    const timer = setTimeout(() => setHighlightedRecordId(null), 4000)
-    return () => clearTimeout(timer)
-  }, [isLoading, records, searchParams])
+      // Reset filters to ensure record is visible
+      const needsFilterReset = filterSubcategory !== 'all' || filterType !== 'all' || searchQuery.trim()
+      if (needsFilterReset) {
+        setFilterSubcategory('all')
+        setFilterType('all')
+        setSearchQuery('')
+      }
+
+      // Wait for filter reset and data reload
+      setTimeout(() => {
+        setHighlightedRecordId(recordId)
+        setSearchParams({}, { replace: true })
+
+        // Wait for render, then scroll into view
+        requestAnimationFrame(() => {
+          const el = scrollContainerRef.current?.querySelector(`[data-record-id="${recordId}"]`)
+          if (el) {
+            el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+          }
+        })
+
+        // Clear highlight after a few seconds
+        setTimeout(() => setHighlightedRecordId(null), 5000)
+      }, needsFilterReset ? 500 : 100)
+    }
+
+    handleRecordNavigation()
+  }, [isLoading, searchParams, filterSubcategory, filterType])
 
   // Handle search highlight from global search
   useEffect(() => {
     const state = location.state as any
-    if (state?.highlightType === 'record' && state?.highlightId) {
+    if (state?.highlightType === 'record' && state?.highlightId && !isLoading) {
       const recordId = state.highlightId
-      setHighlightedRecordId(recordId)
 
-      // Wait for render, then scroll into view
-      setTimeout(() => {
-        const el = scrollContainerRef.current?.querySelector(`[data-record-id="${recordId}"]`)
-        if (el) {
-          el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      const handleSearchHighlight = async () => {
+        // Fetch the record to verify it exists
+        const record = await window.electronAPI.records.getById(recordId) as Record | null
+        if (!record) {
+          window.history.replaceState({}, document.title)
+          return
         }
-      }, 300)
 
-      // Clear highlight after 5 seconds
-      const timer = setTimeout(() => setHighlightedRecordId(null), 5000)
+        // Reset filters to ensure record is visible
+        const needsFilterReset = filterSubcategory !== 'all' || filterType !== 'all' || searchQuery.trim()
+        if (needsFilterReset) {
+          setFilterSubcategory('all')
+          setFilterType('all')
+          setSearchQuery('')
+        }
 
-      // Clear the location state
-      window.history.replaceState({}, document.title)
+        // Wait for filter reset and data reload
+        setTimeout(() => {
+          setHighlightedRecordId(recordId)
 
-      return () => clearTimeout(timer)
+          // Wait for render, then scroll into view
+          requestAnimationFrame(() => {
+            const el = scrollContainerRef.current?.querySelector(`[data-record-id="${recordId}"]`)
+            if (el) {
+              el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+            }
+          })
+
+          // Clear highlight after 5 seconds
+          setTimeout(() => setHighlightedRecordId(null), 5000)
+        }, needsFilterReset ? 500 : 100)
+
+        // Clear the location state
+        window.history.replaceState({}, document.title)
+      }
+
+      handleSearchHighlight()
     }
-  }, [location.state, records])
+  }, [location.state, isLoading, filterSubcategory, filterType])
 
   const filteredRecords = records.filter(record => {
     // Support multi-type records (comma-separated)

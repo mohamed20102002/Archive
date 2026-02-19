@@ -60,19 +60,38 @@ export function OpenIssues() {
   // Handle issueId from URL params (e.g., /issues?issueId=xxx)
   useEffect(() => {
     const issueId = searchParams.get('issueId')
-    if (issueId && issueId !== processedIssueId.current) {
+    if (issueId && issueId !== processedIssueId.current && !loading) {
       processedIssueId.current = issueId
-      // Set highlight for visual feedback (don't open modal - let user see the highlighted card first)
-      setHighlightedIssueId(issueId)
-      // Clear the URL param
-      setSearchParams({}, { replace: true })
-      // Clear highlight after 5 seconds
-      const timer = setTimeout(() => {
-        setHighlightedIssueId(null)
-      }, 5000)
-      return () => clearTimeout(timer)
+
+      const handleIssueNavigation = async () => {
+        // Fetch the issue to check its status
+        const issue = await window.electronAPI.issues.getById(issueId) as Issue | null
+        if (!issue) {
+          setSearchParams({}, { replace: true })
+          return
+        }
+
+        // Check if we need to switch tabs
+        const issueTab = issue.status === 'completed' ? 'completed' : 'open'
+        if (issueTab !== tabMode) {
+          setTabMode(issueTab)
+          // Wait for tab switch and data reload
+          setTimeout(() => {
+            setHighlightedIssueId(issueId)
+            setSearchParams({}, { replace: true })
+            setTimeout(() => setHighlightedIssueId(null), 5000)
+          }, 500)
+        } else {
+          // Same tab, just highlight
+          setHighlightedIssueId(issueId)
+          setSearchParams({}, { replace: true })
+          setTimeout(() => setHighlightedIssueId(null), 5000)
+        }
+      }
+
+      handleIssueNavigation()
     }
-  }, [searchParams, setSearchParams])
+  }, [searchParams, setSearchParams, loading, tabMode])
 
   // Scroll to highlighted card when it appears
   useEffect(() => {
@@ -90,19 +109,39 @@ export function OpenIssues() {
   // Handle search highlight from global search
   useEffect(() => {
     const state = location.state as any
-    if (state?.highlightType === 'issue' && state?.highlightId) {
+    if (state?.highlightType === 'issue' && state?.highlightId && !loading) {
       const issueId = state.highlightId
-      setHighlightedIssueId(issueId)
 
-      // Clear highlight after 5 seconds
-      const timer = setTimeout(() => setHighlightedIssueId(null), 5000)
+      const handleSearchHighlight = async () => {
+        // Fetch the issue to check its status
+        const issue = await window.electronAPI.issues.getById(issueId) as Issue | null
+        if (!issue) {
+          window.history.replaceState({}, document.title)
+          return
+        }
 
-      // Clear the location state
-      window.history.replaceState({}, document.title)
+        // Check if we need to switch tabs
+        const issueTab = issue.status === 'completed' ? 'completed' : 'open'
+        if (issueTab !== tabMode) {
+          setTabMode(issueTab)
+          // Wait for tab switch and data reload
+          setTimeout(() => {
+            setHighlightedIssueId(issueId)
+            setTimeout(() => setHighlightedIssueId(null), 5000)
+          }, 500)
+        } else {
+          // Same tab, just highlight
+          setHighlightedIssueId(issueId)
+          setTimeout(() => setHighlightedIssueId(null), 5000)
+        }
 
-      return () => clearTimeout(timer)
+        // Clear the location state
+        window.history.replaceState({}, document.title)
+      }
+
+      handleSearchHighlight()
     }
-  }, [location.state])
+  }, [location.state, loading, tabMode])
 
   const buildFilters = useCallback((currentOffset = 0): IssueFilters => {
     const filters: IssueFilters = {}

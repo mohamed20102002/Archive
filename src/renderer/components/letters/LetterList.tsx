@@ -146,32 +146,44 @@ export function LetterList() {
   // Handle search highlight from global search
   useEffect(() => {
     const state = location.state as any
-    if (state?.highlightType === 'letter' && state?.highlightId) {
+    if (state?.highlightType === 'letter' && state?.highlightId && !loading) {
       const letterId = state.highlightId
-      setHighlightedLetterId(letterId)
 
-      // Switch to appropriate tab if needed
-      if (tabMode === 'authorities' || tabMode === 'contacts') {
-        setTabMode('all')
+      const handleLetterHighlight = async () => {
+        // Fetch the letter to verify it exists
+        const letter = await window.electronAPI.letters.getById(letterId) as Letter | null
+        if (!letter) {
+          window.history.replaceState({}, document.title)
+          return
+        }
+
+        // Always switch to 'all' tab and clear filters to ensure visibility
+        if (tabMode !== 'all') {
+          setTabMode('all')
+        }
+        clearFilters()
+
+        // Wait for tab switch and data reload
+        setTimeout(() => {
+          setHighlightedLetterId(letterId)
+
+          // Scroll to the letter
+          setTimeout(() => {
+            const element = document.getElementById(`letter-${letterId}`)
+            if (element) {
+              element.scrollIntoView({ behavior: 'smooth', block: 'center' })
+            }
+          }, 100)
+
+          // Clear highlight after 5 seconds
+          setTimeout(() => setHighlightedLetterId(null), 5000)
+        }, tabMode !== 'all' ? 500 : 100)
+
+        // Clear the location state
+        window.history.replaceState({}, document.title)
       }
 
-      // Scroll to the letter after a short delay to allow render
-      setTimeout(() => {
-        const element = document.getElementById(`letter-${letterId}`)
-        if (element) {
-          element.scrollIntoView({ behavior: 'smooth', block: 'center' })
-        }
-      }, 300)
-
-      // Clear highlight after 5 seconds
-      const timer = setTimeout(() => {
-        setHighlightedLetterId(null)
-      }, 5000)
-
-      // Clear the location state
-      window.history.replaceState({}, document.title)
-
-      return () => clearTimeout(timer)
+      handleLetterHighlight()
     }
 
     // Handle contact/authority tab opening from search
@@ -179,7 +191,7 @@ export function LetterList() {
       setTabMode(state.highlightType === 'contact' ? 'contacts' : 'authorities')
       window.history.replaceState({}, document.title)
     }
-  }, [location.state])
+  }, [location.state, loading, tabMode])
 
   const handleSearch = async () => {
     if (!searchQuery && !filterType && !filterStatus && !filterPriority && !filterAuthority && !filterTopic) {
@@ -224,22 +236,42 @@ export function LetterList() {
   // Handle ?letterId= param for cross-link navigation
   useEffect(() => {
     const letterId = searchParams.get('letterId')
-    if (!letterId || loading || letters.length === 0) return
+    if (!letterId || loading) return
 
-    setHighlightedLetterId(letterId)
-    setSearchParams({}, { replace: true })
-
-    // Scroll to highlighted card
-    requestAnimationFrame(() => {
-      const el = scrollContainerRef.current?.querySelector(`[data-letter-id="${letterId}"]`)
-      if (el) {
-        el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    const handleLetterNavigation = async () => {
+      // Fetch the letter to verify it exists
+      const letter = await window.electronAPI.letters.getById(letterId) as Letter | null
+      if (!letter) {
+        setSearchParams({}, { replace: true })
+        return
       }
-    })
 
-    const timer = setTimeout(() => setHighlightedLetterId(null), 4000)
-    return () => clearTimeout(timer)
-  }, [loading, letters, searchParams])
+      // Always switch to 'all' tab and clear filters to ensure visibility
+      if (tabMode !== 'all') {
+        setTabMode('all')
+      }
+      clearFilters()
+
+      // Wait for tab switch and data reload
+      setTimeout(() => {
+        setHighlightedLetterId(letterId)
+        setSearchParams({}, { replace: true })
+
+        // Scroll to highlighted card
+        requestAnimationFrame(() => {
+          const el = scrollContainerRef.current?.querySelector(`[data-letter-id="${letterId}"]`) ||
+                     document.getElementById(`letter-${letterId}`)
+          if (el) {
+            el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+          }
+        })
+
+        setTimeout(() => setHighlightedLetterId(null), 5000)
+      }, tabMode !== 'all' ? 500 : 100)
+    }
+
+    handleLetterNavigation()
+  }, [loading, searchParams, tabMode])
 
   const handleCreateLetter = async (data: any, references: PendingReference[]) => {
     if (!user) return
