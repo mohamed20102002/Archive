@@ -265,7 +265,7 @@ export function OutlookBrowser({ isActive = false }: OutlookBrowserProps) {
       <div className="flex items-center justify-center h-full">
         <div className="text-center">
           <div className="animate-spin w-8 h-8 border-4 border-primary-600 border-t-transparent rounded-full mx-auto mb-4" />
-          <p className="text-gray-600">Restoring your previous session...</p>
+          <p className="text-gray-600 dark:text-gray-400">Restoring your previous session...</p>
         </div>
       </div>
     )
@@ -275,13 +275,13 @@ export function OutlookBrowser({ isActive = false }: OutlookBrowserProps) {
     return (
       <div className="flex items-center justify-center h-full">
         <div className="text-center max-w-md">
-          <div className="w-16 h-16 rounded-full bg-blue-100 flex items-center justify-center mx-auto mb-6">
-            <svg className="w-8 h-8 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <div className="w-16 h-16 rounded-full bg-blue-100 dark:bg-blue-900/50 flex items-center justify-center mx-auto mb-6">
+            <svg className="w-8 h-8 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
             </svg>
           </div>
-          <h2 className="text-xl font-semibold text-gray-900 mb-2">Connect to Outlook</h2>
-          <p className="text-gray-600 mb-6">
+          <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-2">Connect to Outlook</h2>
+          <p className="text-gray-600 dark:text-gray-400 mb-6">
             Connect to Microsoft Outlook to browse and archive emails. Make sure Outlook is running on your computer.
           </p>
           <button
@@ -327,12 +327,12 @@ export function OutlookBrowser({ isActive = false }: OutlookBrowserProps) {
               </svg>
             </div>
             {/* Connection status dot */}
-            <span className="absolute -bottom-0.5 -right-0.5 w-4 h-4 bg-green-500 rounded-full border-2 border-white animate-pulse-slow" />
+            <span className="absolute -bottom-0.5 -right-0.5 w-4 h-4 bg-green-500 rounded-full border-2 border-white dark:border-gray-800 animate-pulse-slow" />
           </div>
           <div>
-            <h1 className="text-xl font-semibold text-gray-900">Outlook Integration</h1>
+            <h1 className="text-xl font-semibold text-gray-900 dark:text-gray-100">Outlook Integration</h1>
             <div className="flex items-center gap-2 mt-0.5">
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 dark:bg-green-900/50 text-green-800 dark:text-green-300">
                 <span className="w-1.5 h-1.5 rounded-full bg-green-500" />
                 Connected
               </span>
@@ -343,7 +343,7 @@ export function OutlookBrowser({ isActive = false }: OutlookBrowserProps) {
           <button
             onClick={handleRefreshOutlook}
             disabled={isRefreshingOutlook}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-medium transition-colors"
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 text-sm font-medium transition-colors"
             title="Refresh Outlook data"
           >
             <svg
@@ -358,7 +358,7 @@ export function OutlookBrowser({ isActive = false }: OutlookBrowserProps) {
           </button>
           <button
             onClick={handleDisconnect}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-red-50 hover:bg-red-100 text-red-600 text-sm font-medium transition-colors"
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-red-50 dark:bg-red-900/30 hover:bg-red-100 dark:hover:bg-red-900/50 text-red-600 dark:text-red-400 text-sm font-medium transition-colors"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />

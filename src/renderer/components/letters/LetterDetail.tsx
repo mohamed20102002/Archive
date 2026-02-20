@@ -123,27 +123,27 @@ export function LetterDetail({ letter, onEdit, onDelete, onClose, onRefresh }: L
 
   const getStatusColor = (status: LetterStatus | DraftStatus) => {
     switch (status) {
-      case 'pending': return 'bg-yellow-100 text-yellow-800'
-      case 'in_progress': return 'bg-blue-100 text-blue-800'
-      case 'replied': return 'bg-green-100 text-green-800'
-      case 'closed': return 'bg-gray-100 text-gray-800'
-      case 'archived': return 'bg-purple-100 text-purple-800'
-      case 'draft': return 'bg-gray-100 text-gray-800'
-      case 'review': return 'bg-yellow-100 text-yellow-800'
-      case 'approved': return 'bg-green-100 text-green-800'
-      case 'sent': return 'bg-blue-100 text-blue-800'
-      case 'superseded': return 'bg-red-100 text-red-800'
-      default: return 'bg-gray-100 text-gray-800'
+      case 'pending': return 'bg-yellow-100 dark:bg-yellow-900/50 text-yellow-800 dark:text-yellow-300'
+      case 'in_progress': return 'bg-blue-100 dark:bg-blue-900/50 text-blue-800 dark:text-blue-300'
+      case 'replied': return 'bg-green-100 dark:bg-green-900/50 text-green-800 dark:text-green-300'
+      case 'closed': return 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-300'
+      case 'archived': return 'bg-purple-100 dark:bg-purple-900/50 text-purple-800 dark:text-purple-300'
+      case 'draft': return 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-300'
+      case 'review': return 'bg-yellow-100 dark:bg-yellow-900/50 text-yellow-800 dark:text-yellow-300'
+      case 'approved': return 'bg-green-100 dark:bg-green-900/50 text-green-800 dark:text-green-300'
+      case 'sent': return 'bg-blue-100 dark:bg-blue-900/50 text-blue-800 dark:text-blue-300'
+      case 'superseded': return 'bg-red-100 dark:bg-red-900/50 text-red-800 dark:text-red-300'
+      default: return 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-300'
     }
   }
 
   const getPriorityColor = (priority: LetterPriority) => {
     switch (priority) {
-      case 'urgent': return 'bg-red-100 text-red-800'
-      case 'high': return 'bg-orange-100 text-orange-800'
-      case 'normal': return 'bg-gray-100 text-gray-800'
-      case 'low': return 'bg-blue-100 text-blue-800'
-      default: return 'bg-gray-100 text-gray-800'
+      case 'urgent': return 'bg-red-100 dark:bg-red-900/50 text-red-800 dark:text-red-300'
+      case 'high': return 'bg-orange-100 dark:bg-orange-900/50 text-orange-800 dark:text-orange-300'
+      case 'normal': return 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-300'
+      case 'low': return 'bg-blue-100 dark:bg-blue-900/50 text-blue-800 dark:text-blue-300'
+      default: return 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-300'
     }
   }
 
@@ -398,13 +398,13 @@ export function LetterDetail({ letter, onEdit, onDelete, onClose, onRefresh }: L
   return (
     <div className="flex flex-col h-full max-h-[80vh]">
       {/* Header */}
-      <div className="flex items-start justify-between pb-4 border-b">
+      <div className="flex items-start justify-between pb-4 border-b border-gray-200 dark:border-gray-700">
         <div className="flex-1">
           <div className="flex items-center gap-3 mb-2">
             <span className={`inline-flex px-2 py-1 text-xs font-medium rounded-full capitalize ${
-              letter.letter_type === 'incoming' ? 'bg-blue-100 text-blue-800' :
-              letter.letter_type === 'outgoing' ? 'bg-green-100 text-green-800' :
-              'bg-purple-100 text-purple-800'
+              letter.letter_type === 'incoming' ? 'bg-blue-100 dark:bg-blue-900/50 text-blue-800 dark:text-blue-300' :
+              letter.letter_type === 'outgoing' ? 'bg-green-100 dark:bg-green-900/50 text-green-800 dark:text-green-300' :
+              'bg-purple-100 dark:bg-purple-900/50 text-purple-800 dark:text-purple-300'
             }`}>
               {letter.letter_type}
             </span>
@@ -415,18 +415,18 @@ export function LetterDetail({ letter, onEdit, onDelete, onClose, onRefresh }: L
               {letter.priority}
             </span>
             {isOverdue && (
-              <span className="inline-flex px-2 py-1 text-xs font-medium rounded-full bg-red-100 text-red-800">
+              <span className="inline-flex px-2 py-1 text-xs font-medium rounded-full bg-red-100 dark:bg-red-900/50 text-red-800 dark:text-red-300">
                 OVERDUE
               </span>
             )}
           </div>
-          <h2 className="text-xl font-bold text-gray-900">{letter.subject}</h2>
+          <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100">{letter.subject}</h2>
           <div className="flex items-center gap-2 mt-1 flex-wrap">
-            <span className="inline-flex items-center gap-1 text-sm font-mono font-medium text-primary-700 bg-primary-50 px-2 py-0.5 rounded">
+            <span className="inline-flex items-center gap-1 text-sm font-mono font-medium text-primary-700 dark:text-primary-300 bg-primary-50 dark:bg-primary-900/50 px-2 py-0.5 rounded">
               {letter.id.slice(0, 8)}
               <button
                 onClick={handleCopyId}
-                className="p-0.5 rounded hover:bg-primary-100 transition-colors"
+                className="p-0.5 rounded hover:bg-primary-100 dark:hover:bg-primary-800 transition-colors"
                 title="Copy letter ID"
               >
                 {copied ? (
@@ -441,11 +441,11 @@ export function LetterDetail({ letter, onEdit, onDelete, onClose, onRefresh }: L
               </button>
             </span>
             {(letter.reference_number || letter.incoming_number || letter.outgoing_number) && (
-              <span className="inline-flex items-center gap-1 text-sm font-mono text-gray-500">
+              <span className="inline-flex items-center gap-1 text-sm font-mono text-gray-500 dark:text-gray-400">
                 Ref: {letter.reference_number || letter.incoming_number || letter.outgoing_number}
                 <button
                   onClick={handleCopyRef}
-                  className="p-0.5 rounded hover:bg-gray-200 transition-colors"
+                  className="p-0.5 rounded hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
                   title="Copy reference number"
                 >
                   {copiedRef ? (
@@ -466,7 +466,7 @@ export function LetterDetail({ letter, onEdit, onDelete, onClose, onRefresh }: L
           <button onClick={onEdit} className="btn-secondary text-sm">
             Edit
           </button>
-          <button onClick={onDelete} className="text-red-600 hover:text-red-700 p-2">
+          <button onClick={onDelete} className="text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 p-2">
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
             </svg>
@@ -475,15 +475,15 @@ export function LetterDetail({ letter, onEdit, onDelete, onClose, onRefresh }: L
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-4 py-3 border-b">
+      <div className="flex gap-4 py-3 border-b border-gray-200 dark:border-gray-700">
         {(['details', 'drafts', 'references', 'moms', 'flow'] as TabMode[]).map((tab) => (
           <button
             key={tab}
             onClick={() => setTabMode(tab)}
             className={`px-3 py-1 text-sm font-medium rounded-lg transition-colors ${
               tabMode === tab
-                ? 'bg-primary-100 text-primary-700'
-                : 'text-gray-600 hover:text-gray-900'
+                ? 'bg-primary-100 dark:bg-primary-900/50 text-primary-700 dark:text-primary-300'
+                : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
             }`}
           >
             {tab === 'details' ? 'Details' :
@@ -506,33 +506,33 @@ export function LetterDetail({ letter, onEdit, onDelete, onClose, onRefresh }: L
             {/* Summary */}
             {letter.summary && (
               <div>
-                <h3 className="text-sm font-medium text-gray-700 mb-1">Summary</h3>
-                <p className="text-gray-600">{letter.summary}</p>
+                <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Summary</h3>
+                <p className="text-gray-600 dark:text-gray-400">{letter.summary}</p>
               </div>
             )}
 
             {/* Attachments */}
             {attachments.length > 0 && (
               <div>
-                <h3 className="text-sm font-medium text-gray-700 mb-2">
+                <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                   Attachments ({attachments.length})
                 </h3>
                 <div className="space-y-2">
                   {attachments.map((attachment) => (
-                    <div key={attachment.id} className="flex items-center gap-3 bg-blue-50 rounded-lg px-4 py-2">
-                      <svg className="w-6 h-6 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <div key={attachment.id} className="flex items-center gap-3 bg-blue-50 dark:bg-blue-900/30 rounded-lg px-4 py-2">
+                      <svg className="w-6 h-6 text-blue-500 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                       </svg>
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-gray-900 truncate">{attachment.filename}</p>
+                        <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">{attachment.filename}</p>
                         {attachment.file_size && (
-                          <p className="text-xs text-gray-500">{formatFileSize(attachment.file_size)}</p>
+                          <p className="text-xs text-gray-500 dark:text-gray-400">{formatFileSize(attachment.file_size)}</p>
                         )}
                       </div>
                       <div className="flex items-center gap-2">
                         <button
                           onClick={() => window.electronAPI.letterAttachments.showInFolder(attachment.id)}
-                          className="p-1 rounded hover:bg-gray-200 text-gray-500"
+                          className="p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-500 dark:text-gray-400"
                           title="Open folder"
                         >
                           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -544,13 +544,13 @@ export function LetterDetail({ letter, onEdit, onDelete, onClose, onRefresh }: L
                             const path = await window.electronAPI.letterAttachments.getFilePath(attachment.id)
                             if (path) handleOpenFile(path)
                           }}
-                          className="text-blue-600 hover:text-blue-700 text-sm"
+                          className="text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 text-sm"
                         >
                           Open
                         </button>
                         <button
                           onClick={() => handleDeleteAttachment(attachment.id)}
-                          className="text-red-500 hover:text-red-700 text-sm"
+                          className="text-red-500 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 text-sm"
                         >
                           Delete
                         </button>
@@ -563,53 +563,53 @@ export function LetterDetail({ letter, onEdit, onDelete, onClose, onRefresh }: L
 
             {/* Metadata Grid */}
             <div className="grid grid-cols-2 gap-4">
-              <div className="bg-gray-50 rounded-lg p-3">
-                <h4 className="text-xs font-medium text-gray-500 uppercase mb-2">Organization</h4>
-                <p className="text-gray-900">
+              <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-3">
+                <h4 className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase mb-2">Organization</h4>
+                <p className="text-gray-900 dark:text-gray-100">
                   {letter.authority_name || 'Not specified'}
                   {letter.authority_short_name && ` (${letter.authority_short_name})`}
                 </p>
               </div>
               {letter.contact_name && (
-                <div className="bg-amber-50 rounded-lg p-3">
-                  <h4 className="text-xs font-medium text-amber-600 uppercase mb-2">Att (Contact Person)</h4>
-                  <p className="text-gray-900">{letter.contact_name}</p>
+                <div className="bg-amber-50 dark:bg-amber-900/30 rounded-lg p-3">
+                  <h4 className="text-xs font-medium text-amber-600 dark:text-amber-400 uppercase mb-2">Att (Contact Person)</h4>
+                  <p className="text-gray-900 dark:text-gray-100">{letter.contact_name}</p>
                   {letter.contact_title && (
-                    <p className="text-sm text-gray-500">{letter.contact_title}</p>
+                    <p className="text-sm text-gray-500 dark:text-gray-400">{letter.contact_title}</p>
                   )}
                 </div>
               )}
-              <div className="bg-gray-50 rounded-lg p-3">
-                <h4 className="text-xs font-medium text-gray-500 uppercase mb-2">Topic</h4>
-                <p className="text-gray-900">{letter.topic_title || 'Not specified'}</p>
+              <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-3">
+                <h4 className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase mb-2">Topic</h4>
+                <p className="text-gray-900 dark:text-gray-100">{letter.topic_title || 'Not specified'}</p>
                 {letter.subcategory_title && (
-                  <p className="text-sm text-gray-500">{letter.subcategory_title}</p>
+                  <p className="text-sm text-gray-500 dark:text-gray-400">{letter.subcategory_title}</p>
                 )}
               </div>
-              <div className="bg-gray-50 rounded-lg p-3">
-                <h4 className="text-xs font-medium text-gray-500 uppercase mb-2">Letter Date</h4>
-                <p className="text-gray-900">
+              <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-3">
+                <h4 className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase mb-2">Letter Date</h4>
+                <p className="text-gray-900 dark:text-gray-100">
                   {letter.letter_date ? new Date(letter.letter_date).toLocaleDateString() : 'Not set'}
                 </p>
               </div>
               {letter.letter_type === 'incoming' && (
-                <div className="bg-gray-50 rounded-lg p-3">
-                  <h4 className="text-xs font-medium text-gray-500 uppercase mb-2">Received Date</h4>
-                  <p className="text-gray-900">
+                <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-3">
+                  <h4 className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase mb-2">Received Date</h4>
+                  <p className="text-gray-900 dark:text-gray-100">
                     {letter.received_date ? new Date(letter.received_date).toLocaleDateString() : 'Not set'}
                   </p>
                 </div>
               )}
-              <div className="bg-gray-50 rounded-lg p-3">
-                <h4 className="text-xs font-medium text-gray-500 uppercase mb-2">Response Type</h4>
-                <p className="text-gray-900 capitalize">
+              <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-3">
+                <h4 className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase mb-2">Response Type</h4>
+                <p className="text-gray-900 dark:text-gray-100 capitalize">
                   {letter.response_type?.replace('_', ' ') || 'Not specified'}
                 </p>
               </div>
             </div>
 
             {/* Timestamps */}
-            <div className="text-sm text-gray-500 pt-4 border-t">
+            <div className="text-sm text-gray-500 dark:text-gray-400 pt-4 border-t border-gray-200 dark:border-gray-700">
               <p>Created by {letter.creator_name} on {new Date(letter.created_at).toLocaleString()}</p>
               <p>Last updated: {new Date(letter.updated_at).toLocaleString()}</p>
             </div>
@@ -625,38 +625,38 @@ export function LetterDetail({ letter, onEdit, onDelete, onClose, onRefresh }: L
                 Create New Draft
               </button>
             ) : (
-              <div className="bg-gray-50 rounded-lg p-4 space-y-3">
-                <h4 className="font-medium text-gray-900">New Draft</h4>
+              <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4 space-y-3">
+                <h4 className="font-medium text-gray-900 dark:text-gray-100">New Draft</h4>
                 <input
                   type="text"
                   placeholder="Draft title"
                   value={draftTitle}
                   onChange={(e) => setDraftTitle(e.target.value)}
-                  className="input w-full"
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-primary-500"
                 />
                 <textarea
                   placeholder="Draft edits / notes"
                   value={draftEdits}
                   onChange={(e) => setDraftEdits(e.target.value)}
-                  className="input w-full"
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-primary-500 resize-none"
                   rows={3}
                 />
                 {/* Draft File Attachment */}
-                <div className="border border-gray-300 rounded-lg p-3">
+                <div className="border border-gray-300 dark:border-gray-600 rounded-lg p-3">
                   {draftFile ? (
-                    <div className="flex items-center justify-between bg-blue-50 rounded px-3 py-2">
+                    <div className="flex items-center justify-between bg-blue-50 dark:bg-blue-900/30 rounded px-3 py-2">
                       <div className="flex items-center gap-2">
-                        <svg className="w-6 h-6 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <svg className="w-6 h-6 text-blue-500 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                         </svg>
                         <div>
-                          <p className="text-sm font-medium text-gray-900">{draftFile.filename}</p>
-                          <p className="text-xs text-gray-500">{formatFileSize(draftFile.size)}</p>
+                          <p className="text-sm font-medium text-gray-900 dark:text-gray-100">{draftFile.filename}</p>
+                          <p className="text-xs text-gray-500 dark:text-gray-400">{formatFileSize(draftFile.size)}</p>
                         </div>
                       </div>
                       <button
                         onClick={() => setDraftFile(null)}
-                        className="text-red-500 hover:text-red-700 p-1"
+                        className="text-red-500 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 p-1"
                       >
                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -665,7 +665,7 @@ export function LetterDetail({ letter, onEdit, onDelete, onClose, onRefresh }: L
                     </div>
                   ) : (
                     <div className="text-center py-2">
-                      <p className="text-sm text-gray-500 mb-2">Attach draft document</p>
+                      <p className="text-sm text-gray-500 dark:text-gray-400 mb-2">Attach draft document</p>
                       <button
                         type="button"
                         onClick={handleSelectDraftFile}
@@ -694,31 +694,31 @@ export function LetterDetail({ letter, onEdit, onDelete, onClose, onRefresh }: L
 
             {/* Draft List */}
             {drafts.length === 0 ? (
-              <p className="text-gray-500 text-center py-8">No drafts yet</p>
+              <p className="text-gray-500 dark:text-gray-400 text-center py-8">No drafts yet</p>
             ) : (
               <div className="space-y-3">
                 {drafts.map((draft) => (
-                  <div key={draft.id} className="bg-white border rounded-lg p-4">
+                  <div key={draft.id} className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-4">
                     <div className="flex items-start justify-between">
                       <div className="flex-1">
                         <div className="flex items-center gap-2 mb-1">
-                          <span className="font-medium text-gray-900">{draft.title}</span>
-                          <span className="text-sm text-gray-500">v{draft.version}</span>
+                          <span className="font-medium text-gray-900 dark:text-gray-100">{draft.title}</span>
+                          <span className="text-sm text-gray-500 dark:text-gray-400">v{draft.version}</span>
                           <span className={`inline-flex px-2 py-0.5 text-xs font-medium rounded-full ${getStatusColor(draft.status)}`}>
                             {draft.status}
                           </span>
                           {draft.is_final && (
-                            <span className="inline-flex px-2 py-0.5 text-xs font-medium rounded-full bg-green-100 text-green-800">
+                            <span className="inline-flex px-2 py-0.5 text-xs font-medium rounded-full bg-green-100 dark:bg-green-900/50 text-green-800 dark:text-green-300">
                               FINAL
                             </span>
                           )}
                         </div>
                         {draft.content && (
-                          <p className="text-sm text-gray-600 line-clamp-2 mb-2">{draft.content}</p>
+                          <p className="text-sm text-gray-600 dark:text-gray-400 line-clamp-2 mb-2">{draft.content}</p>
                         )}
                         {draft.original_filename && (
                           <div className="flex items-center gap-2 mt-2">
-                            <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <svg className="w-4 h-4 text-gray-400 dark:text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
                             </svg>
                             <button
@@ -726,13 +726,13 @@ export function LetterDetail({ letter, onEdit, onDelete, onClose, onRefresh }: L
                                 const path = await window.electronAPI.letterDrafts.getFilePath(draft.id)
                                 if (path) handleOpenFile(path)
                               }}
-                              className="text-sm text-blue-600 hover:text-blue-700 underline"
+                              className="text-sm text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 underline"
                             >
                               {draft.original_filename}
                             </button>
                             <button
                               onClick={() => window.electronAPI.letterDrafts.showInFolder(draft.id)}
-                              className="p-1 rounded hover:bg-gray-200 text-gray-500"
+                              className="p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-500 dark:text-gray-400"
                               title="Open folder"
                             >
                               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -741,7 +741,7 @@ export function LetterDetail({ letter, onEdit, onDelete, onClose, onRefresh }: L
                             </button>
                           </div>
                         )}
-                        <p className="text-xs text-gray-400 mt-2">
+                        <p className="text-xs text-gray-400 dark:text-gray-500 mt-2">
                           By {draft.creator_name} on {new Date(draft.created_at).toLocaleString()}
                         </p>
                       </div>
@@ -750,13 +750,13 @@ export function LetterDetail({ letter, onEdit, onDelete, onClose, onRefresh }: L
                           <>
                             <button
                               onClick={() => handleDraftAction(draft.id, 'approve')}
-                              className="text-green-600 hover:text-green-700 text-sm"
+                              className="text-green-600 dark:text-green-400 hover:text-green-700 dark:hover:text-green-300 text-sm"
                             >
                               Approve
                             </button>
                             <button
                               onClick={() => handleDraftAction(draft.id, 'delete')}
-                              className="text-red-600 hover:text-red-700 text-sm"
+                              className="text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 text-sm"
                             >
                               Delete
                             </button>
@@ -765,7 +765,7 @@ export function LetterDetail({ letter, onEdit, onDelete, onClose, onRefresh }: L
                         {draft.status === 'approved' && (
                           <button
                             onClick={() => handleDraftAction(draft.id, 'send')}
-                            className="text-blue-600 hover:text-blue-700 text-sm"
+                            className="text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 text-sm"
                           >
                             Mark as Sent
                           </button>
@@ -788,8 +788,8 @@ export function LetterDetail({ letter, onEdit, onDelete, onClose, onRefresh }: L
                 Add Reference
               </button>
             ) : (
-              <div className="bg-gray-50 rounded-lg p-4 space-y-3">
-                <h4 className="font-medium text-gray-900">Add Reference by Reference Number</h4>
+              <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4 space-y-3">
+                <h4 className="font-medium text-gray-900 dark:text-gray-100">Add Reference by Reference Number</h4>
                 <div className="flex gap-2">
                   <input
                     type="text"
@@ -800,7 +800,7 @@ export function LetterDetail({ letter, onEdit, onDelete, onClose, onRefresh }: L
                       setFoundLetter(null)
                       setRefError('')
                     }}
-                    className="input flex-1"
+                    className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-primary-500"
                   />
                   <button
                     onClick={handleSearchReference}
@@ -812,14 +812,14 @@ export function LetterDetail({ letter, onEdit, onDelete, onClose, onRefresh }: L
                 </div>
 
                 {refError && (
-                  <p className="text-red-600 text-sm">{refError}</p>
+                  <p className="text-red-600 dark:text-red-400 text-sm">{refError}</p>
                 )}
 
                 {foundLetter && (
-                  <div className="bg-white border border-green-200 rounded-lg p-3">
-                    <p className="text-sm font-medium text-green-700 mb-2">Letter found:</p>
-                    <p className="text-sm text-gray-900">{foundLetter.subject}</p>
-                    <p className="text-xs text-gray-500 font-mono">
+                  <div className="bg-white dark:bg-gray-800 border border-green-200 dark:border-green-700 rounded-lg p-3">
+                    <p className="text-sm font-medium text-green-700 dark:text-green-400 mb-2">Letter found:</p>
+                    <p className="text-sm text-gray-900 dark:text-gray-100">{foundLetter.subject}</p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 font-mono">
                       {foundLetter.reference_number || foundLetter.incoming_number || foundLetter.outgoing_number}
                     </p>
 
@@ -827,7 +827,7 @@ export function LetterDetail({ letter, onEdit, onDelete, onClose, onRefresh }: L
                       <select
                         value={refType}
                         onChange={(e) => setRefType(e.target.value as ReferenceType)}
-                        className="input w-full text-sm"
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-primary-500"
                       >
                         <option value="related">Related</option>
                         <option value="reply_to">Reply To</option>
@@ -840,7 +840,7 @@ export function LetterDetail({ letter, onEdit, onDelete, onClose, onRefresh }: L
                         placeholder="Notes (optional)"
                         value={refNotes}
                         onChange={(e) => setRefNotes(e.target.value)}
-                        className="input w-full text-sm"
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-primary-500"
                       />
                     </div>
                   </div>
@@ -873,28 +873,28 @@ export function LetterDetail({ letter, onEdit, onDelete, onClose, onRefresh }: L
 
             {/* References From (this letter references) */}
             <div>
-              <h4 className="font-medium text-gray-900 mb-3">
+              <h4 className="font-medium text-gray-900 dark:text-gray-100 mb-3">
                 References ({references.from.length})
               </h4>
               {references.from.length === 0 ? (
-                <p className="text-gray-500 text-sm">This letter doesn't reference any other letters</p>
+                <p className="text-gray-500 dark:text-gray-400 text-sm">This letter doesn't reference any other letters</p>
               ) : (
                 <div className="space-y-2">
                   {references.from.map((ref) => (
-                    <div key={ref.id} className="bg-gray-50 rounded-lg p-3 flex items-center justify-between">
+                    <div key={ref.id} className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-3 flex items-center justify-between">
                       <div className="flex items-center gap-2 flex-1">
-                        <span className="text-xs font-medium text-gray-500 uppercase px-2 py-0.5 bg-gray-200 rounded">
+                        <span className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase px-2 py-0.5 bg-gray-200 dark:bg-gray-600 rounded">
                           {ref.reference_type.replace('_', ' ')}
                         </span>
-                        <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <svg className="w-4 h-4 text-gray-400 dark:text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8l4 4m0 0l-4 4m4-4H3" />
                         </svg>
                         <div>
-                          <span className="text-sm text-gray-900">
+                          <span className="text-sm text-gray-900 dark:text-gray-100">
                             {ref.target_subject || 'Unknown letter'}
                           </span>
                           {ref.target_reference_number && (
-                            <span className="text-xs text-gray-500 font-mono ml-2">
+                            <span className="text-xs text-gray-500 dark:text-gray-400 font-mono ml-2">
                               ({ref.target_reference_number})
                             </span>
                           )}
@@ -902,7 +902,7 @@ export function LetterDetail({ letter, onEdit, onDelete, onClose, onRefresh }: L
                       </div>
                       <button
                         onClick={() => handleDeleteReference(ref.id)}
-                        className="text-red-500 hover:text-red-700 p-1"
+                        className="text-red-500 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 p-1"
                         title="Remove reference"
                       >
                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -917,34 +917,34 @@ export function LetterDetail({ letter, onEdit, onDelete, onClose, onRefresh }: L
 
             {/* Referenced By (letters that reference this one) */}
             <div>
-              <h4 className="font-medium text-gray-900 mb-3">
+              <h4 className="font-medium text-gray-900 dark:text-gray-100 mb-3">
                 Referenced By ({references.to.length})
               </h4>
               {references.to.length === 0 ? (
-                <p className="text-gray-500 text-sm">No other letters reference this one</p>
+                <p className="text-gray-500 dark:text-gray-400 text-sm">No other letters reference this one</p>
               ) : (
                 <div className="space-y-2">
                   {references.to.map((ref) => (
-                    <div key={ref.id} className="bg-gray-50 rounded-lg p-3">
+                    <div key={ref.id} className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-3">
                       <div className="flex items-center gap-2">
                         <div className="flex-1">
-                          <span className="text-sm text-gray-900">
+                          <span className="text-sm text-gray-900 dark:text-gray-100">
                             {ref.source_subject || 'Unknown letter'}
                           </span>
                           {ref.source_reference_number && (
-                            <span className="text-xs text-gray-500 font-mono ml-2">
+                            <span className="text-xs text-gray-500 dark:text-gray-400 font-mono ml-2">
                               ({ref.source_reference_number})
                             </span>
                           )}
                         </div>
-                        <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <svg className="w-4 h-4 text-gray-400 dark:text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8l4 4m0 0l-4 4m4-4H3" />
                         </svg>
-                        <span className="text-xs font-medium text-gray-500 uppercase px-2 py-0.5 bg-gray-200 rounded">
+                        <span className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase px-2 py-0.5 bg-gray-200 dark:bg-gray-600 rounded">
                           {ref.reference_type.replace('_', ' ')}
                         </span>
                       </div>
-                      {ref.notes && <p className="text-xs text-gray-500 mt-1">{ref.notes}</p>}
+                      {ref.notes && <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">{ref.notes}</p>}
                     </div>
                   ))}
                 </div>
@@ -958,29 +958,29 @@ export function LetterDetail({ letter, onEdit, onDelete, onClose, onRefresh }: L
             {linkedMoms.length > 0 ? (
               <div className="space-y-2">
                 {linkedMoms.map((link) => (
-                  <div key={link.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg group">
+                  <div key={link.id} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg group">
                     <div
-                      className="flex items-center gap-3 min-w-0 cursor-pointer hover:text-primary-700"
+                      className="flex items-center gap-3 min-w-0 cursor-pointer hover:text-primary-700 dark:hover:text-primary-400"
                       onClick={() => {
                         onClose()
                         navigate(`/mom?momId=${link.mom_internal_id}`)
                       }}
                     >
                       {link.mom_display_id && (
-                        <span className="text-xs font-mono font-medium text-gray-700 bg-gray-200 px-2 py-0.5 rounded flex-shrink-0">
+                        <span className="text-xs font-mono font-medium text-gray-700 dark:text-gray-300 bg-gray-200 dark:bg-gray-600 px-2 py-0.5 rounded flex-shrink-0">
                           {link.mom_display_id}
                         </span>
                       )}
                       <span className={`text-xs px-2 py-0.5 rounded-full flex-shrink-0 ${
-                        link.mom_status === 'open' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'
+                        link.mom_status === 'open' ? 'bg-green-100 dark:bg-green-900/50 text-green-700 dark:text-green-300' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400'
                       }`}>
                         {link.mom_status}
                       </span>
-                      <span className="text-sm text-gray-900 truncate">{link.mom_title}</span>
+                      <span className="text-sm text-gray-900 dark:text-gray-100 truncate">{link.mom_title}</span>
                     </div>
                     <button
                       onClick={() => handleUnlinkMom(link.mom_internal_id)}
-                      className="p-1 rounded text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors opacity-0 group-hover:opacity-100 flex-shrink-0"
+                      className="p-1 rounded text-gray-400 dark:text-gray-500 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 transition-colors opacity-0 group-hover:opacity-100 flex-shrink-0"
                       title="Unlink MOM"
                     >
                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -991,41 +991,41 @@ export function LetterDetail({ letter, onEdit, onDelete, onClose, onRefresh }: L
                 ))}
               </div>
             ) : (
-              <p className="text-sm text-gray-500">No MOMs linked to this letter.</p>
+              <p className="text-sm text-gray-500 dark:text-gray-400">No MOMs linked to this letter.</p>
             )}
 
             {/* Search MOM by ID */}
-            <div className="border-t pt-4">
-              <h4 className="text-sm font-medium text-gray-700 mb-2">Link a MOM</h4>
+            <div className="border-t border-gray-200 dark:border-gray-700 pt-4">
+              <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Link a MOM</h4>
               <div className="flex items-center gap-2">
                 <input
                   type="text"
                   value={momIdSearch}
                   onChange={(e) => setMomIdSearch(e.target.value)}
                   placeholder="Paste MOM ID to link..."
-                  className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-primary-500"
                 />
               </div>
               {momSearchError && (
-                <p className="text-xs text-red-500 mt-1">{momSearchError}</p>
+                <p className="text-xs text-red-500 dark:text-red-400 mt-1">{momSearchError}</p>
               )}
               {foundMom && !linkedMomIds.has(foundMom.id) && (
-                <div className="mt-2 p-3 bg-green-50 border border-green-200 rounded-lg">
+                <div className="mt-2 p-3 bg-green-50 dark:bg-green-900/30 border border-green-200 dark:border-green-700 rounded-lg">
                   <div className="flex items-center justify-between">
                     <div className="min-w-0">
                       <div className="flex items-center gap-2 mb-1">
                         {foundMom.mom_id && (
-                          <span className="text-xs font-mono font-medium text-gray-700 bg-gray-200 px-1.5 py-0.5 rounded">
+                          <span className="text-xs font-mono font-medium text-gray-700 dark:text-gray-300 bg-gray-200 dark:bg-gray-600 px-1.5 py-0.5 rounded">
                             {foundMom.mom_id}
                           </span>
                         )}
                         <span className={`text-xs px-1.5 py-0.5 rounded-full ${
-                          foundMom.status === 'open' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'
+                          foundMom.status === 'open' ? 'bg-green-100 dark:bg-green-900/50 text-green-700 dark:text-green-300' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400'
                         }`}>
                           {foundMom.status}
                         </span>
                       </div>
-                      <p className="text-sm font-medium text-gray-900 truncate">{foundMom.title}</p>
+                      <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">{foundMom.title}</p>
                     </div>
                     <button
                       onClick={handleLinkMom}
@@ -1051,7 +1051,7 @@ export function LetterDetail({ letter, onEdit, onDelete, onClose, onRefresh }: L
       </div>
 
       {/* Footer */}
-      <div className="pt-4 border-t flex justify-end">
+      <div className="pt-4 border-t border-gray-200 dark:border-gray-700 flex justify-end">
         <button onClick={onClose} className="btn-secondary">
           Close
         </button>

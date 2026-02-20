@@ -1,9 +1,14 @@
-import React, { useState } from 'react'
+import React, { useState, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 import { SearchFiltersPanel } from './SearchFilters'
 import { SavedSearches } from './SavedSearches'
+import { SearchSuggestions } from './SearchSuggestions'
+import { SearchHistory } from './SearchHistory'
+import { HighlightedText } from './HighlightedText'
 import { ExportButton } from '../common/ExportButton'
-import { formatDistanceToNow } from 'date-fns'
+import { useAuth } from '../../context/AuthContext'
+import { formatRelativeTime } from '../../utils/formatters'
 
 interface SearchFilters {
   query: string
@@ -85,18 +90,24 @@ const typeColors: Record<string, string> = {
 
 export function AdvancedSearchPage() {
   const navigate = useNavigate()
+  const { t } = useTranslation()
+  const { user } = useAuth()
   const [filters, setFilters] = useState<SearchFilters>(defaultFilters)
   const [results, setResults] = useState<SearchResult[]>([])
+  const [searchTerms, setSearchTerms] = useState<string[]>([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(false)
   const [hasSearched, setHasSearched] = useState(false)
   const [page, setPage] = useState(0)
+  const [showSuggestions, setShowSuggestions] = useState(false)
+  const searchInputRef = useRef<HTMLInputElement>(null)
   const pageSize = 20
 
   const handleSearch = async (resetPage = true) => {
     if (resetPage) setPage(0)
     setLoading(true)
     setHasSearched(true)
+    setShowSuggestions(false)
 
     try {
       const searchFilters = {
@@ -108,9 +119,10 @@ export function AdvancedSearchPage() {
         offset: resetPage ? 0 : page * pageSize
       }
 
-      const result = await window.electronAPI.advancedSearch.search(searchFilters)
+      const result = await window.electronAPI.advancedSearch.search(searchFilters, user?.id)
       setResults(result.results as SearchResult[])
       setTotal(result.total)
+      setSearchTerms(result.searchTerms || [])
     } catch (error) {
       console.error('Search error:', error)
     } finally {
@@ -175,7 +187,7 @@ export function AdvancedSearchPage() {
           <div className="card p-4 sticky top-6 space-y-6">
             <div>
               <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">
-                Advanced Search
+                {t('search.advancedSearch', 'Advanced Search')}
               </h2>
               <SearchFiltersPanel
                 filters={filters}
@@ -191,6 +203,15 @@ export function AdvancedSearchPage() {
                 currentFilters={filters}
               />
             </div>
+
+            <div className="border-t border-gray-200 dark:border-gray-700 pt-4">
+              <SearchHistory
+                onSelect={(query, savedFilters) => {
+                  setFilters({ ...filters, query, ...(savedFilters || {}) } as SearchFilters)
+                }}
+                limit={5}
+              />
+            </div>
           </div>
         </div>
 
@@ -201,7 +222,7 @@ export function AdvancedSearchPage() {
             <div>
               {hasSearched && (
                 <p className="text-sm text-gray-500 dark:text-gray-400">
-                  {total} result{total !== 1 ? 's' : ''} found
+                  {t('search.resultsFound', '{{count}} result(s) found', { count: total })}
                 </p>
               )}
             </div>
@@ -221,10 +242,13 @@ export function AdvancedSearchPage() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
               </svg>
               <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-2">
-                Search Your Archive
+                {t('search.searchYourArchive', 'Search Your Archive')}
               </h3>
-              <p className="text-gray-500 dark:text-gray-400">
-                Use the filters on the left to search across topics, records, letters, MOMs, and issues
+              <p className="text-gray-500 dark:text-gray-400 mb-4">
+                {t('search.useFilters', 'Use the filters on the left to search across topics, records, letters, MOMs, and issues')}
+              </p>
+              <p className="text-xs text-gray-400 dark:text-gray-500">
+                {t('search.operatorTip', 'Tip: Use AND, OR, NOT operators or "quotes" for exact phrase matching')}
               </p>
             </div>
           ) : results.length === 0 ? (
@@ -233,10 +257,10 @@ export function AdvancedSearchPage() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
               <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-2">
-                No Results Found
+                {t('search.noResults', 'No Results Found')}
               </h3>
               <p className="text-gray-500 dark:text-gray-400">
-                Try adjusting your search criteria or filters
+                {t('search.tryAdjusting', 'Try adjusting your search criteria or filters')}
               </p>
             </div>
           ) : (
@@ -268,11 +292,19 @@ export function AdvancedSearchPage() {
                           )}
                         </div>
                         <h3 className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
-                          {result.title}
+                          <HighlightedText
+                            text={result.title}
+                            searchTerms={searchTerms}
+                            maxLength={100}
+                          />
                         </h3>
                         {result.description && (
                           <p className="mt-1 text-sm text-gray-500 dark:text-gray-400 line-clamp-2">
-                            {result.description}
+                            <HighlightedText
+                              text={result.description}
+                              searchTerms={searchTerms}
+                              maxLength={200}
+                            />
                           </p>
                         )}
                         <div className="mt-2 flex items-center gap-3 text-xs text-gray-400 dark:text-gray-500">
@@ -280,10 +312,10 @@ export function AdvancedSearchPage() {
                             <span>{result.topic_title}</span>
                           )}
                           {result.creator_name && (
-                            <span>by {result.creator_name}</span>
+                            <span>{t('common.by', 'by')} {result.creator_name}</span>
                           )}
                           {result.date && (
-                            <span>{formatDistanceToNow(new Date(result.date), { addSuffix: true })}</span>
+                            <span>{formatRelativeTime(result.date)}</span>
                           )}
                         </div>
                       </div>
@@ -306,10 +338,10 @@ export function AdvancedSearchPage() {
                     disabled={page === 0}
                     className="btn btn-secondary btn-sm"
                   >
-                    Previous
+                    {t('common.previous', 'Previous')}
                   </button>
                   <span className="text-sm text-gray-500 dark:text-gray-400">
-                    Page {page + 1} of {totalPages}
+                    {t('common.pageOf', 'Page {{current}} of {{total}}', { current: page + 1, total: totalPages })}
                   </span>
                   <button
                     onClick={() => {
@@ -319,7 +351,7 @@ export function AdvancedSearchPage() {
                     disabled={page >= totalPages - 1}
                     className="btn btn-secondary btn-sm"
                   >
-                    Next
+                    {t('common.next', 'Next')}
                   </button>
                 </div>
               )}

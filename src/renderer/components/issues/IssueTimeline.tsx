@@ -67,14 +67,14 @@ function getActionIcon(action: IssueHistoryAction): React.ReactNode {
 
 function getActionBgColor(action: IssueHistoryAction): string {
   switch (action) {
-    case 'created': return 'bg-green-100'
-    case 'field_edit': return 'bg-blue-100'
-    case 'importance_change': return 'bg-orange-100'
-    case 'reminder_change': return 'bg-purple-100'
-    case 'status_change': return 'bg-emerald-100'
-    case 'comment': return 'bg-gray-100'
-    case 'closure_note': return 'bg-gray-100'
-    default: return 'bg-gray-100'
+    case 'created': return 'bg-green-100 dark:bg-green-900/50'
+    case 'field_edit': return 'bg-blue-100 dark:bg-blue-900/50'
+    case 'importance_change': return 'bg-orange-100 dark:bg-orange-900/50'
+    case 'reminder_change': return 'bg-purple-100 dark:bg-purple-900/50'
+    case 'status_change': return 'bg-emerald-100 dark:bg-emerald-900/50'
+    case 'comment': return 'bg-gray-100 dark:bg-gray-700'
+    case 'closure_note': return 'bg-gray-100 dark:bg-gray-700'
+    default: return 'bg-gray-100 dark:bg-gray-700'
   }
 }
 
@@ -306,7 +306,7 @@ export function IssueTimeline({ history, onHistoryChanged }: IssueTimelineProps)
 
   if (history.length === 0) {
     return (
-      <div className="text-center py-8 text-gray-500">
+      <div className="text-center py-8 text-gray-500 dark:text-gray-400">
         <p className="text-sm">No history entries yet</p>
       </div>
     )
@@ -319,7 +319,7 @@ export function IssueTimeline({ history, onHistoryChanged }: IssueTimelineProps)
     <div className="flex items-center justify-end mb-3">
       <button
         onClick={toggleLayout}
-        className="inline-flex items-center gap-1.5 px-2 py-1 text-xs text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded transition-colors"
+        className="inline-flex items-center gap-1.5 px-2 py-1 text-xs text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
         title={`Switch to ${layout === 'timeline' ? 'compact' : 'timeline'} view`}
       >
         {layout === 'timeline' ? (
@@ -356,8 +356,8 @@ export function IssueTimeline({ history, onHistoryChanged }: IssueTimelineProps)
               <div key={entry.id} className="group/entry">
                 {/* Non-comment entries - minimal inline style */}
                 {!isCommentEntry(entry.action) && (
-                  <div className="flex items-center gap-2 py-1.5 px-2 text-xs text-gray-500 bg-gray-50/50 rounded">
-                    <span className="font-medium text-gray-700">{entry.creator_name || 'System'}</span>
+                  <div className="flex items-center gap-2 py-1.5 px-2 text-xs text-gray-500 dark:text-gray-400 bg-gray-50/50 dark:bg-gray-700/50 rounded">
+                    <span className="font-medium text-gray-700 dark:text-gray-300">{entry.creator_name || 'System'}</span>
                     <span>{getActionDescription(entry)}</span>
                     {entry.action === 'field_edit' && entry.field_name !== 'description' && (
                       <span className="text-gray-400">
@@ -370,21 +370,21 @@ export function IssueTimeline({ history, onHistoryChanged }: IssueTimelineProps)
 
                 {/* Comment entries - chat bubble style */}
                 {isCommentEntry(entry.action) && (
-                  <div className="rounded-lg border border-gray-100 bg-white shadow-sm overflow-hidden">
+                  <div className="rounded-lg border border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-sm overflow-hidden">
                     {/* Header */}
-                    <div className="flex items-center justify-between px-3 py-2 bg-gray-50 border-b border-gray-100">
+                    <div className="flex items-center justify-between px-3 py-2 bg-gray-50 dark:bg-gray-700/50 border-b border-gray-100 dark:border-gray-700">
                       <div className="flex items-center gap-2">
-                        <div className="w-6 h-6 rounded-full bg-primary-100 flex items-center justify-center">
-                          <span className="text-xs font-medium text-primary-700">
+                        <div className="w-6 h-6 rounded-full bg-primary-100 dark:bg-primary-900/50 flex items-center justify-center">
+                          <span className="text-xs font-medium text-primary-700 dark:text-primary-300">
                             {(entry.creator_name || 'U')[0].toUpperCase()}
                           </span>
                         </div>
-                        <span className="text-sm font-medium text-gray-900">{entry.creator_name || 'Unknown'}</span>
+                        <span className="text-sm font-medium text-gray-900 dark:text-gray-100">{entry.creator_name || 'Unknown'}</span>
                         <span className="text-xs text-gray-400">{formatTimestamp(entry.created_at)}</span>
                         {(entry.edit_count ?? 0) > 0 && (
                           <button
                             onClick={() => openEditHistory(entry.id)}
-                            className="text-xs text-gray-400 hover:text-gray-600"
+                            className="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
                           >
                             (edited)
                           </button>
@@ -394,7 +394,7 @@ export function IssueTimeline({ history, onHistoryChanged }: IssueTimelineProps)
                         <div className="flex items-center gap-1 opacity-0 group-hover/entry:opacity-100 transition-opacity">
                           <button
                             onClick={() => startEdit(entry)}
-                            className="p-1 rounded text-gray-400 hover:text-blue-600 hover:bg-blue-50"
+                            className="p-1 rounded text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30"
                             title="Edit"
                           >
                             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -403,7 +403,7 @@ export function IssueTimeline({ history, onHistoryChanged }: IssueTimelineProps)
                           </button>
                           <button
                             onClick={() => startAddLinks(entry.id)}
-                            className="p-1 rounded text-gray-400 hover:text-blue-600 hover:bg-blue-50"
+                            className="p-1 rounded text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30"
                             title="Link records"
                           >
                             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -423,7 +423,7 @@ export function IssueTimeline({ history, onHistoryChanged }: IssueTimelineProps)
                             onChange={(e) => setEditText(e.target.value)}
                             onKeyDown={handleEditKeyDown}
                             rows={3}
-                            className="w-full px-3 py-2 border border-blue-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 resize-none"
+                            className="w-full px-3 py-2 border border-blue-300 dark:border-blue-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 resize-none bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
                             autoFocus
                           />
                           <div className="flex items-center gap-2">
@@ -434,25 +434,25 @@ export function IssueTimeline({ history, onHistoryChanged }: IssueTimelineProps)
                             >
                               {editSubmitting ? 'Saving...' : 'Save'}
                             </button>
-                            <button onClick={cancelEdit} className="px-3 py-1 text-xs text-gray-600 hover:text-gray-800">
+                            <button onClick={cancelEdit} className="px-3 py-1 text-xs text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200">
                               Cancel
                             </button>
                           </div>
                         </div>
                       ) : (
-                        <p className="text-sm text-gray-700 whitespace-pre-wrap">{entry.comment}</p>
+                        <p className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap">{entry.comment}</p>
                       )}
                     </div>
 
                     {/* Linked records */}
                     {entry.linked_records && entry.linked_records.length > 0 && (
-                      <div className="px-3 py-2 bg-gray-50 border-t border-gray-100">
+                      <div className="px-3 py-2 bg-gray-50 dark:bg-gray-700/50 border-t border-gray-100 dark:border-gray-700">
                         <div className="flex flex-wrap gap-1.5">
                           {entry.linked_records.map(lr => (
                             lr.deleted_reason ? (
                               <span
                                 key={lr.record_id}
-                                className="inline-flex items-center gap-1 px-2 py-0.5 bg-gray-100 text-gray-400 rounded text-xs line-through"
+                                className="inline-flex items-center gap-1 px-2 py-0.5 bg-gray-100 dark:bg-gray-700 text-gray-400 rounded text-xs line-through"
                               >
                                 {lr.record_title || 'Deleted'}
                               </span>
@@ -460,7 +460,7 @@ export function IssueTimeline({ history, onHistoryChanged }: IssueTimelineProps)
                               <button
                                 key={lr.record_id}
                                 onClick={() => lr.topic_id && navigate(`/topics/${lr.topic_id}?recordId=${lr.record_id}`)}
-                                className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-50 text-blue-700 rounded text-xs hover:bg-blue-100"
+                                className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded text-xs hover:bg-blue-100 dark:hover:bg-blue-900/50"
                               >
                                 <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
@@ -475,13 +475,13 @@ export function IssueTimeline({ history, onHistoryChanged }: IssueTimelineProps)
 
                     {/* Add links UI */}
                     {isAddingLinks && (
-                      <div className="px-3 py-2 bg-blue-50 border-t border-blue-100 space-y-2">
+                      <div className="px-3 py-2 bg-blue-50 dark:bg-blue-900/20 border-t border-blue-100 dark:border-blue-800 space-y-2">
                         {pendingLinks.length > 0 && (
                           <div className="flex flex-wrap gap-1.5">
                             {pendingLinks.map(r => (
-                              <span key={r.id} className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-100 text-blue-700 rounded text-xs">
+                              <span key={r.id} className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300 rounded text-xs">
                                 {r.topic_title}: {r.title}
-                                <button onClick={() => setPendingLinks(prev => prev.filter(l => l.id !== r.id))} className="text-blue-400 hover:text-blue-600">
+                                <button onClick={() => setPendingLinks(prev => prev.filter(l => l.id !== r.id))} className="text-blue-400 hover:text-blue-600 dark:hover:text-blue-200">
                                   <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
                                 </button>
                               </span>
@@ -494,16 +494,16 @@ export function IssueTimeline({ history, onHistoryChanged }: IssueTimelineProps)
                             value={linkSearch}
                             onChange={(e) => setLinkSearch(e.target.value)}
                             placeholder="Search records..."
-                            className="w-full px-3 py-1.5 border border-blue-300 rounded text-xs focus:outline-none focus:ring-2 focus:ring-blue-400 bg-white"
+                            className="w-full px-3 py-1.5 border border-blue-300 dark:border-blue-600 rounded text-xs focus:outline-none focus:ring-2 focus:ring-blue-400 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
                             autoFocus
                           />
                           {linkResults.length > 0 && (
-                            <div className="absolute z-20 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-44 overflow-auto">
+                            <div className="absolute z-20 left-0 right-0 mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg max-h-44 overflow-auto">
                               {linkResults.filter(r => !existingLinkIds.has(r.id) && !pendingLinks.some(p => p.id === r.id)).map(r => (
                                 <button
                                   key={r.id}
                                   onClick={() => { setPendingLinks(prev => [...prev, r]); setLinkSearch(''); setLinkResults([]) }}
-                                  className="w-full text-left px-3 py-2 text-xs hover:bg-gray-50"
+                                  className="w-full text-left px-3 py-2 text-xs hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-900 dark:text-gray-100"
                                 >
                                   <span className="text-gray-400">{r.topic_title} /</span> {r.title}
                                 </button>
@@ -519,7 +519,7 @@ export function IssueTimeline({ history, onHistoryChanged }: IssueTimelineProps)
                           >
                             {linkSubmitting ? 'Saving...' : `Link ${pendingLinks.length}`}
                           </button>
-                          <button onClick={cancelAddLinks} className="px-3 py-1 text-xs text-gray-600">Cancel</button>
+                          <button onClick={cancelAddLinks} className="px-3 py-1 text-xs text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200">Cancel</button>
                         </div>
                       </div>
                     )}
@@ -528,18 +528,18 @@ export function IssueTimeline({ history, onHistoryChanged }: IssueTimelineProps)
 
                 {/* Edit history popover */}
                 {editHistoryId === entry.id && (
-                  <div ref={popoverRef} className="mt-1 ml-8 w-80 max-h-64 overflow-auto bg-white border border-gray-200 rounded-lg shadow-lg z-30">
-                    <div className="px-3 py-2 border-b border-gray-100 text-xs font-medium text-gray-700">Edit History</div>
+                  <div ref={popoverRef} className="mt-1 ml-8 w-80 max-h-64 overflow-auto bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg z-30">
+                    <div className="px-3 py-2 border-b border-gray-100 dark:border-gray-700 text-xs font-medium text-gray-700 dark:text-gray-300">Edit History</div>
                     {editHistoryLoading ? (
                       <div className="px-3 py-4 text-xs text-gray-400 text-center">Loading...</div>
                     ) : (
-                      <div className="divide-y divide-gray-100">
+                      <div className="divide-y divide-gray-100 dark:divide-gray-700">
                         {(editHistoryCache[entry.id] || []).map(edit => (
                           <div key={edit.id} className="px-3 py-2">
-                            <div className="text-[11px] text-gray-500">
-                              <span className="font-medium text-gray-700">{edit.editor_name || 'Unknown'}</span> - {formatTimestamp(edit.edited_at)}
+                            <div className="text-[11px] text-gray-500 dark:text-gray-400">
+                              <span className="font-medium text-gray-700 dark:text-gray-300">{edit.editor_name || 'Unknown'}</span> - {formatTimestamp(edit.edited_at)}
                             </div>
-                            <div className="mt-1 text-xs text-gray-500 bg-gray-50 rounded px-2 py-1.5 whitespace-pre-wrap">{edit.old_comment}</div>
+                            <div className="mt-1 text-xs text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-700 rounded px-2 py-1.5 whitespace-pre-wrap">{edit.old_comment}</div>
                           </div>
                         ))}
                       </div>
@@ -560,7 +560,7 @@ export function IssueTimeline({ history, onHistoryChanged }: IssueTimelineProps)
       <LayoutToggle />
       <div className="relative">
         {/* Vertical connector line */}
-        <div className="absolute left-5 top-6 bottom-6 w-0.5 bg-gray-200" />
+        <div className="absolute left-5 top-6 bottom-6 w-0.5 bg-gray-200 dark:bg-gray-700" />
 
         <div className="space-y-4">
           {history.map((entry) => {
@@ -578,10 +578,10 @@ export function IssueTimeline({ history, onHistoryChanged }: IssueTimelineProps)
             {/* Content */}
             <div className="flex-1 min-w-0 pb-2">
               <div className="flex items-baseline gap-2 flex-wrap">
-                <span className="text-sm font-medium text-gray-900">
+                <span className="text-sm font-medium text-gray-900 dark:text-gray-100">
                   {entry.creator_name || 'System'}
                 </span>
-                <span className="text-sm text-gray-600">
+                <span className="text-sm text-gray-600 dark:text-gray-400">
                   {getActionDescription(entry)}
                 </span>
 
@@ -590,7 +590,7 @@ export function IssueTimeline({ history, onHistoryChanged }: IssueTimelineProps)
                   <span className="inline-flex gap-1 opacity-0 group-hover/entry:opacity-100 transition-opacity">
                     <button
                       onClick={() => startEdit(entry)}
-                      className="p-0.5 rounded text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
+                      className="p-0.5 rounded text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-colors"
                       title="Edit comment"
                     >
                       <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -599,7 +599,7 @@ export function IssueTimeline({ history, onHistoryChanged }: IssueTimelineProps)
                     </button>
                     <button
                       onClick={() => startAddLinks(entry.id)}
-                      className="p-0.5 rounded text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
+                      className="p-0.5 rounded text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-colors"
                       title="Link records"
                     >
                       <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -609,13 +609,13 @@ export function IssueTimeline({ history, onHistoryChanged }: IssueTimelineProps)
                   </span>
                 )}
               </div>
-              <p className="text-xs text-gray-400 mt-0.5 flex items-center gap-1.5">
+              <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5 flex items-center gap-1.5">
                 {formatTimestamp(entry.created_at)}
                 {isCommentEntry(entry.action) && (entry.edit_count ?? 0) > 0 && (
                   <span className="relative">
                     <button
                       onClick={() => openEditHistory(entry.id)}
-                      className="text-gray-400 hover:text-gray-600 transition-colors cursor-pointer"
+                      className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors cursor-pointer"
                       title="View edit history"
                     >
                       (edited)
@@ -623,23 +623,23 @@ export function IssueTimeline({ history, onHistoryChanged }: IssueTimelineProps)
                     {editHistoryId === entry.id && (
                       <div
                         ref={popoverRef}
-                        className="absolute left-0 top-full mt-1 z-30 w-80 max-h-64 overflow-auto bg-white border border-gray-200 rounded-lg shadow-lg"
+                        className="absolute left-0 top-full mt-1 z-30 w-80 max-h-64 overflow-auto bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg"
                       >
-                        <div className="px-3 py-2 border-b border-gray-100 text-xs font-medium text-gray-700">
+                        <div className="px-3 py-2 border-b border-gray-100 dark:border-gray-700 text-xs font-medium text-gray-700 dark:text-gray-300">
                           Edit History
                         </div>
                         {editHistoryLoading ? (
                           <div className="px-3 py-4 text-xs text-gray-400 text-center">Loading...</div>
                         ) : (
-                          <div className="divide-y divide-gray-100">
+                          <div className="divide-y divide-gray-100 dark:divide-gray-700">
                             {(editHistoryCache[entry.id] || []).map(edit => (
                               <div key={edit.id} className="px-3 py-2">
-                                <div className="flex items-center gap-1 text-[11px] text-gray-500">
-                                  <span className="font-medium text-gray-700">{edit.editor_name || 'Unknown'}</span>
+                                <div className="flex items-center gap-1 text-[11px] text-gray-500 dark:text-gray-400">
+                                  <span className="font-medium text-gray-700 dark:text-gray-300">{edit.editor_name || 'Unknown'}</span>
                                   <span>edited on</span>
                                   <span>{formatTimestamp(edit.edited_at)}</span>
                                 </div>
-                                <div className="mt-1 text-xs text-gray-500 bg-gray-50 rounded px-2 py-1.5 whitespace-pre-wrap">
+                                <div className="mt-1 text-xs text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-700 rounded px-2 py-1.5 whitespace-pre-wrap">
                                   {edit.old_comment}
                                 </div>
                               </div>
@@ -654,10 +654,10 @@ export function IssueTimeline({ history, onHistoryChanged }: IssueTimelineProps)
 
               {/* Show old/new values for field edits */}
               {entry.action === 'field_edit' && entry.field_name !== 'description' && (
-                <div className="mt-1 text-xs text-gray-500">
-                  <span className="line-through text-red-400">{entry.old_value || '(empty)'}</span>
+                <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                  <span className="line-through text-red-400 dark:text-red-500">{entry.old_value || '(empty)'}</span>
                   {' → '}
-                  <span className="text-green-600">{entry.new_value || '(empty)'}</span>
+                  <span className="text-green-600 dark:text-green-400">{entry.new_value || '(empty)'}</span>
                 </div>
               )}
 
@@ -670,7 +670,7 @@ export function IssueTimeline({ history, onHistoryChanged }: IssueTimelineProps)
                       onChange={(e) => setEditText(e.target.value)}
                       onKeyDown={handleEditKeyDown}
                       rows={3}
-                      className="w-full px-3 py-2 border border-blue-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 resize-none"
+                      className="w-full px-3 py-2 border border-blue-300 dark:border-blue-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 resize-none bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
                       autoFocus
                     />
                     <div className="flex items-center gap-2">
@@ -683,7 +683,7 @@ export function IssueTimeline({ history, onHistoryChanged }: IssueTimelineProps)
                       </button>
                       <button
                         onClick={cancelEdit}
-                        className="px-3 py-1 text-xs font-medium text-gray-600 hover:text-gray-800 transition-colors"
+                        className="px-3 py-1 text-xs font-medium text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 transition-colors"
                       >
                         Cancel
                       </button>
@@ -691,7 +691,7 @@ export function IssueTimeline({ history, onHistoryChanged }: IssueTimelineProps)
                     </div>
                   </div>
                 ) : (
-                  <div className="mt-2 p-3 bg-gray-50 rounded-lg text-sm text-gray-700 whitespace-pre-wrap">
+                  <div className="mt-2 p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap">
                     {entry.comment}
                   </div>
                 )
@@ -700,13 +700,13 @@ export function IssueTimeline({ history, onHistoryChanged }: IssueTimelineProps)
               {/* Show linked records */}
               {entry.linked_records && entry.linked_records.length > 0 && (
                 <div className="mt-2 flex flex-wrap gap-1.5">
-                  <span className="text-xs text-gray-400">Linked:</span>
+                  <span className="text-xs text-gray-400 dark:text-gray-500">Linked:</span>
                   {entry.linked_records.map(lr => (
                     lr.deleted_reason ? (
                       // Deleted/broken link
                       <span
                         key={lr.record_id}
-                        className="inline-flex items-center gap-1 px-2 py-0.5 bg-gray-100 text-gray-400 rounded text-xs line-through cursor-not-allowed"
+                        className="inline-flex items-center gap-1 px-2 py-0.5 bg-gray-100 dark:bg-gray-700 text-gray-400 rounded text-xs line-through cursor-not-allowed"
                         title={lr.deleted_reason === 'topic_deleted' ? 'Topic was deleted' : 'Record was deleted'}
                       >
                         <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" /></svg>
@@ -719,12 +719,12 @@ export function IssueTimeline({ history, onHistoryChanged }: IssueTimelineProps)
                       // Active link
                       <span
                         key={lr.record_id}
-                        className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-50 text-blue-700 rounded text-xs cursor-pointer hover:bg-blue-100 transition-colors"
+                        className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded text-xs cursor-pointer hover:bg-blue-100 dark:hover:bg-blue-900/50 transition-colors"
                         onClick={() => lr.topic_id && navigate(`/topics/${lr.topic_id}?recordId=${lr.record_id}`)}
                         title="Go to record"
                       >
                         <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" /></svg>
-                        <span className="text-blue-400">{lr.topic_title} /</span> {lr.record_title}
+                        <span className="text-blue-400 dark:text-blue-400">{lr.topic_title} /</span> {lr.record_title}
                       </span>
                     )
                   ))}
@@ -733,17 +733,17 @@ export function IssueTimeline({ history, onHistoryChanged }: IssueTimelineProps)
 
               {/* Inline add-linked-records UI */}
               {isAddingLinks && (
-                <div className="mt-2 p-3 bg-blue-50/50 rounded-lg border border-blue-200 space-y-2">
+                <div className="mt-2 p-3 bg-blue-50/50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800 space-y-2">
                   {/* Pending links chips */}
                   {pendingLinks.length > 0 && (
                     <div className="flex flex-wrap gap-1.5">
                       {pendingLinks.map(r => (
-                        <span key={r.id} className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-100 text-blue-700 rounded text-xs">
-                          <span className="inline-flex px-1 py-0.5 rounded bg-blue-200 text-blue-600 text-[10px] font-semibold leading-none uppercase">{r.type}</span>
+                        <span key={r.id} className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300 rounded text-xs">
+                          <span className="inline-flex px-1 py-0.5 rounded bg-blue-200 dark:bg-blue-800 text-blue-600 dark:text-blue-300 text-[10px] font-semibold leading-none uppercase">{r.type}</span>
                           <span className="text-blue-400">{r.topic_title}:</span> {r.title}
                           <button
                             onClick={() => setPendingLinks(prev => prev.filter(l => l.id !== r.id))}
-                            className="ml-0.5 text-blue-400 hover:text-blue-600"
+                            className="ml-0.5 text-blue-400 hover:text-blue-600 dark:hover:text-blue-200"
                           >
                             <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
                           </button>
@@ -759,11 +759,11 @@ export function IssueTimeline({ history, onHistoryChanged }: IssueTimelineProps)
                       value={linkSearch}
                       onChange={(e) => setLinkSearch(e.target.value)}
                       placeholder="Search records by title or paste UUID..."
-                      className="w-full px-3 py-1.5 border border-blue-300 rounded-md text-xs focus:outline-none focus:ring-2 focus:ring-blue-400 bg-white"
+                      className="w-full px-3 py-1.5 border border-blue-300 dark:border-blue-600 rounded-md text-xs focus:outline-none focus:ring-2 focus:ring-blue-400 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
                       autoFocus
                     />
                     {linkResults.length > 0 && (
-                      <div className="absolute z-20 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-44 overflow-auto">
+                      <div className="absolute z-20 left-0 right-0 mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg max-h-44 overflow-auto">
                         {linkResults
                           .filter(r => !existingLinkIds.has(r.id) && !pendingLinks.some(p => p.id === r.id))
                           .map(r => (
@@ -775,12 +775,12 @@ export function IssueTimeline({ history, onHistoryChanged }: IssueTimelineProps)
                               setLinkSearch('')
                               setLinkResults([])
                             }}
-                            className="w-full text-left px-3 py-2 text-xs hover:bg-gray-50 border-b border-gray-100 last:border-0"
+                            className="w-full text-left px-3 py-2 text-xs hover:bg-gray-50 dark:hover:bg-gray-700 border-b border-gray-100 dark:border-gray-700 last:border-0"
                           >
                             <div className="flex items-center gap-1.5">
-                              <span className="inline-flex px-1 py-0.5 rounded bg-gray-100 text-gray-500 text-[10px] font-semibold leading-none uppercase flex-shrink-0">{r.type}</span>
+                              <span className="inline-flex px-1 py-0.5 rounded bg-gray-100 dark:bg-gray-600 text-gray-500 dark:text-gray-300 text-[10px] font-semibold leading-none uppercase flex-shrink-0">{r.type}</span>
                               <span className="text-gray-400">{r.topic_title} / {r.subcategory_title || '\u2014'} /</span>
-                              <span className="font-medium text-gray-700 truncate">{r.title}</span>
+                              <span className="font-medium text-gray-700 dark:text-gray-200 truncate">{r.title}</span>
                             </div>
                           </button>
                         ))}
@@ -799,7 +799,7 @@ export function IssueTimeline({ history, onHistoryChanged }: IssueTimelineProps)
                     </button>
                     <button
                       onClick={cancelAddLinks}
-                      className="px-3 py-1 text-xs font-medium text-gray-600 hover:text-gray-800 transition-colors"
+                      className="px-3 py-1 text-xs font-medium text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 transition-colors"
                     >
                       Cancel
                     </button>

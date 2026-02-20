@@ -12,16 +12,16 @@ export function HandoverSummary({ recordCount, editors, topics }: HandoverSummar
       {/* Summary Cards - More compact */}
       <div className="grid grid-cols-3 gap-3">
         <div className="card p-3 text-center">
-          <div className="text-2xl font-bold text-primary-600">{recordCount}</div>
-          <div className="text-xs text-gray-500">Records</div>
+          <div className="text-2xl font-bold text-primary-600 dark:text-primary-400">{recordCount}</div>
+          <div className="text-xs text-gray-500 dark:text-gray-400">Records</div>
         </div>
         <div className="card p-3 text-center">
-          <div className="text-2xl font-bold text-primary-600">{editors.length}</div>
-          <div className="text-xs text-gray-500">Editors</div>
+          <div className="text-2xl font-bold text-primary-600 dark:text-primary-400">{editors.length}</div>
+          <div className="text-xs text-gray-500 dark:text-gray-400">Editors</div>
         </div>
         <div className="card p-3 text-center">
-          <div className="text-2xl font-bold text-primary-600">{topics.length}</div>
-          <div className="text-xs text-gray-500">Topics</div>
+          <div className="text-2xl font-bold text-primary-600 dark:text-primary-400">{topics.length}</div>
+          <div className="text-xs text-gray-500 dark:text-gray-400">Topics</div>
         </div>
       </div>
 
@@ -29,14 +29,14 @@ export function HandoverSummary({ recordCount, editors, topics }: HandoverSummar
       <div className="card p-3 space-y-1 text-sm">
         {editors.length > 0 && (
           <div className="truncate">
-            <span className="font-medium text-gray-700">Editors: </span>
-            <span className="text-gray-600">{editors.join(', ')}</span>
+            <span className="font-medium text-gray-700 dark:text-gray-300">Editors: </span>
+            <span className="text-gray-600 dark:text-gray-400">{editors.join(', ')}</span>
           </div>
         )}
         {topics.length > 0 && (
           <div className="truncate">
-            <span className="font-medium text-gray-700">Topics: </span>
-            <span className="text-gray-600">{topics.map(t => t.title).join(', ')}</span>
+            <span className="font-medium text-gray-700 dark:text-gray-300">Topics: </span>
+            <span className="text-gray-600 dark:text-gray-400">{topics.map(t => t.title).join(', ')}</span>
           </div>
         )}
       </div>

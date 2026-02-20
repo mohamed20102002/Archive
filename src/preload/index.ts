@@ -27,19 +27,37 @@ export interface ElectronAPI {
       error?: string
     }>
     logout: (token: string, userId: string) => Promise<void>
-    verifyToken: (token: string) => Promise<{ valid: boolean; error?: string }>
+    verifyToken: (token: string) => Promise<{ valid: boolean; error?: string; timeoutWarning?: boolean; remainingSeconds?: number }>
     createUser: (username: string, password: string, displayName: string, role: 'admin' | 'user') => Promise<{
       success: boolean
       user?: unknown
       error?: string
     }>
     getAllUsers: () => Promise<unknown[]>
+    getUserById: (id: string) => Promise<{ id: string; username: string; display_name: string; role: string } | null>
     updateUser: (id: string, updates: unknown, updatedBy: string) => Promise<{ success: boolean; error?: string }>
     changePassword: (userId: string, currentPassword: string, newPassword: string) => Promise<{ success: boolean; error?: string }>
     hasAdminUser: () => Promise<boolean>
     resetPassword: (userId: string, newPassword: string, adminId: string) => Promise<{ success: boolean; error?: string }>
     deleteUser: (userId: string, adminId: string) => Promise<{ success: boolean; error?: string }>
     checkUsername: (username: string) => Promise<{ exists: boolean; isActive: boolean }>
+    // Session management
+    updateSessionActivity: (token: string) => Promise<{ valid: boolean; timeoutWarning: boolean; remainingSeconds: number }>
+    extendSession: (token: string) => Promise<{ success: boolean; newExpiresIn: number }>
+    getSessionInfo: (token: string) => Promise<{ valid: boolean; userId?: string; lastActivity?: number; remainingSeconds?: number }>
+    getSessionTimeout: () => Promise<number>
+    setSessionTimeout: (minutes: number) => Promise<void>
+    resetUserLockout: (username: string, adminId: string) => Promise<{ success: boolean; error?: string }>
+    getUserLockoutStatus: (username: string) => Promise<{ isLocked: boolean; remainingSeconds?: number; failedAttempts?: number }>
+  }
+  twofa: {
+    isEnabled: (userId: string) => Promise<boolean>
+    setEnabled: (userId: string, enabled: boolean, adminId: string) => Promise<{ success: boolean; error?: string }>
+    generateSessionToken: () => Promise<string>
+    initiate: (userId: string, sessionToken: string) => Promise<{ success: boolean; maskedEmail?: string; error?: string }>
+    verify: (sessionToken: string, code: string) => Promise<{ valid: boolean; error?: string; remainingAttempts?: number }>
+    cancel: (sessionToken: string) => Promise<void>
+    getRemainingTime: (sessionToken: string) => Promise<number | null>
   }
   search: {
     global: (query: string, limit?: number) => Promise<{
@@ -127,6 +145,10 @@ export interface ElectronAPI {
     getLog: (options?: unknown) => Promise<{ entries: unknown[]; total: number }>
     verifyIntegrity: () => Promise<{ valid: boolean; errors: string[]; checkedCount: number }>
     getStats: () => Promise<unknown>
+    runBackgroundIntegrityCheck: () => Promise<{ lastCheck: string | null; isValid: boolean; errors: string[]; checkedCount: number; isChecking: boolean }>
+    getIntegrityStatus: () => Promise<{ lastCheck: string | null; isValid: boolean; errors: string[]; checkedCount: number; isChecking: boolean }>
+    verifyRange: (startId: number, endId: number) => Promise<{ valid: boolean; errors: string[]; checkedCount: number }>
+    getLatestId: () => Promise<number>
   }
   handover: {
     getWeekInfo: () => Promise<unknown>
@@ -463,12 +485,22 @@ export interface ElectronAPI {
     setIssueTags: (issueId: string, tagIds: string[], userId: string) => Promise<{ success: boolean; error?: string }>
     getLetterTags: (letterId: string) => Promise<unknown[]>
     setLetterTags: (letterId: string, tagIds: string[], userId: string) => Promise<{ success: boolean; error?: string }>
+    getMomTags: (momId: string) => Promise<unknown[]>
+    setMomTags: (momId: string, tagIds: string[], userId: string) => Promise<{ success: boolean; error?: string }>
     getRecordsByTag: (tagId: string) => Promise<unknown[]>
     getIssuesByTag: (tagId: string) => Promise<unknown[]>
     getLettersByTag: (tagId: string) => Promise<unknown[]>
+    getMomsByTag: (tagId: string) => Promise<unknown[]>
   }
   advancedSearch: {
-    search: (filters: unknown) => Promise<{ results: unknown[]; total: number; offset: number; limit: number }>
+    search: (filters: unknown, userId?: string) => Promise<{ results: unknown[]; total: number; offset: number; limit: number; searchTerms?: string[] }>
+    suggestions: (partialQuery: string, userId: string, limit?: number) => Promise<{ text: string; type: string; count?: number }[]>
+    history: (userId: string, limit?: number) => Promise<unknown[]>
+    clearHistory: (userId: string) => Promise<{ success: boolean }>
+    deleteHistoryEntry: (id: string, userId: string) => Promise<boolean>
+    rebuildFtsIndexes: () => Promise<{ success: boolean; error?: string }>
+    getFtsStats: () => Promise<unknown>
+    highlight: (text: string, searchTerms: string[], maxLength?: number) => Promise<{ text: string; highlighted: boolean }[]>
     createSaved: (userId: string, name: string, filters: unknown) => Promise<{ success: boolean; search?: unknown; error?: string }>
     getSaved: (userId: string) => Promise<unknown[]>
     getSavedById: (id: string) => Promise<unknown | null>
@@ -500,6 +532,575 @@ export interface ElectronAPI {
     recordsByTopic: (topicId: string) => Promise<{ success: boolean; filePath?: string; error?: string }>
     customData: (data: any[], sheetName: string, filename: string) => Promise<{ success: boolean; filePath?: string; error?: string }>
   }
+  filterPresets: {
+    create: (userId: string, entityType: string, name: string, filters: Record<string, unknown>, isDefault?: boolean, isShared?: boolean) => Promise<{ success: boolean; preset?: unknown; error?: string }>
+    getAll: (userId: string, entityType: string) => Promise<unknown[]>
+    getById: (id: string) => Promise<unknown | null>
+    getDefault: (userId: string, entityType: string) => Promise<unknown | null>
+    update: (id: string, userId: string, input: { name?: string; filters?: Record<string, unknown>; isDefault?: boolean; isShared?: boolean }) => Promise<{ success: boolean; error?: string }>
+    delete: (id: string, userId: string) => Promise<{ success: boolean; error?: string }>
+    setDefault: (id: string, userId: string, entityType: string) => Promise<{ success: boolean; error?: string }>
+    clearDefault: (userId: string, entityType: string) => Promise<{ success: boolean; error?: string }>
+    getStats: (userId: string) => Promise<{ totalPresets: number; byEntityType: Record<string, number>; sharedPresets: number }>
+  }
+  health: {
+    runChecks: () => Promise<{
+      overall: 'healthy' | 'warning' | 'critical'
+      timestamp: string
+      checks: Array<{
+        name: string
+        status: 'healthy' | 'warning' | 'critical'
+        message: string
+        value?: number | string
+        threshold?: number | string
+        unit?: string
+      }>
+      summary: { healthy: number; warning: number; critical: number }
+    }>
+    getMetrics: () => Promise<{
+      memory: { total: number; used: number; free: number; percentUsed: number }
+      cpu: { cores: number; model: string; loadAverage: number[] }
+      disk: { total: number; used: number; free: number; percentUsed: number }
+      uptime: { system: number; app: number }
+    }>
+    getLastStatus: () => Promise<{
+      overall: 'healthy' | 'warning' | 'critical'
+      timestamp: string
+      checks: Array<{
+        name: string
+        status: 'healthy' | 'warning' | 'critical'
+        message: string
+        value?: number | string
+        threshold?: number | string
+        unit?: string
+      }>
+      summary: { healthy: number; warning: number; critical: number }
+    } | null>
+    forceCheckpoint: () => Promise<{ success: boolean; error?: string }>
+    optimizeDatabase: () => Promise<{ success: boolean; error?: string; sizeBefore?: number; sizeAfter?: number }>
+    analyzeDatabase: () => Promise<{ success: boolean; error?: string }>
+  }
+  integrity: {
+    check: () => Promise<{
+      valid: boolean
+      checks: Array<{
+        name: string
+        description: string
+        passed: boolean
+        details?: string
+        repairAvailable?: boolean
+      }>
+      totalChecks: number
+      passedChecks: number
+      failedChecks: number
+      timestamp: string
+    }>
+    getStartupResult: () => Promise<{
+      valid: boolean
+      checks: Array<{
+        name: string
+        description: string
+        passed: boolean
+        details?: string
+        repairAvailable?: boolean
+      }>
+      totalChecks: number
+      passedChecks: number
+      failedChecks: number
+      timestamp: string
+    } | null>
+    isStartupComplete: () => Promise<boolean>
+    repairOrphanedRecords: () => Promise<{ success: boolean; repaired: number; errors: string[] }>
+    rebuildFtsIndexes: () => Promise<{ success: boolean; repaired: number; errors: string[] }>
+    repairForeignKeyViolations: () => Promise<{ success: boolean; repaired: number; errors: string[] }>
+    repairOrphanedEmails: () => Promise<{ success: boolean; repaired: number; errors: string[] }>
+    repairOrphanedAttachments: () => Promise<{ success: boolean; repaired: number; errors: string[] }>
+  }
+  sync: {
+    getEntityVersion: (entityType: string, entityId: string) => Promise<{
+      entity_type: string
+      entity_id: string
+      version: number
+      updated_at: string
+      updated_by: string | null
+      checksum: string
+    } | null>
+    updateEntityVersion: (entityType: string, entityId: string, data: Record<string, unknown>, userId: string | null) => Promise<{
+      entity_type: string
+      entity_id: string
+      version: number
+      updated_at: string
+      updated_by: string | null
+      checksum: string
+    }>
+    checkConflict: (
+      entityType: string,
+      entityId: string,
+      clientVersion: number,
+      clientData: Record<string, unknown>,
+      originalData: Record<string, unknown>
+    ) => Promise<{
+      entity_type: string
+      entity_id: string
+      local_version: number
+      local_updated_at: string
+      local_updated_by: string | null
+      server_version: number
+      server_updated_at: string
+      server_updated_by: string | null
+      field_conflicts: Array<{
+        field: string
+        local_value: unknown
+        server_value: unknown
+        original_value: unknown
+      }>
+    } | null>
+    mergeConflict: (
+      conflict: unknown,
+      clientData: Record<string, unknown>,
+      strategy: 'keep_local' | 'keep_server' | 'keep_newer' | 'manual',
+      manualResolutions?: Record<string, unknown>
+    ) => Promise<{
+      success: boolean
+      merged_data?: Record<string, unknown>
+      conflicts_resolved?: number
+      strategy_used: string
+      error?: string
+    }>
+    getRecentChanges: (entityType?: string, since?: string, limit?: number) => Promise<Array<{
+      entity_type: string
+      entity_id: string
+      version: number
+      updated_at: string
+      updated_by: string | null
+      checksum: string
+    }>>
+  }
+  notifications: {
+    create: (input: {
+      user_id: string
+      type: 'mention' | 'assignment' | 'comment' | 'status_change' | 'reminder' | 'system'
+      title: string
+      message: string
+      entity_type?: string
+      entity_id?: string
+      actor_id?: string
+      actor_name?: string
+      send_email?: boolean
+    }) => Promise<{
+      id: string
+      user_id: string
+      type: string
+      title: string
+      message: string
+      entity_type?: string
+      entity_id?: string
+      actor_id?: string
+      actor_name?: string
+      is_read: boolean
+      email_sent: boolean
+      created_at: string
+      read_at?: string
+    }>
+    get: (userId: string, options?: {
+      unreadOnly?: boolean
+      limit?: number
+      offset?: number
+      type?: 'mention' | 'assignment' | 'comment' | 'status_change' | 'reminder' | 'system'
+    }) => Promise<{
+      notifications: Array<{
+        id: string
+        user_id: string
+        type: string
+        title: string
+        message: string
+        entity_type?: string
+        entity_id?: string
+        actor_id?: string
+        actor_name?: string
+        is_read: boolean
+        email_sent: boolean
+        created_at: string
+        read_at?: string
+      }>
+      total: number
+      unread: number
+    }>
+    markAsRead: (notificationId: string, userId: string) => Promise<boolean>
+    markAllAsRead: (userId: string) => Promise<number>
+    getUnreadCount: (userId: string) => Promise<number>
+    processMentions: (
+      text: string,
+      entityType: string,
+      entityId: string,
+      actorId: string,
+      actorName: string,
+      entityTitle: string
+    ) => Promise<unknown[]>
+    getPreferences: (userId: string) => Promise<Record<string, boolean>>
+    updatePreferences: (userId: string, preferences: Partial<Record<string, boolean>>) => Promise<void>
+  }
+  documentVersions: {
+    create: (input: {
+      document_type: 'letter_attachment' | 'record_attachment' | 'mom_draft' | 'letter_draft'
+      document_id: string
+      file_path: string
+      file_name: string
+      mime_type: string
+      created_by: string | null
+      change_summary?: string
+    }) => Promise<{
+      id: string
+      document_type: string
+      document_id: string
+      version_number: number
+      file_path: string
+      file_name: string
+      file_size: number
+      file_hash: string
+      mime_type: string
+      created_by: string | null
+      created_at: string
+      change_summary: string | null
+      is_current: boolean
+    }>
+    getVersions: (documentType: string, documentId: string) => Promise<Array<{
+      id: string
+      document_type: string
+      document_id: string
+      version_number: number
+      file_path: string
+      file_name: string
+      file_size: number
+      file_hash: string
+      mime_type: string
+      created_by: string | null
+      created_at: string
+      change_summary: string | null
+      is_current: boolean
+    }>>
+    getVersion: (versionId: string) => Promise<{
+      id: string
+      document_type: string
+      document_id: string
+      version_number: number
+      file_path: string
+      file_name: string
+      file_size: number
+      file_hash: string
+      mime_type: string
+      created_by: string | null
+      created_at: string
+      change_summary: string | null
+      is_current: boolean
+    } | null>
+    getCurrentVersion: (documentType: string, documentId: string) => Promise<{
+      id: string
+      document_type: string
+      document_id: string
+      version_number: number
+      file_path: string
+      file_name: string
+      file_size: number
+      file_hash: string
+      mime_type: string
+      created_by: string | null
+      created_at: string
+      change_summary: string | null
+      is_current: boolean
+    } | null>
+    restore: (versionId: string, userId: string) => Promise<{
+      id: string
+      document_type: string
+      document_id: string
+      version_number: number
+      file_path: string
+      file_name: string
+      file_size: number
+      file_hash: string
+      mime_type: string
+      created_by: string | null
+      created_at: string
+      change_summary: string | null
+      is_current: boolean
+    } | null>
+    compare: (versionId1: string, versionId2: string) => Promise<{
+      older_version: unknown
+      newer_version: unknown
+      size_change: number
+      size_change_percent: number
+      time_between: number
+    } | null>
+    getCount: (documentType: string, documentId: string) => Promise<number>
+    verifyIntegrity: (versionId: string) => Promise<{ valid: boolean; details?: string }>
+  }
+  ocr: {
+    recognizeImage: (imagePath: string, language: string) => Promise<{
+      text: string
+      confidence: number
+      words: Array<{
+        text: string
+        confidence: number
+        bbox: { x0: number; y0: number; x1: number; y1: number }
+      }>
+      paragraphs: string[]
+      language: string
+      processingTime: number
+    }>
+    extractAndIndex: (
+      attachmentId: string,
+      attachmentType: 'record_attachment' | 'letter_attachment',
+      filePath: string,
+      language: string,
+      userId: string | null
+    ) => Promise<{ success: boolean; text?: string; error?: string }>
+    getExtractedText: (attachmentId: string) => Promise<{
+      text: string
+      confidence: number
+      language: string
+      extractedAt: string
+    } | null>
+    searchText: (query: string, attachmentType?: string, limit?: number) => Promise<Array<{
+      attachmentId: string
+      attachmentType: string
+      matchedText: string
+      confidence: number
+    }>>
+    deleteExtractedText: (attachmentId: string) => Promise<boolean>
+    getStats: () => Promise<{
+      totalExtracted: number
+      byType: Record<string, number>
+      averageConfidence: number
+      totalTextLength: number
+    }>
+  }
+  signatures: {
+    create: (input: {
+      user_id: string
+      name: string
+      type: 'signature' | 'stamp' | 'initials'
+      image_data: string
+      width: number
+      height: number
+      is_default?: boolean
+    }) => Promise<{
+      id: string
+      user_id: string
+      name: string
+      type: 'signature' | 'stamp' | 'initials'
+      image_data: string
+      width: number
+      height: number
+      is_default: boolean
+      created_at: string
+      updated_at: string
+    }>
+    getAll: (userId: string, type?: string) => Promise<Array<{
+      id: string
+      user_id: string
+      name: string
+      type: 'signature' | 'stamp' | 'initials'
+      image_data: string
+      width: number
+      height: number
+      is_default: boolean
+      created_at: string
+      updated_at: string
+    }>>
+    get: (signatureId: string) => Promise<{
+      id: string
+      user_id: string
+      name: string
+      type: 'signature' | 'stamp' | 'initials'
+      image_data: string
+      width: number
+      height: number
+      is_default: boolean
+      created_at: string
+      updated_at: string
+    } | null>
+    getDefault: (userId: string, type: string) => Promise<{
+      id: string
+      user_id: string
+      name: string
+      type: 'signature' | 'stamp' | 'initials'
+      image_data: string
+      width: number
+      height: number
+      is_default: boolean
+      created_at: string
+      updated_at: string
+    } | null>
+    update: (signatureId: string, updates: { name?: string; image_data?: string; is_default?: boolean }, userId: string) => Promise<{ success: boolean; error?: string }>
+    delete: (signatureId: string, userId: string) => Promise<{ success: boolean; error?: string }>
+    place: (input: {
+      document_type: string
+      document_id: string
+      signature_id: string
+      page_number: number
+      x_position: number
+      y_position: number
+      scale?: number
+      rotation?: number
+      placed_by: string
+    }) => Promise<{
+      id: string
+      document_type: string
+      document_id: string
+      signature_id: string
+      page_number: number
+      x_position: number
+      y_position: number
+      scale: number
+      rotation: number
+      placed_by: string
+      placed_at: string
+    }>
+    getPlacements: (documentType: string, documentId: string) => Promise<Array<{
+      id: string
+      document_type: string
+      document_id: string
+      signature_id: string
+      page_number: number
+      x_position: number
+      y_position: number
+      scale: number
+      rotation: number
+      placed_by: string
+      placed_at: string
+    }>>
+    removePlacement: (placementId: string, userId: string) => Promise<{ success: boolean; error?: string }>
+    getForExport: (documentType: string, documentId: string) => Promise<Array<{
+      placement: unknown
+      signature: unknown
+    }>>
+  }
+  views: {
+    create: (input: {
+      name: string
+      entity_type: string
+      config: {
+        filters: Array<{ field: string; operator: string; value: unknown }>
+        sorts: Array<{ field: string; direction: 'asc' | 'desc' }>
+        columns?: Array<{ id: string; visible: boolean; width?: number; order: number }>
+        groupBy?: string
+        pageSize?: number
+        customSettings?: Record<string, unknown>
+      }
+      is_default?: boolean
+      is_shared?: boolean
+      created_by: number
+    }) => Promise<{
+      id: number
+      name: string
+      entity_type: string
+      config: unknown
+      is_default: boolean
+      is_shared: boolean
+      created_by: number
+      created_at: string
+      updated_at: string
+    }>
+    getById: (id: number) => Promise<{
+      id: number
+      name: string
+      entity_type: string
+      config: unknown
+      is_default: boolean
+      is_shared: boolean
+      created_by: number
+      created_at: string
+      updated_at: string
+    } | null>
+    getViews: (entityType: string, userId: number, includeShared?: boolean) => Promise<Array<{
+      id: number
+      name: string
+      entity_type: string
+      config: unknown
+      is_default: boolean
+      is_shared: boolean
+      created_by: number
+      created_at: string
+      updated_at: string
+    }>>
+    getDefault: (entityType: string, userId: number) => Promise<{
+      id: number
+      name: string
+      entity_type: string
+      config: unknown
+      is_default: boolean
+      is_shared: boolean
+      created_by: number
+      created_at: string
+      updated_at: string
+    } | null>
+    update: (id: number, input: {
+      name?: string
+      config?: unknown
+      is_default?: boolean
+      is_shared?: boolean
+    }, userId: number) => Promise<{
+      id: number
+      name: string
+      entity_type: string
+      config: unknown
+      is_default: boolean
+      is_shared: boolean
+      created_by: number
+      created_at: string
+      updated_at: string
+    } | null>
+    delete: (id: number, userId: number) => Promise<boolean>
+    duplicate: (id: number, newName: string, userId: number) => Promise<{
+      id: number
+      name: string
+      entity_type: string
+      config: unknown
+      is_default: boolean
+      is_shared: boolean
+      created_by: number
+      created_at: string
+      updated_at: string
+    } | null>
+    toggleShare: (id: number, userId: number) => Promise<{
+      id: number
+      name: string
+      entity_type: string
+      config: unknown
+      is_default: boolean
+      is_shared: boolean
+      created_by: number
+      created_at: string
+      updated_at: string
+    } | null>
+  }
+  mentions: {
+    create: (input: {
+      entity_type: 'record' | 'mom' | 'letter' | 'issue'
+      entity_id: string
+      mentioned_user_id: string
+      note?: string
+    }, userId: string) => Promise<{ success: boolean; mention?: unknown; error?: string }>
+    createBulk: (inputs: Array<{
+      entity_type: 'record' | 'mom' | 'letter' | 'issue'
+      entity_id: string
+      mentioned_user_id: string
+      note?: string
+    }>, userId: string) => Promise<{ success: boolean; count?: number; error?: string }>
+    getById: (id: string) => Promise<unknown | null>
+    getForUser: (userId: string, filters?: { status?: string; entity_type?: string }) => Promise<unknown[]>
+    getSentByUser: (userId: string, filters?: { status?: string; entity_type?: string }) => Promise<unknown[]>
+    getForEntity: (entityType: string, entityId: string) => Promise<unknown[]>
+    getAll: (filters?: { status?: string; entity_type?: string }) => Promise<unknown[]>
+    acknowledge: (id: string, userId: string) => Promise<{ success: boolean; error?: string }>
+    archive: (id: string, userId: string) => Promise<{ success: boolean; error?: string }>
+    updateNote: (id: string, note: string, userId: string) => Promise<{ success: boolean; error?: string }>
+    delete: (id: string, userId: string) => Promise<{ success: boolean; error?: string }>
+    getUnacknowledgedCount: (userId: string) => Promise<number>
+    getCounts: (userId: string) => Promise<{ pending: number; acknowledged: number; archived: number; sent: number }>
+    searchUsers: (query: string) => Promise<Array<{ id: string; display_name: string; username: string }>>
+    cleanup: () => Promise<{ success: boolean; deleted?: number; error?: string }>
+  }
 }
 
 // Expose protected methods that allow the renderer process to use
@@ -520,6 +1121,7 @@ const electronAPI: ElectronAPI = {
     createUser: (username, password, displayName, role) =>
       ipcRenderer.invoke('auth:createUser', username, password, displayName, role),
     getAllUsers: () => ipcRenderer.invoke('auth:getAllUsers'),
+    getUserById: (id: string) => ipcRenderer.invoke('auth:getUserById', id),
     updateUser: (id, updates, updatedBy) => ipcRenderer.invoke('auth:updateUser', id, updates, updatedBy),
     changePassword: (userId, currentPassword, newPassword) =>
       ipcRenderer.invoke('auth:changePassword', userId, currentPassword, newPassword),
@@ -528,7 +1130,24 @@ const electronAPI: ElectronAPI = {
       ipcRenderer.invoke('auth:resetPassword', userId, newPassword, adminId),
     deleteUser: (userId, adminId) =>
       ipcRenderer.invoke('auth:deleteUser', userId, adminId),
-    checkUsername: (username) => ipcRenderer.invoke('auth:checkUsername', username)
+    checkUsername: (username) => ipcRenderer.invoke('auth:checkUsername', username),
+    // Session management
+    updateSessionActivity: (token) => ipcRenderer.invoke('auth:updateSessionActivity', token),
+    extendSession: (token) => ipcRenderer.invoke('auth:extendSession', token),
+    getSessionInfo: (token) => ipcRenderer.invoke('auth:getSessionInfo', token),
+    getSessionTimeout: () => ipcRenderer.invoke('auth:getSessionTimeout'),
+    setSessionTimeout: (minutes) => ipcRenderer.invoke('auth:setSessionTimeout', minutes),
+    resetUserLockout: (username, adminId) => ipcRenderer.invoke('auth:resetUserLockout', username, adminId),
+    getUserLockoutStatus: (username) => ipcRenderer.invoke('auth:getUserLockoutStatus', username)
+  },
+  twofa: {
+    isEnabled: (userId) => ipcRenderer.invoke('twofa:isEnabled', userId),
+    setEnabled: (userId, enabled, adminId) => ipcRenderer.invoke('twofa:setEnabled', userId, enabled, adminId),
+    generateSessionToken: () => ipcRenderer.invoke('twofa:generateSessionToken'),
+    initiate: (userId, sessionToken) => ipcRenderer.invoke('twofa:initiate', userId, sessionToken),
+    verify: (sessionToken, code) => ipcRenderer.invoke('twofa:verify', sessionToken, code),
+    cancel: (sessionToken) => ipcRenderer.invoke('twofa:cancel', sessionToken),
+    getRemainingTime: (sessionToken) => ipcRenderer.invoke('twofa:getRemainingTime', sessionToken)
   },
   search: {
     global: (query, limit) => ipcRenderer.invoke('search:global', query, limit)
@@ -603,7 +1222,11 @@ const electronAPI: ElectronAPI = {
   audit: {
     getLog: (options) => ipcRenderer.invoke('audit:getLog', options),
     verifyIntegrity: () => ipcRenderer.invoke('audit:verifyIntegrity'),
-    getStats: () => ipcRenderer.invoke('audit:getStats')
+    getStats: () => ipcRenderer.invoke('audit:getStats'),
+    runBackgroundIntegrityCheck: () => ipcRenderer.invoke('audit:runBackgroundIntegrityCheck'),
+    getIntegrityStatus: () => ipcRenderer.invoke('audit:getIntegrityStatus'),
+    verifyRange: (startId, endId) => ipcRenderer.invoke('audit:verifyRange', startId, endId),
+    getLatestId: () => ipcRenderer.invoke('audit:getLatestId')
   },
   handover: {
     getWeekInfo: () => ipcRenderer.invoke('handover:getWeekInfo'),
@@ -934,12 +1557,22 @@ const electronAPI: ElectronAPI = {
     setIssueTags: (issueId, tagIds, userId) => ipcRenderer.invoke('tags:setIssueTags', issueId, tagIds, userId),
     getLetterTags: (letterId) => ipcRenderer.invoke('tags:getLetterTags', letterId),
     setLetterTags: (letterId, tagIds, userId) => ipcRenderer.invoke('tags:setLetterTags', letterId, tagIds, userId),
+    getMomTags: (momId) => ipcRenderer.invoke('tags:getMomTags', momId),
+    setMomTags: (momId, tagIds, userId) => ipcRenderer.invoke('tags:setMomTags', momId, tagIds, userId),
     getRecordsByTag: (tagId) => ipcRenderer.invoke('tags:getRecordsByTag', tagId),
     getIssuesByTag: (tagId) => ipcRenderer.invoke('tags:getIssuesByTag', tagId),
-    getLettersByTag: (tagId) => ipcRenderer.invoke('tags:getLettersByTag', tagId)
+    getLettersByTag: (tagId) => ipcRenderer.invoke('tags:getLettersByTag', tagId),
+    getMomsByTag: (tagId) => ipcRenderer.invoke('tags:getMomsByTag', tagId)
   },
   advancedSearch: {
-    search: (filters) => ipcRenderer.invoke('search:advanced', filters),
+    search: (filters, userId) => ipcRenderer.invoke('search:advanced', filters, userId),
+    suggestions: (partialQuery, userId, limit) => ipcRenderer.invoke('search:suggestions', partialQuery, userId, limit),
+    history: (userId, limit) => ipcRenderer.invoke('search:history', userId, limit),
+    clearHistory: (userId) => ipcRenderer.invoke('search:clearHistory', userId),
+    deleteHistoryEntry: (id, userId) => ipcRenderer.invoke('search:deleteHistoryEntry', id, userId),
+    rebuildFtsIndexes: () => ipcRenderer.invoke('search:rebuildFtsIndexes'),
+    getFtsStats: () => ipcRenderer.invoke('search:getFtsStats'),
+    highlight: (text, searchTerms, maxLength) => ipcRenderer.invoke('search:highlight', text, searchTerms, maxLength),
     createSaved: (userId, name, filters) => ipcRenderer.invoke('search:createSaved', userId, name, filters),
     getSaved: (userId) => ipcRenderer.invoke('search:getSaved', userId),
     getSavedById: (id) => ipcRenderer.invoke('search:getSavedById', id),
@@ -970,6 +1603,144 @@ const electronAPI: ElectronAPI = {
     searchResults: (results) => ipcRenderer.invoke('export:searchResults', results),
     recordsByTopic: (topicId) => ipcRenderer.invoke('export:recordsByTopic', topicId),
     customData: (data, sheetName, filename) => ipcRenderer.invoke('export:customData', data, sheetName, filename)
+  },
+  filterPresets: {
+    create: (userId, entityType, name, filters, isDefault, isShared) =>
+      ipcRenderer.invoke('filterPresets:create', userId, entityType, name, filters, isDefault, isShared),
+    getAll: (userId, entityType) => ipcRenderer.invoke('filterPresets:getAll', userId, entityType),
+    getById: (id) => ipcRenderer.invoke('filterPresets:getById', id),
+    getDefault: (userId, entityType) => ipcRenderer.invoke('filterPresets:getDefault', userId, entityType),
+    update: (id, userId, input) => ipcRenderer.invoke('filterPresets:update', id, userId, input),
+    delete: (id, userId) => ipcRenderer.invoke('filterPresets:delete', id, userId),
+    setDefault: (id, userId, entityType) => ipcRenderer.invoke('filterPresets:setDefault', id, userId, entityType),
+    clearDefault: (userId, entityType) => ipcRenderer.invoke('filterPresets:clearDefault', userId, entityType),
+    getStats: (userId) => ipcRenderer.invoke('filterPresets:getStats', userId)
+  },
+  health: {
+    runChecks: () => ipcRenderer.invoke('health:runChecks'),
+    getMetrics: () => ipcRenderer.invoke('health:getMetrics'),
+    getLastStatus: () => ipcRenderer.invoke('health:getLastStatus'),
+    forceCheckpoint: () => ipcRenderer.invoke('health:forceCheckpoint'),
+    optimizeDatabase: () => ipcRenderer.invoke('health:optimizeDatabase'),
+    analyzeDatabase: () => ipcRenderer.invoke('health:analyzeDatabase')
+  },
+  integrity: {
+    check: () => ipcRenderer.invoke('integrity:check'),
+    getStartupResult: () => ipcRenderer.invoke('integrity:getStartupResult'),
+    isStartupComplete: () => ipcRenderer.invoke('integrity:isStartupComplete'),
+    repairOrphanedRecords: () => ipcRenderer.invoke('integrity:repairOrphanedRecords'),
+    rebuildFtsIndexes: () => ipcRenderer.invoke('integrity:rebuildFtsIndexes'),
+    repairForeignKeyViolations: () => ipcRenderer.invoke('integrity:repairForeignKeyViolations'),
+    repairOrphanedEmails: () => ipcRenderer.invoke('integrity:repairOrphanedEmails'),
+    repairOrphanedAttachments: () => ipcRenderer.invoke('integrity:repairOrphanedAttachments')
+  },
+  sync: {
+    getEntityVersion: (entityType, entityId) => ipcRenderer.invoke('sync:getEntityVersion', entityType, entityId),
+    updateEntityVersion: (entityType, entityId, data, userId) =>
+      ipcRenderer.invoke('sync:updateEntityVersion', entityType, entityId, data, userId),
+    checkConflict: (entityType, entityId, clientVersion, clientData, originalData) =>
+      ipcRenderer.invoke('sync:checkConflict', entityType, entityId, clientVersion, clientData, originalData),
+    mergeConflict: (conflict, clientData, strategy, manualResolutions) =>
+      ipcRenderer.invoke('sync:mergeConflict', conflict, clientData, strategy, manualResolutions),
+    getRecentChanges: (entityType, since, limit) =>
+      ipcRenderer.invoke('sync:getRecentChanges', entityType, since, limit)
+  },
+  notifications: {
+    create: (input) => ipcRenderer.invoke('notifications:create', input),
+    get: (userId, options) => ipcRenderer.invoke('notifications:get', userId, options),
+    markAsRead: (notificationId, userId) => ipcRenderer.invoke('notifications:markAsRead', notificationId, userId),
+    markAllAsRead: (userId) => ipcRenderer.invoke('notifications:markAllAsRead', userId),
+    getUnreadCount: (userId) => ipcRenderer.invoke('notifications:getUnreadCount', userId),
+    processMentions: (text, entityType, entityId, actorId, actorName, entityTitle) =>
+      ipcRenderer.invoke('notifications:processMentions', text, entityType, entityId, actorId, actorName, entityTitle),
+    getPreferences: (userId) => ipcRenderer.invoke('notifications:getPreferences', userId),
+    updatePreferences: (userId, preferences) => ipcRenderer.invoke('notifications:updatePreferences', userId, preferences)
+  },
+  documentVersions: {
+    create: (input) => ipcRenderer.invoke('documentVersions:create', input),
+    getVersions: (documentType, documentId) => ipcRenderer.invoke('documentVersions:getVersions', documentType, documentId),
+    getVersion: (versionId) => ipcRenderer.invoke('documentVersions:getVersion', versionId),
+    getCurrentVersion: (documentType, documentId) => ipcRenderer.invoke('documentVersions:getCurrentVersion', documentType, documentId),
+    restore: (versionId, userId) => ipcRenderer.invoke('documentVersions:restore', versionId, userId),
+    compare: (versionId1, versionId2) => ipcRenderer.invoke('documentVersions:compare', versionId1, versionId2),
+    getCount: (documentType, documentId) => ipcRenderer.invoke('documentVersions:getCount', documentType, documentId),
+    verifyIntegrity: (versionId) => ipcRenderer.invoke('documentVersions:verifyIntegrity', versionId)
+  },
+  ocr: {
+    recognizeImage: (imagePath, language) => ipcRenderer.invoke('ocr:recognizeImage', imagePath, language),
+    extractAndIndex: (attachmentId, attachmentType, filePath, language, userId) =>
+      ipcRenderer.invoke('ocr:extractAndIndex', attachmentId, attachmentType, filePath, language, userId),
+    getExtractedText: (attachmentId) => ipcRenderer.invoke('ocr:getExtractedText', attachmentId),
+    searchText: (query, attachmentType, limit) => ipcRenderer.invoke('ocr:searchText', query, attachmentType, limit),
+    deleteExtractedText: (attachmentId) => ipcRenderer.invoke('ocr:deleteExtractedText', attachmentId),
+    getStats: () => ipcRenderer.invoke('ocr:getStats')
+  },
+  signatures: {
+    create: (input) => ipcRenderer.invoke('signatures:create', input),
+    getAll: (userId, type) => ipcRenderer.invoke('signatures:getAll', userId, type),
+    get: (signatureId) => ipcRenderer.invoke('signatures:get', signatureId),
+    getDefault: (userId, type) => ipcRenderer.invoke('signatures:getDefault', userId, type),
+    update: (signatureId, updates, userId) => ipcRenderer.invoke('signatures:update', signatureId, updates, userId),
+    delete: (signatureId, userId) => ipcRenderer.invoke('signatures:delete', signatureId, userId),
+    place: (input) => ipcRenderer.invoke('signatures:place', input),
+    getPlacements: (documentType, documentId) => ipcRenderer.invoke('signatures:getPlacements', documentType, documentId),
+    removePlacement: (placementId, userId) => ipcRenderer.invoke('signatures:removePlacement', placementId, userId),
+    getForExport: (documentType, documentId) => ipcRenderer.invoke('signatures:getForExport', documentType, documentId)
+  },
+  views: {
+    create: (input) => ipcRenderer.invoke('views:create', input),
+    getById: (id) => ipcRenderer.invoke('views:getById', id),
+    getViews: (entityType, userId, includeShared) => ipcRenderer.invoke('views:getViews', entityType, userId, includeShared),
+    getDefault: (entityType, userId) => ipcRenderer.invoke('views:getDefault', entityType, userId),
+    update: (id, input, userId) => ipcRenderer.invoke('views:update', id, input, userId),
+    delete: (id, userId) => ipcRenderer.invoke('views:delete', id, userId),
+    duplicate: (id, newName, userId) => ipcRenderer.invoke('views:duplicate', id, newName, userId),
+    toggleShare: (id, userId) => ipcRenderer.invoke('views:toggleShare', id, userId)
+  },
+  customFields: {
+    createDefinition: (input) => ipcRenderer.invoke('customFields:createDefinition', input),
+    getDefinitions: (entityType) => ipcRenderer.invoke('customFields:getDefinitions', entityType),
+    getDefinitionById: (id) => ipcRenderer.invoke('customFields:getDefinitionById', id),
+    getDefinitionByName: (entityType, name) => ipcRenderer.invoke('customFields:getDefinitionByName', entityType, name),
+    updateDefinition: (id, input, userId) => ipcRenderer.invoke('customFields:updateDefinition', id, input, userId),
+    deleteDefinition: (id, userId) => ipcRenderer.invoke('customFields:deleteDefinition', id, userId),
+    reorderDefinitions: (entityType, fieldIds, userId) => ipcRenderer.invoke('customFields:reorderDefinitions', entityType, fieldIds, userId),
+    setFieldValue: (fieldId, entityType, entityId, value) => ipcRenderer.invoke('customFields:setFieldValue', fieldId, entityType, entityId, value),
+    setFieldValues: (entityType, entityId, values) => ipcRenderer.invoke('customFields:setFieldValues', entityType, entityId, values),
+    getFieldValues: (entityType, entityId) => ipcRenderer.invoke('customFields:getFieldValues', entityType, entityId),
+    getFieldValuesWithDefinitions: (entityType, entityId) => ipcRenderer.invoke('customFields:getFieldValuesWithDefinitions', entityType, entityId),
+    deleteFieldValues: (entityType, entityId) => ipcRenderer.invoke('customFields:deleteFieldValues', entityType, entityId),
+    searchByField: (entityType, fieldName, value, operator) => ipcRenderer.invoke('customFields:searchByField', entityType, fieldName, value, operator)
+  },
+  import: {
+    preview: (filePath) => ipcRenderer.invoke('import:preview', filePath),
+    getSuggestedMappings: (entityType, headers) => ipcRenderer.invoke('import:getSuggestedMappings', entityType, headers),
+    execute: (config) => ipcRenderer.invoke('import:execute', config),
+    getProgress: () => ipcRenderer.invoke('import:getProgress'),
+    cancel: () => ipcRenderer.invoke('import:cancel'),
+    generateTemplate: (entityType) => ipcRenderer.invoke('import:generateTemplate', entityType),
+    selectFile: () => ipcRenderer.invoke('import:selectFile'),
+    onProgress: (callback) => {
+      ipcRenderer.on('import:progress', (_event, progress) => callback(progress))
+      return () => ipcRenderer.removeAllListeners('import:progress')
+    }
+  },
+  mentions: {
+    create: (input, userId) => ipcRenderer.invoke('mentions:create', input, userId),
+    createBulk: (inputs, userId) => ipcRenderer.invoke('mentions:createBulk', inputs, userId),
+    getById: (id) => ipcRenderer.invoke('mentions:getById', id),
+    getForUser: (userId, filters) => ipcRenderer.invoke('mentions:getForUser', userId, filters),
+    getSentByUser: (userId, filters) => ipcRenderer.invoke('mentions:getSentByUser', userId, filters),
+    getForEntity: (entityType, entityId) => ipcRenderer.invoke('mentions:getForEntity', entityType, entityId),
+    getAll: (filters) => ipcRenderer.invoke('mentions:getAll', filters),
+    acknowledge: (id, userId) => ipcRenderer.invoke('mentions:acknowledge', id, userId),
+    archive: (id, userId) => ipcRenderer.invoke('mentions:archive', id, userId),
+    updateNote: (id, note, userId) => ipcRenderer.invoke('mentions:updateNote', id, note, userId),
+    delete: (id, userId) => ipcRenderer.invoke('mentions:delete', id, userId),
+    getUnacknowledgedCount: (userId) => ipcRenderer.invoke('mentions:getUnacknowledgedCount', userId),
+    getCounts: (userId) => ipcRenderer.invoke('mentions:getCounts', userId),
+    searchUsers: (query) => ipcRenderer.invoke('mentions:searchUsers', query),
+    cleanup: () => ipcRenderer.invoke('mentions:cleanup')
   }
 }
 

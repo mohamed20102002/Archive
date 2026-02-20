@@ -1,10 +1,16 @@
 import React, { useState, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useAuth } from '../../context/AuthContext'
 import { useSettings } from '../../context/SettingsContext'
 import { useToast } from '../../context/ToastContext'
 import { useConfirm } from '../common/ConfirmDialog'
 import { LoginBackgroundStyle, SIDEBAR_TABS } from '../../types'
 import { BACKGROUND_OPTIONS } from '../auth/backgrounds'
+import { CustomFieldEditor } from '../custom-fields/CustomFieldEditor'
+import { ImportWizard } from '../import/ImportWizard'
+import { TagManager } from '../tags/TagManager'
+import { Modal } from '../common/Modal'
+import { supportedLanguages, changeLanguage, getCurrentLanguage, type SupportedLanguage } from '../../i18n'
 
 const DATE_FORMAT_OPTIONS = [
   { value: 'DD/MM/YYYY', label: 'DD/MM/YYYY' },
@@ -28,7 +34,14 @@ export function Settings() {
   const { settings, refreshSettings } = useSettings()
   const { success, error } = useToast()
   const confirm = useConfirm()
+  const { t } = useTranslation()
   const isAdmin = user?.role === 'admin'
+
+  // Language state
+  const [currentLang, setCurrentLang] = useState<SupportedLanguage>(getCurrentLanguage())
+  const [showCustomFields, setShowCustomFields] = useState(false)
+  const [showImportWizard, setShowImportWizard] = useState(false)
+  const [showTagManager, setShowTagManager] = useState(false)
 
   const [departmentName, setDepartmentName] = useState('')
   const [departmentNameArabic, setDepartmentNameArabic] = useState('')
@@ -685,6 +698,165 @@ export function Settings() {
         </div>
       </section>
 
+      {/* Language Section */}
+      <section className="card dark:bg-gray-800 dark:border-gray-700">
+        <div className="px-2 pb-4 border-b border-gray-100 dark:border-gray-700">
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 flex items-center gap-2">
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5h12M9 3v2m1.048 9.5A18.022 18.022 0 016.412 9m6.088 9h7M11 21l5-10 5 10M12.751 5C11.783 10.77 8.07 15.61 3 18.129" />
+            </svg>
+            {t('settings.language', 'Language')}
+          </h2>
+          <p className="text-sm text-gray-500 dark:text-gray-400">{t('settings.languageDescription', 'Choose your preferred language')}</p>
+        </div>
+        <div className="px-2 pt-4 space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            {(Object.entries(supportedLanguages) as [SupportedLanguage, { name: string; nativeName: string; dir: string }][]).map(([code, lang]) => (
+              <button
+                key={code}
+                onClick={async () => {
+                  await changeLanguage(code)
+                  setCurrentLang(code)
+                  success(t('settings.languageChanged', 'Language changed'), t('settings.languageChangedTo', 'Language changed to {{language}}', { language: lang.name }))
+                }}
+                className={`flex items-center gap-3 p-4 rounded-lg border-2 transition-all ${
+                  currentLang === code
+                    ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20'
+                    : 'border-gray-200 dark:border-gray-600 hover:border-gray-300 dark:hover:border-gray-500'
+                }`}
+              >
+                <div className={`w-10 h-10 rounded-full flex items-center justify-center text-lg font-bold ${
+                  currentLang === code
+                    ? 'bg-primary-600 text-white'
+                    : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'
+                }`}>
+                  {code.toUpperCase()}
+                </div>
+                <div className="text-left">
+                  <p className="font-medium text-gray-900 dark:text-gray-100">{lang.name}</p>
+                  <p className="text-sm text-gray-500 dark:text-gray-400">{lang.nativeName}</p>
+                </div>
+                {currentLang === code && (
+                  <svg className="w-5 h-5 text-primary-600 ml-auto" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                  </svg>
+                )}
+              </button>
+            ))}
+          </div>
+          <p className="text-xs text-gray-400 dark:text-gray-500">
+            {t('settings.languageNote', 'Changing the language will update all text in the application. Arabic uses right-to-left (RTL) layout.')}
+          </p>
+        </div>
+      </section>
+
+      {/* Custom Fields Section - Admin Only */}
+      {isAdmin && (
+        <section className="card dark:bg-gray-800 dark:border-gray-700">
+          <div className="px-2 pb-4 border-b border-gray-100 dark:border-gray-700">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 flex items-center gap-2">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+                  </svg>
+                  {t('settings.customFields', 'Custom Fields')}
+                </h2>
+                <p className="text-sm text-gray-500 dark:text-gray-400">{t('settings.customFieldsDescription', 'Define custom fields for records, letters, issues, and MOMs')}</p>
+              </div>
+              <button
+                onClick={() => setShowCustomFields(!showCustomFields)}
+                className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-primary-600 hover:text-primary-700 dark:text-primary-400 hover:bg-primary-50 dark:hover:bg-primary-900/20 rounded-lg transition-colors"
+              >
+                {showCustomFields ? t('common.hide', 'Hide') : t('common.manage', 'Manage')}
+                <svg className={`w-4 h-4 transition-transform ${showCustomFields ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+            </div>
+          </div>
+          {showCustomFields && (
+            <div className="px-2 pt-4">
+              <CustomFieldEditor />
+            </div>
+          )}
+        </section>
+      )}
+
+      {/* Tag Management Section - Admin Only */}
+      {isAdmin && (
+        <section className="card dark:bg-gray-800 dark:border-gray-700">
+          <div className="px-2 py-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 flex items-center gap-2">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
+                  </svg>
+                  {t('settings.tagManagement', 'Tag Management')}
+                </h2>
+                <p className="text-sm text-gray-500 dark:text-gray-400">{t('settings.tagManagementDescription', 'Create and manage tags for records, letters, and issues')}</p>
+              </div>
+              <button
+                onClick={() => setShowTagManager(true)}
+                className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 rounded-lg transition-colors"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
+                {t('common.manage', 'Manage')}
+              </button>
+            </div>
+          </div>
+        </section>
+      )}
+
+      {/* Tag Manager Modal */}
+      {showTagManager && (
+        <Modal
+          isOpen={showTagManager}
+          onClose={() => setShowTagManager(false)}
+          title={t('settings.tagManagement', 'Tag Management')}
+          size="xl"
+        >
+          <TagManager />
+        </Modal>
+      )}
+
+      {/* Import Data Section - Admin Only */}
+      {isAdmin && (
+        <section className="card dark:bg-gray-800 dark:border-gray-700">
+          <div className="px-2 pb-4 border-b border-gray-100 dark:border-gray-700">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 flex items-center gap-2">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                  </svg>
+                  {t('settings.importData', 'Import Data')}
+                </h2>
+                <p className="text-sm text-gray-500 dark:text-gray-400">{t('settings.importDataDescription', 'Import data from Excel or CSV files')}</p>
+              </div>
+              <button
+                onClick={() => setShowImportWizard(!showImportWizard)}
+                className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 rounded-lg transition-colors"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                </svg>
+                {showImportWizard ? t('common.close', 'Close') : t('settings.startImport', 'Start Import')}
+              </button>
+            </div>
+          </div>
+          {showImportWizard && (
+            <div className="px-2 pt-4">
+              <ImportWizard onClose={() => setShowImportWizard(false)} />
+            </div>
+          )}
+        </section>
+      )}
+
       {/* Data Protection Section */}
       <DataProtectionSection
         isAdmin={isAdmin}
@@ -692,6 +864,8 @@ export function Settings() {
         setBackupReminderDays={setBackupReminderDays}
       />
 
+      {/* Database Maintenance Section - Admin Only */}
+      {isAdmin && <DatabaseMaintenanceSection />}
 
       {/* Database Testing Section - Admin Only */}
       {isAdmin && (
@@ -1251,6 +1425,244 @@ function DataProtectionSection({
             {' '}to create a backup.
           </p>
         </div>
+      </div>
+    </section>
+  )
+}
+
+// Database Maintenance Section Component
+function DatabaseMaintenanceSection() {
+  const { success, error } = useToast()
+  const [checking, setChecking] = useState(false)
+  const [repairing, setRepairing] = useState(false)
+  const [checkResult, setCheckResult] = useState<{
+    valid: boolean
+    checks: Array<{
+      name: string
+      description: string
+      passed: boolean
+      details?: string
+      repairAvailable?: boolean
+    }>
+    totalChecks: number
+    passedChecks: number
+    failedChecks: number
+    timestamp: string
+  } | null>(null)
+  const [repairResults, setRepairResults] = useState<Array<{
+    name: string
+    success: boolean
+    repaired: number
+    errors: string[]
+  }>>([])
+
+  const runIntegrityCheck = async () => {
+    setChecking(true)
+    setCheckResult(null)
+    try {
+      const result = await window.electronAPI.integrity.check()
+      setCheckResult(result)
+      if (result.valid) {
+        success('Integrity Check Passed', 'All database checks passed successfully.')
+      }
+    } catch (err: any) {
+      error('Check Failed', err.message)
+    } finally {
+      setChecking(false)
+    }
+  }
+
+  const repairAllIssues = async () => {
+    if (!checkResult) return
+
+    setRepairing(true)
+    setRepairResults([])
+    const results: typeof repairResults = []
+
+    try {
+      // Find which repairs are needed
+      const needsFkRepair = checkResult.checks.some(c => c.name === 'Foreign Key Integrity' && !c.passed)
+      const needsOrphanedRecords = checkResult.checks.some(c => c.name === 'Orphaned Records' && !c.passed)
+      const needsOrphanedEmails = checkResult.checks.some(c => c.name === 'Orphaned Emails' && !c.passed)
+      const needsOrphanedAttachments = checkResult.checks.some(c => c.name === 'Orphaned Attachments' && !c.passed)
+      const needsFtsRebuild = checkResult.checks.some(c => c.name === 'FTS Index Sync' && !c.passed)
+
+      // Run repairs in order
+      if (needsFkRepair) {
+        const r = await window.electronAPI.integrity.repairForeignKeyViolations()
+        results.push({ name: 'Foreign Key Violations', ...r })
+      }
+
+      if (needsOrphanedRecords) {
+        const r = await window.electronAPI.integrity.repairOrphanedRecords()
+        results.push({ name: 'Orphaned Records', ...r })
+      }
+
+      if (needsOrphanedEmails) {
+        const r = await window.electronAPI.integrity.repairOrphanedEmails()
+        results.push({ name: 'Orphaned Emails', ...r })
+      }
+
+      if (needsOrphanedAttachments) {
+        const r = await window.electronAPI.integrity.repairOrphanedAttachments()
+        results.push({ name: 'Orphaned Attachments', ...r })
+      }
+
+      if (needsFtsRebuild) {
+        const r = await window.electronAPI.integrity.rebuildFtsIndexes()
+        results.push({ name: 'FTS Indexes', ...r })
+      }
+
+      setRepairResults(results)
+
+      const totalRepaired = results.reduce((sum, r) => sum + r.repaired, 0)
+      const allSuccess = results.every(r => r.success)
+
+      if (allSuccess && totalRepaired > 0) {
+        success('Repairs Complete', `Fixed ${totalRepaired} issues.`)
+        // Re-run check to show updated status
+        await runIntegrityCheck()
+      } else if (totalRepaired === 0) {
+        success('No Repairs Needed', 'All issues were already resolved.')
+      } else {
+        error('Some Repairs Failed', 'Check the details below.')
+      }
+    } catch (err: any) {
+      error('Repair Failed', err.message)
+    } finally {
+      setRepairing(false)
+    }
+  }
+
+  const failedChecks = checkResult?.checks.filter(c => !c.passed) || []
+  const hasRepairableIssues = failedChecks.some(c => c.repairAvailable)
+
+  return (
+    <section className="card dark:bg-gray-800 dark:border-gray-700">
+      <div className="px-2 pb-4 border-b border-gray-100 dark:border-gray-700">
+        <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 flex items-center gap-2">
+          <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+          </svg>
+          Database Maintenance
+        </h2>
+        <p className="text-sm text-gray-500 dark:text-gray-400">Check and repair database integrity issues</p>
+      </div>
+      <div className="px-2 pt-4 space-y-4">
+        {/* Action Buttons */}
+        <div className="flex flex-wrap gap-3">
+          <button
+            onClick={runIntegrityCheck}
+            disabled={checking || repairing}
+            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            {checking ? (
+              <>
+                <div className="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full" />
+                Checking...
+              </>
+            ) : (
+              <>
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+                </svg>
+                Run Integrity Check
+              </>
+            )}
+          </button>
+
+          {hasRepairableIssues && (
+            <button
+              onClick={repairAllIssues}
+              disabled={checking || repairing}
+              className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              {repairing ? (
+                <>
+                  <div className="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full" />
+                  Repairing...
+                </>
+              ) : (
+                <>
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 4a2 2 0 114 0v1a1 1 0 001 1h3a1 1 0 011 1v3a1 1 0 01-1 1h-1a2 2 0 100 4h1a1 1 0 011 1v3a1 1 0 01-1 1h-3a1 1 0 01-1-1v-1a2 2 0 10-4 0v1a1 1 0 01-1 1H7a1 1 0 01-1-1v-3a1 1 0 00-1-1H4a2 2 0 110-4h1a1 1 0 001-1V7a1 1 0 011-1h3a1 1 0 001-1V4z" />
+                  </svg>
+                  Repair All Issues
+                </>
+              )}
+            </button>
+          )}
+        </div>
+
+        {/* Check Results */}
+        {checkResult && (
+          <div className="space-y-3">
+            {/* Summary */}
+            <div className={`p-3 rounded-lg ${
+              checkResult.valid
+                ? 'bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800'
+                : 'bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800'
+            }`}>
+              <div className="flex items-center gap-2">
+                {checkResult.valid ? (
+                  <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                ) : (
+                  <svg className="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                )}
+                <span className={`font-medium ${checkResult.valid ? 'text-green-700 dark:text-green-400' : 'text-red-700 dark:text-red-400'}`}>
+                  {checkResult.valid ? 'All checks passed' : `${checkResult.failedChecks} issue${checkResult.failedChecks > 1 ? 's' : ''} found`}
+                </span>
+              </div>
+            </div>
+
+            {/* Failed Checks Details */}
+            {failedChecks.length > 0 && (
+              <div className="space-y-2">
+                {failedChecks.map((check, idx) => (
+                  <div key={idx} className="p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                    <div className="flex items-center justify-between">
+                      <span className="font-medium text-gray-900 dark:text-gray-100">{check.name}</span>
+                      {check.repairAvailable && (
+                        <span className="text-xs px-2 py-0.5 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 rounded">
+                          Repairable
+                        </span>
+                      )}
+                    </div>
+                    {check.details && (
+                      <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">{check.details}</p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Repair Results */}
+        {repairResults.length > 0 && (
+          <div className="space-y-2">
+            <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300">Repair Results:</h3>
+            {repairResults.map((result, idx) => (
+              <div key={idx} className={`p-2 rounded ${
+                result.success
+                  ? 'bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400'
+                  : 'bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400'
+              }`}>
+                <span className="font-medium">{result.name}:</span>{' '}
+                {result.success ? `Fixed ${result.repaired} items` : `Failed - ${result.errors.join(', ')}`}
+              </div>
+            ))}
+          </div>
+        )}
+
+        <p className="text-xs text-gray-500 dark:text-gray-400">
+          Integrity checks verify database consistency. Repair functions fix issues like orphaned records,
+          foreign key violations, and missing search indexes.
+        </p>
       </div>
     </section>
   )

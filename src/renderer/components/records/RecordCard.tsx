@@ -1,7 +1,8 @@
 import React, { useState, useEffect, memo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useSettings } from '../../context/SettingsContext'
-import type { Record, RecordAttachment } from '../../types'
+import { TagBadge } from '../tags/TagBadge'
+import type { Record, RecordAttachment, Tag } from '../../types'
 
 interface RecordCardProps {
   record: Record
@@ -67,6 +68,7 @@ export const RecordCard = memo(function RecordCard({ record, highlighted, onEdit
   const [copied, setCopied] = useState(false)
   const [attachments, setAttachments] = useState<RecordAttachment[]>([])
   const [showAttachments, setShowAttachments] = useState(false)
+  const [tags, setTags] = useState<Tag[]>([])
 
   const handleNavigateToMom = (momId: string) => {
     navigate('/mom', { state: { highlightType: 'mom', highlightId: momId } })
@@ -80,10 +82,15 @@ export const RecordCard = memo(function RecordCard({ record, highlighted, onEdit
   const linkedMoms = record.linked_moms || (record.linked_mom ? [record.linked_mom] : [])
   const linkedLetters = record.linked_letters || (record.linked_letter ? [record.linked_letter] : [])
 
-  // Load attachments for all records
+  // Load attachments and tags for all records
   useEffect(() => {
     window.electronAPI.recordAttachments.getByRecord(record.id).then(atts => {
       setAttachments(atts as RecordAttachment[])
+    })
+    window.electronAPI.tags.getRecordTags(record.id).then(t => {
+      setTags(t as Tag[])
+    }).catch(err => {
+      console.error('[RecordCard] Error fetching tags:', err)
     })
   }, [record.id])
 
@@ -147,7 +154,7 @@ export const RecordCard = memo(function RecordCard({ record, highlighted, onEdit
           <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
             <button
               onClick={onEdit}
-              className="p-1.5 rounded hover:bg-gray-100 text-gray-500 hover:text-gray-700"
+              className="p-1.5 rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
               title="Edit record"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -156,7 +163,7 @@ export const RecordCard = memo(function RecordCard({ record, highlighted, onEdit
             </button>
             <button
               onClick={onDelete}
-              className="p-1.5 rounded hover:bg-red-100 text-gray-500 hover:text-red-600"
+              className="p-1.5 rounded hover:bg-red-100 dark:hover:bg-red-900/30 text-gray-500 dark:text-gray-400 hover:text-red-600"
               title="Delete record"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -167,18 +174,18 @@ export const RecordCard = memo(function RecordCard({ record, highlighted, onEdit
         </div>
 
         {/* Title */}
-        <h4 className="font-medium text-gray-900 mb-1">{record.title}</h4>
+        <h4 className="font-medium text-gray-900 dark:text-gray-100 mb-1">{record.title}</h4>
 
         {/* Content */}
         {record.content && (
-          <p className="text-sm text-gray-600 whitespace-pre-wrap line-clamp-3">
+          <p className="text-sm text-gray-600 dark:text-gray-400 whitespace-pre-wrap line-clamp-3">
             {record.content}
           </p>
         )}
 
         {/* Linked MOM/Letter Tags */}
         {(linkedMoms.length > 0 || linkedLetters.length > 0) && (
-          <div className="mt-3 pt-3 border-t border-gray-100 flex flex-wrap gap-2">
+          <div className="mt-3 pt-3 border-t border-gray-100 dark:border-gray-700 flex flex-wrap gap-2">
             {linkedMoms.map(mom => (
               <button
                 key={mom.id}
@@ -240,9 +247,9 @@ export const RecordCard = memo(function RecordCard({ record, highlighted, onEdit
 
         {/* Email indicator with Open button - shown when email type is included */}
         {types.includes('email') && record.email_id && (
-          <div className="mt-3 pt-3 border-t border-gray-100">
+          <div className="mt-3 pt-3 border-t border-gray-100 dark:border-gray-700">
             <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2 text-sm text-gray-500">
+              <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
                 </svg>
@@ -274,10 +281,10 @@ export const RecordCard = memo(function RecordCard({ record, highlighted, onEdit
 
         {/* File attachments */}
         {attachments.length > 0 && (
-          <div className="mt-3 pt-3 border-t border-gray-100">
+          <div className="mt-3 pt-3 border-t border-gray-100 dark:border-gray-700">
             <button
               onClick={() => setShowAttachments(!showAttachments)}
-              className="flex items-center justify-between w-full text-sm text-gray-500 hover:text-gray-700 transition-colors"
+              className="flex items-center justify-between w-full text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors"
             >
               <div className="flex items-center gap-2">
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -295,13 +302,13 @@ export const RecordCard = memo(function RecordCard({ record, highlighted, onEdit
                 {attachments.map((att) => (
                   <div
                     key={att.id}
-                    className="flex items-center justify-between p-2 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
+                    className="flex items-center justify-between p-2 bg-gray-50 dark:bg-gray-700 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors"
                   >
                     <div className="flex items-center gap-2 min-w-0 flex-1">
                       <svg className="w-4 h-4 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                       </svg>
-                      <span className="text-sm text-gray-700 truncate">{att.filename}</span>
+                      <span className="text-sm text-gray-700 dark:text-gray-300 truncate">{att.filename}</span>
                       <span className="text-xs text-gray-400 flex-shrink-0">({formatFileSize(att.file_size)})</span>
                     </div>
                     <div className="flex items-center gap-1 flex-shrink-0">
@@ -331,8 +338,20 @@ export const RecordCard = memo(function RecordCard({ record, highlighted, onEdit
           </div>
         )}
 
+        {/* Tags */}
+        {tags.length > 0 && (
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            {tags.slice(0, 5).map(tag => (
+              <TagBadge key={tag.id} tag={tag} size="sm" />
+            ))}
+            {tags.length > 5 && (
+              <span className="text-xs text-gray-400">+{tags.length - 5}</span>
+            )}
+          </div>
+        )}
+
         {/* Footer */}
-        <div className="mt-3 pt-3 border-t border-gray-100 flex items-center justify-between text-xs text-gray-400">
+        <div className="mt-3 pt-3 border-t border-gray-100 dark:border-gray-700 flex items-center justify-between text-xs text-gray-400">
           <span>
             By {record.creator_name || 'Unknown'} &middot; {formatDate(record.created_at)}
           </span>
@@ -340,7 +359,7 @@ export const RecordCard = memo(function RecordCard({ record, highlighted, onEdit
             <span className="text-[11px] font-mono text-gray-400">{record.id.slice(0, 8)}</span>
             <button
               onClick={(e) => handleCopyId(e)}
-              className="relative p-0.5 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors"
+              className="relative p-0.5 rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors"
               title="Copy record ID"
             >
               {copied ? (

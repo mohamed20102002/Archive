@@ -189,20 +189,20 @@ export function ShiftHandover() {
   return (
     <div className="flex flex-col h-full">
       {/* Sticky Header */}
-      <div className="sticky top-0 z-10 bg-archive-light px-6 pt-4 pb-3 border-b border-gray-200">
+      <div className="sticky top-0 z-10 bg-archive-light dark:bg-gray-900 px-6 pt-4 pb-3 border-b border-gray-200 dark:border-gray-700">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">Shift Handover</h1>
-            <p className="text-sm text-gray-500 mt-1">
+            <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Shift Handover</h1>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
               Generate handover reports for shift transitions
             </p>
           </div>
           <div className="flex items-center gap-3">
             {/* View Toggle */}
-            <div className="flex rounded-lg border border-gray-200 overflow-hidden">
+            <div className="flex rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
               <button
                 onClick={() => setViewMode('card')}
-                className={`p-2 ${viewMode === 'card' ? 'bg-primary-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+                className={`p-2 ${viewMode === 'card' ? 'bg-primary-600 text-white' : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'}`}
                 title="Card View"
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -211,7 +211,7 @@ export function ShiftHandover() {
               </button>
               <button
                 onClick={() => setViewMode('table')}
-                className={`p-2 ${viewMode === 'table' ? 'bg-primary-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+                className={`p-2 ${viewMode === 'table' ? 'bg-primary-600 text-white' : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'}`}
                 title="Table View"
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -284,10 +284,10 @@ export function ShiftHandover() {
 
             {/* Records Section */}
             <div className="space-y-4">
-              <h2 className="text-lg font-semibold text-gray-900">
+              <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
                 Records
                 {excludedIds.size > 0 && (
-                  <span className="text-sm font-normal text-gray-500 ml-2">
+                  <span className="text-sm font-normal text-gray-500 dark:text-gray-400 ml-2">
                     ({includedCount} of {records.length} selected)
                   </span>
                 )}

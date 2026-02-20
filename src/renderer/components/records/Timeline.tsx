@@ -67,7 +67,7 @@ function CopyIdCell({ id }: { id: string }) {
       <span className="text-[11px] font-mono text-gray-400">{id.slice(0, 8)}</span>
       <button
         onClick={(e) => handleCopy(e)}
-        className="p-0.5 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors"
+        className="p-0.5 rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors"
         title="Copy record ID"
       >
         {copied ? (
@@ -102,6 +102,7 @@ export function Timeline() {
   const [records, setRecords] = useState<Record[]>([])
   const [subcategories, setSubcategories] = useState<Subcategory[]>([])
   const [isLoading, setIsLoading] = useState(true)
+  const [refreshKey, setRefreshKey] = useState(0) // Force card remount to refetch tags
   const hasInitiallyLoadedRef = useRef(false)
   const currentTopicIdRef = useRef<string | undefined>(undefined)
   const [showForm, setShowForm] = useState(false)
@@ -387,6 +388,7 @@ export function Timeline() {
       success('Record created', `"${data.title}" has been added to the timeline`)
       setShowForm(false)
       loadRecords()
+      setRefreshKey(k => k + 1) // Force card remount to refetch tags
       notifyDataChanged('record', 'create', recordId)
       return { recordId }
     } else {
@@ -494,6 +496,7 @@ export function Timeline() {
       setEditingRecord(null)
       persistLog('[Timeline] handleUpdate - calling loadRecords()...')
       loadRecords()
+      setRefreshKey(k => k + 1) // Force card remount to refetch tags
       persistLog('[Timeline] handleUpdate - calling loadSubcategories()...')
       loadSubcategories() // Refresh subcategory counts
       persistLog('[Timeline] handleUpdate - calling notifyDataChanged()...')
@@ -576,7 +579,7 @@ export function Timeline() {
     window.electronAPI?.logger?.log?.('warn', `[Timeline] SHOWING TOPIC NOT FOUND`)
     return (
       <div className="text-center py-12">
-        <h3 className="text-lg font-medium text-gray-900 mb-2">Topic not found</h3>
+        <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-2">Topic not found</h3>
         <button onClick={() => navigate('/topics')} className="btn-primary">
           Back to Topics
         </button>
@@ -587,22 +590,22 @@ export function Timeline() {
   return (
     <div className="-m-6 flex flex-col h-[calc(100vh-4rem)]">
       {/* Sticky Header Section */}
-      <div className="sticky top-0 z-10 bg-archive-light px-6 pt-6 pb-4 space-y-4 border-b border-gray-200">
+      <div className="sticky top-0 z-10 bg-archive-light dark:bg-gray-900 px-6 pt-6 pb-4 space-y-4 border-b border-gray-200 dark:border-gray-700">
         {/* Topic Header */}
         <div className="flex items-start justify-between">
           <div>
             <button
               onClick={() => navigate('/topics')}
-              className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700 mb-2"
+              className="flex items-center gap-1 text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 mb-2"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
               </svg>
               Back to Topics
             </button>
-            <h1 className="text-2xl font-bold text-gray-900">{topic.title}</h1>
+            <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">{topic.title}</h1>
             {topic.description && (
-              <p className="text-gray-600 mt-1">{topic.description}</p>
+              <p className="text-gray-600 dark:text-gray-400 mt-1">{topic.description}</p>
             )}
           </div>
 
@@ -620,14 +623,14 @@ export function Timeline() {
         </div>
 
         {/* Subcategory Tabs */}
-        <div className="bg-white rounded-lg border border-gray-200 p-1">
+        <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-1">
           <div className="flex items-center gap-1 overflow-x-auto">
             <button
               onClick={() => setFilterSubcategory('all')}
               className={`px-4 py-2 text-sm font-medium rounded-md whitespace-nowrap transition-colors ${
                 filterSubcategory === 'all'
-                  ? 'bg-primary-100 text-primary-700'
-                  : 'text-gray-600 hover:bg-gray-100'
+                  ? 'bg-primary-100 dark:bg-primary-900/50 text-primary-700 dark:text-primary-300'
+                  : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
               }`}
             >
               All Records
@@ -636,8 +639,8 @@ export function Timeline() {
               onClick={() => setFilterSubcategory('general')}
               className={`px-4 py-2 text-sm font-medium rounded-md whitespace-nowrap transition-colors ${
                 filterSubcategory === 'general'
-                  ? 'bg-primary-100 text-primary-700'
-                  : 'text-gray-600 hover:bg-gray-100'
+                  ? 'bg-primary-100 dark:bg-primary-900/50 text-primary-700 dark:text-primary-300'
+                  : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
               }`}
             >
               General
@@ -648,16 +651,16 @@ export function Timeline() {
                 onClick={() => setFilterSubcategory(sub.id)}
                 className={`px-4 py-2 text-sm font-medium rounded-md whitespace-nowrap transition-colors flex items-center gap-2 ${
                   filterSubcategory === sub.id
-                    ? 'bg-primary-100 text-primary-700'
-                    : 'text-gray-600 hover:bg-gray-100'
+                    ? 'bg-primary-100 dark:bg-primary-900/50 text-primary-700 dark:text-primary-300'
+                    : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
                 }`}
               >
                 {sub.title}
                 {sub.record_count !== undefined && sub.record_count > 0 && (
                   <span className={`text-xs px-1.5 py-0.5 rounded-full ${
                     filterSubcategory === sub.id
-                      ? 'bg-primary-200 text-primary-800'
-                      : 'bg-gray-200 text-gray-600'
+                      ? 'bg-primary-200 dark:bg-primary-800 text-primary-800 dark:text-primary-200'
+                      : 'bg-gray-200 dark:bg-gray-600 text-gray-600 dark:text-gray-300'
                   }`}>
                     {sub.record_count}
                   </span>
@@ -666,7 +669,7 @@ export function Timeline() {
             ))}
             <button
               onClick={() => setShowSubcategoryManager(true)}
-              className="px-3 py-2 text-sm text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-md flex items-center gap-1"
+              className="px-3 py-2 text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md flex items-center gap-1"
               title="Manage Subcategories"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -711,10 +714,10 @@ export function Timeline() {
           </select>
 
           {/* View Toggle */}
-          <div className="flex rounded-lg border border-gray-200 overflow-hidden">
+          <div className="flex rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
             <button
               onClick={() => setViewMode('timeline')}
-              className={`p-2 ${viewMode === 'timeline' ? 'bg-primary-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+              className={`p-2 ${viewMode === 'timeline' ? 'bg-primary-600 text-white' : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'}`}
               title="Timeline View"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -723,7 +726,7 @@ export function Timeline() {
             </button>
             <button
               onClick={() => setViewMode('table')}
-              className={`p-2 ${viewMode === 'table' ? 'bg-primary-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+              className={`p-2 ${viewMode === 'table' ? 'bg-primary-600 text-white' : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'}`}
               title="Table View"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -738,11 +741,11 @@ export function Timeline() {
       <div ref={scrollContainerRef} className="flex-1 overflow-auto px-6 py-6">
       {filteredRecords.length === 0 ? (
         <div className="text-center py-12">
-          <svg className="w-16 h-16 text-gray-300 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg className="w-16 h-16 text-gray-300 dark:text-gray-600 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
           </svg>
-          <h3 className="text-lg font-medium text-gray-900 mb-1">No records found</h3>
-          <p className="text-gray-500">
+          <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-1">No records found</h3>
+          <p className="text-gray-500 dark:text-gray-400">
             {searchQuery || filterType !== 'all'
               ? 'Try adjusting your filters'
               : 'Add your first record to start building the timeline'}
@@ -760,18 +763,18 @@ export function Timeline() {
         <div className="space-y-8">
           {Array.from(groupedRecords.entries()).map(([date, dateRecords]) => (
             <div key={date}>
-              <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-4">
+              <h3 className="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-4">
                 {date}
               </h3>
               <div className="relative">
                 {/* Timeline line */}
-                <div className="absolute left-4 top-0 bottom-0 w-0.5 bg-gray-200" />
+                <div className="absolute left-4 top-0 bottom-0 w-0.5 bg-gray-200 dark:bg-gray-700" />
 
                 {/* Records */}
                 <div className="space-y-4">
                   {dateRecords.map((record) => (
                     <RecordCard
-                      key={record.id}
+                      key={`${record.id}-${refreshKey}`}
                       record={record}
                       highlighted={highlightedRecordId === record.id}
                       onEdit={() => setEditingRecord(record)}
@@ -785,21 +788,21 @@ export function Timeline() {
           ))}
         </div>
       ) : (
-        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+        <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
           <table className="w-full">
-            <thead className="bg-gray-50 border-b border-gray-200">
+            <thead className="bg-gray-50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700">
               <tr>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">ID</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Title</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Content</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Subcategory</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Editor</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
-                <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">ID</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Type</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Title</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Content</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Subcategory</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Editor</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Date</th>
+                <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-100">
+            <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
               {filteredRecords.map((record) => {
                 const typeIcons: Record<string, { icon: string; color: string }> = {
                   note: { icon: '📝', color: 'bg-blue-100 text-blue-700' },
@@ -810,7 +813,7 @@ export function Timeline() {
                 }
                 const typeInfo = typeIcons[record.type] || typeIcons.note
                 return (
-                  <tr key={record.id} data-record-id={record.id} className={`hover:bg-gray-50 transition-colors duration-700 ${highlightedRecordId === record.id ? 'bg-primary-50 ring-2 ring-primary-300 ring-inset' : ''}`}>
+                  <tr key={record.id} data-record-id={record.id} className={`hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors duration-700 ${highlightedRecordId === record.id ? 'bg-primary-50 dark:bg-primary-900/30 ring-2 ring-primary-300 dark:ring-primary-600 ring-inset' : ''}`}>
                     <td className="px-4 py-3">
                       <CopyIdCell id={record.id} />
                     </td>
@@ -820,23 +823,23 @@ export function Timeline() {
                       </span>
                     </td>
                     <td className="px-4 py-3">
-                      <span className="font-medium text-gray-900">{record.title}</span>
+                      <span className="font-medium text-gray-900 dark:text-gray-100">{record.title}</span>
                     </td>
                     <td className="px-4 py-3">
-                      <span className="text-sm text-gray-500 line-clamp-1 max-w-xs">
+                      <span className="text-sm text-gray-500 dark:text-gray-400 line-clamp-1 max-w-xs">
                         {record.content || '-'}
                       </span>
                     </td>
                     <td className="px-4 py-3">
-                      <span className="text-sm text-gray-600">
+                      <span className="text-sm text-gray-600 dark:text-gray-400">
                         {record.subcategory_title || 'General'}
                       </span>
                     </td>
                     <td className="px-4 py-3">
-                      <span className="text-sm text-gray-600">{record.creator_name || '-'}</span>
+                      <span className="text-sm text-gray-600 dark:text-gray-400">{record.creator_name || '-'}</span>
                     </td>
                     <td className="px-4 py-3">
-                      <span className="text-sm text-gray-500">
+                      <span className="text-sm text-gray-500 dark:text-gray-400">
                         {formatDate(record.created_at)}
                       </span>
                     </td>
@@ -845,7 +848,7 @@ export function Timeline() {
                         {record.type === 'email' && record.email_id && (
                           <button
                             onClick={() => handleOpenEmail(record.email_id!)}
-                            className="p-1.5 text-gray-400 hover:text-purple-600 hover:bg-purple-50 rounded"
+                            className="p-1.5 text-gray-400 hover:text-purple-600 dark:hover:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-900/30 rounded"
                             title="Open Email"
                           >
                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -855,7 +858,7 @@ export function Timeline() {
                         )}
                         <button
                           onClick={() => setEditingRecord(record)}
-                          className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded"
+                          className="p-1.5 text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded"
                           title="Edit"
                         >
                           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -864,7 +867,7 @@ export function Timeline() {
                         </button>
                         <button
                           onClick={() => handleDelete(record)}
-                          className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded"
+                          className="p-1.5 text-gray-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 rounded"
                           title="Delete"
                         >
                           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

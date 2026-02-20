@@ -769,3 +769,53 @@ export async function composeAttendanceReportEmail(
     attachmentPath
   })
 }
+
+/**
+ * Send an email directly via Outlook (without displaying)
+ * Used for automated emails like 2FA codes
+ */
+export async function sendEmail(
+  to: string,
+  subject: string,
+  body: string,
+  options?: {
+    cc?: string
+    bodyFormat?: 'plain' | 'html'
+  }
+): Promise<{ success: boolean; error?: string }> {
+  console.log('=== outlookService.sendEmail called ===')
+  console.log('to:', to)
+  console.log('subject:', subject)
+
+  try {
+    await ensureConnection()
+
+    // Create new mail item (0 = olMailItem)
+    const mailItem = outlookApp.CreateItem(0)
+
+    // Set recipients
+    mailItem.To = to
+    if (options?.cc) {
+      mailItem.CC = options.cc
+    }
+
+    // Set subject
+    mailItem.Subject = subject
+
+    // Set body
+    if (options?.bodyFormat === 'html') {
+      mailItem.HTMLBody = body
+    } else {
+      mailItem.Body = body
+    }
+
+    // Send the email directly
+    mailItem.Send()
+
+    console.log('Email sent successfully')
+    return { success: true }
+  } catch (error: any) {
+    console.error('Error sending email:', error)
+    return { success: false, error: `Failed to send email: ${error.message}` }
+  }
+}

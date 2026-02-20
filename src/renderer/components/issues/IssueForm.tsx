@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react'
-import type { Topic, Subcategory, IssueImportance, CreateIssueData, UpdateIssueData, Issue } from '../../types'
+import { TagSelector } from '../tags/TagSelector'
+import { MentionUserSelector } from '../mentions'
+import type { Topic, Subcategory, IssueImportance, CreateIssueData, UpdateIssueData, Issue, Tag, MentionWithNote } from '../../types'
 
 interface IssueFormProps {
   issue?: Issue | null
@@ -24,10 +26,20 @@ export function IssueForm({ issue, onSubmit, onCancel }: IssueFormProps) {
 
   const [topics, setTopics] = useState<Topic[]>([])
   const [subcategories, setSubcategories] = useState<Subcategory[]>([])
+  const [selectedTags, setSelectedTags] = useState<Tag[]>([])
+  const [selectedMentions, setSelectedMentions] = useState<MentionWithNote[]>([])
   const [errors, setErrors] = useState<Record<string, string>>({})
 
   useEffect(() => {
     loadTopics()
+    // Load existing tags when editing
+    if (issue) {
+      window.electronAPI.tags.getIssueTags(issue.id).then(tags => {
+        setSelectedTags(tags as Tag[])
+      }).catch(err => {
+        console.error('Error loading issue tags:', err)
+      })
+    }
   }, [])
 
   useEffect(() => {
@@ -91,18 +103,26 @@ export function IssueForm({ issue, onSubmit, onCancel }: IssueFormProps) {
     e.preventDefault()
     if (!validate()) return
 
-    const data: CreateIssueData & UpdateIssueData = {
+    const tagIds = selectedTags.map(t => t.id)
+    const data: CreateIssueData & UpdateIssueData & { tag_ids?: string[]; mentions?: MentionWithNote[] } = {
       title: title.trim(),
       description: description.trim() || undefined,
       topic_id: topicId || undefined,
       subcategory_id: subcategoryId || undefined,
       importance,
-      reminder_date: reminderDate || undefined
+      reminder_date: reminderDate || undefined,
+      tag_ids: tagIds.length > 0 ? tagIds : undefined,
+      mentions: selectedMentions.length > 0 ? selectedMentions : undefined
     }
 
     // For update, if reminder was cleared, pass null
     if (issue && !reminderDate && issue.reminder_date) {
       (data as UpdateIssueData).reminder_date = null
+    }
+
+    // For update, always pass tag_ids (even empty array to clear tags)
+    if (issue) {
+      data.tag_ids = tagIds
     }
 
     onSubmit(data)
@@ -112,7 +132,7 @@ export function IssueForm({ issue, onSubmit, onCancel }: IssueFormProps) {
     <form onSubmit={handleSubmit} className="space-y-5">
       {/* Title */}
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">
+        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
           Title <span className="text-red-500">*</span>
         </label>
         <input
@@ -120,8 +140,8 @@ export function IssueForm({ issue, onSubmit, onCancel }: IssueFormProps) {
           value={title}
           onChange={(e) => setTitle(e.target.value)}
           placeholder="Describe the issue..."
-          className={`w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 ${
-            errors.title ? 'border-red-300 focus:ring-red-500' : 'border-gray-300 focus:ring-primary-500'
+          className={`w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-400 ${
+            errors.title ? 'border-red-300 focus:ring-red-500' : 'border-gray-300 dark:border-gray-600 focus:ring-primary-500'
           }`}
           autoFocus
         />
@@ -130,19 +150,19 @@ export function IssueForm({ issue, onSubmit, onCancel }: IssueFormProps) {
 
       {/* Description */}
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Description</label>
         <textarea
           value={description}
           onChange={(e) => setDescription(e.target.value)}
           placeholder="Additional details..."
           rows={3}
-          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 resize-none"
+          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 resize-none bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-400"
         />
       </div>
 
       {/* Importance */}
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-2">Importance</label>
+        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Importance</label>
         <div className="flex gap-2">
           {importanceOptions.map((opt) => (
             <button
@@ -151,8 +171,8 @@ export function IssueForm({ issue, onSubmit, onCancel }: IssueFormProps) {
               onClick={() => setImportance(opt.value)}
               className={`px-3 py-1.5 text-xs font-medium rounded-full border transition-all ${
                 importance === opt.value
-                  ? `${opt.color} ring-2 ring-offset-1 ring-current`
-                  : 'bg-white text-gray-500 border-gray-200 hover:bg-gray-50'
+                  ? `${opt.color} ring-2 ring-offset-1 dark:ring-offset-gray-800 ring-current`
+                  : 'bg-white dark:bg-gray-700 text-gray-500 dark:text-gray-400 border-gray-200 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-600'
               }`}
             >
               {opt.label}
@@ -164,11 +184,11 @@ export function IssueForm({ issue, onSubmit, onCancel }: IssueFormProps) {
       {/* Topic & Subcategory */}
       <div className="grid grid-cols-2 gap-4">
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Topic</label>
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Topic</label>
           <select
             value={topicId}
             onChange={(e) => setTopicId(e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
           >
             <option value="">No topic</option>
             {topics.map(t => (
@@ -177,11 +197,11 @@ export function IssueForm({ issue, onSubmit, onCancel }: IssueFormProps) {
           </select>
         </div>
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Subcategory</label>
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Subcategory</label>
           <select
             value={subcategoryId}
             onChange={(e) => setSubcategoryId(e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 disabled:opacity-50"
             disabled={!topicId || subcategories.length === 0}
           >
             <option value="">None</option>
@@ -194,19 +214,19 @@ export function IssueForm({ issue, onSubmit, onCancel }: IssueFormProps) {
 
       {/* Reminder */}
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">Reminder</label>
+        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Reminder</label>
         <div className="flex gap-2 mb-2">
-          <button type="button" onClick={() => setQuickReminder('hour')} className="px-2.5 py-1 text-xs font-medium text-gray-600 bg-gray-100 rounded-md hover:bg-gray-200 transition-colors">
+          <button type="button" onClick={() => setQuickReminder('hour')} className="px-2.5 py-1 text-xs font-medium text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 rounded-md hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors">
             +1 Hour
           </button>
-          <button type="button" onClick={() => setQuickReminder('tomorrow')} className="px-2.5 py-1 text-xs font-medium text-gray-600 bg-gray-100 rounded-md hover:bg-gray-200 transition-colors">
+          <button type="button" onClick={() => setQuickReminder('tomorrow')} className="px-2.5 py-1 text-xs font-medium text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 rounded-md hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors">
             Tomorrow
           </button>
-          <button type="button" onClick={() => setQuickReminder('week')} className="px-2.5 py-1 text-xs font-medium text-gray-600 bg-gray-100 rounded-md hover:bg-gray-200 transition-colors">
+          <button type="button" onClick={() => setQuickReminder('week')} className="px-2.5 py-1 text-xs font-medium text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 rounded-md hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors">
             Next Week
           </button>
           {reminderDate && (
-            <button type="button" onClick={() => setReminderDate('')} className="px-2.5 py-1 text-xs font-medium text-red-600 bg-red-50 rounded-md hover:bg-red-100 transition-colors">
+            <button type="button" onClick={() => setReminderDate('')} className="px-2.5 py-1 text-xs font-medium text-red-600 bg-red-50 dark:bg-red-900/30 rounded-md hover:bg-red-100 dark:hover:bg-red-900/50 transition-colors">
               Clear
             </button>
           )}
@@ -215,16 +235,38 @@ export function IssueForm({ issue, onSubmit, onCancel }: IssueFormProps) {
           type="datetime-local"
           value={reminderDate}
           onChange={(e) => setReminderDate(e.target.value)}
-          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
         />
       </div>
 
+      {/* Tags */}
+      <div>
+        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Tags</label>
+        <TagSelector
+          selectedTags={selectedTags}
+          onChange={setSelectedTags}
+          placeholder="Add tags..."
+        />
+      </div>
+
+      {/* Mention Users */}
+      {!issue && (
+        <div>
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Mention Users</label>
+          <MentionUserSelector
+            selectedMentions={selectedMentions}
+            onChange={setSelectedMentions}
+            entityType="issue"
+          />
+        </div>
+      )}
+
       {/* Actions */}
-      <div className="flex justify-end gap-3 pt-2 border-t border-gray-100">
+      <div className="flex justify-end gap-3 pt-2 border-t border-gray-100 dark:border-gray-700">
         <button
           type="button"
           onClick={onCancel}
-          className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+          className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors"
         >
           Cancel
         </button>

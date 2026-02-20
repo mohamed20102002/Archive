@@ -8,6 +8,7 @@ export interface Tag {
   name: string
   color: string
   description: string | null
+  created_by: string | null
   created_at: string
 }
 
@@ -44,9 +45,9 @@ export function createTag(
 
   try {
     db.prepare(`
-      INSERT INTO tags (id, name, color, description, created_at)
-      VALUES (?, ?, ?, ?, ?)
-    `).run(id, data.name.trim(), data.color || '#6B7280', data.description || null, now)
+      INSERT INTO tags (id, name, color, description, created_by, created_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(id, data.name.trim(), data.color || '#6B7280', data.description || null, userId, now)
 
     logAudit('TAG_CREATE', userId, getUsername(userId), 'tag', id, {
       name: data.name,
@@ -60,6 +61,7 @@ export function createTag(
         name: data.name.trim(),
         color: data.color || '#6B7280',
         description: data.description || null,
+        created_by: userId,
         created_at: now
       }
     }
@@ -401,4 +403,89 @@ export function getLettersByTag(tagId: string): { id: string; subject: string; s
     WHERE lt.tag_id = ? AND l.deleted_at IS NULL
     ORDER BY l.created_at DESC
   `).all(tagId) as { id: string; subject: string; status: string }[]
+}
+
+// MOM Tags
+export function addTagToMom(
+  momId: string,
+  tagId: string,
+  userId: string
+): { success: boolean; error?: string } {
+  const db = getDatabase()
+  const now = new Date().toISOString()
+
+  try {
+    db.prepare(`
+      INSERT OR IGNORE INTO mom_tags (mom_id, tag_id, created_by, created_at)
+      VALUES (?, ?, ?, ?)
+    `).run(momId, tagId, userId, now)
+
+    return { success: true }
+  } catch (error) {
+    console.error('Error adding tag to MOM:', error)
+    return { success: false, error: 'Failed to add tag to MOM' }
+  }
+}
+
+export function removeTagFromMom(
+  momId: string,
+  tagId: string
+): { success: boolean; error?: string } {
+  const db = getDatabase()
+
+  try {
+    db.prepare('DELETE FROM mom_tags WHERE mom_id = ? AND tag_id = ?').run(momId, tagId)
+    return { success: true }
+  } catch (error) {
+    console.error('Error removing tag from MOM:', error)
+    return { success: false, error: 'Failed to remove tag from MOM' }
+  }
+}
+
+export function getMomTags(momId: string): Tag[] {
+  const db = getDatabase()
+  return db.prepare(`
+    SELECT t.* FROM tags t
+    JOIN mom_tags mt ON mt.tag_id = t.id
+    WHERE mt.mom_id = ?
+    ORDER BY t.name
+  `).all(momId) as Tag[]
+}
+
+export function setMomTags(
+  momId: string,
+  tagIds: string[],
+  userId: string
+): { success: boolean; error?: string } {
+  const db = getDatabase()
+  const now = new Date().toISOString()
+
+  try {
+    db.transaction(() => {
+      db.prepare('DELETE FROM mom_tags WHERE mom_id = ?').run(momId)
+
+      const insert = db.prepare(`
+        INSERT INTO mom_tags (mom_id, tag_id, created_by, created_at)
+        VALUES (?, ?, ?, ?)
+      `)
+      for (const tagId of tagIds) {
+        insert.run(momId, tagId, userId, now)
+      }
+    })()
+
+    return { success: true }
+  } catch (error) {
+    console.error('Error setting MOM tags:', error)
+    return { success: false, error: 'Failed to set MOM tags' }
+  }
+}
+
+export function getMomsByTag(tagId: string): { id: string; title: string; meeting_date: string }[] {
+  const db = getDatabase()
+  return db.prepare(`
+    SELECT m.id, m.title, m.meeting_date FROM moms m
+    JOIN mom_tags mt ON mt.mom_id = m.id
+    WHERE mt.tag_id = ? AND m.deleted_at IS NULL
+    ORDER BY m.meeting_date DESC
+  `).all(tagId) as { id: string; title: string; meeting_date: string }[]
 }

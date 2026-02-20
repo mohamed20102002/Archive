@@ -1,5 +1,13 @@
 import React, { useState, useEffect } from 'react'
-import { Letter, Topic, Authority, Contact, LetterType, ResponseType, LetterStatus, LetterPriority, Subcategory, ReferenceType, LetterReference } from '../../types'
+import { Letter, Topic, Authority, Contact, LetterType, ResponseType, LetterStatus, LetterPriority, Subcategory, ReferenceType, LetterReference, MentionWithNote } from '../../types'
+import { TagSelector } from '../tags/TagSelector'
+import { MentionUserSelector } from '../mentions'
+
+interface Tag {
+  id: string
+  name: string
+  color: string
+}
 
 interface PendingReference {
   targetLetter: Letter
@@ -58,6 +66,10 @@ export function LetterForm({ letter, topics, authorities, existingReferences = [
   const [searchRefNumber, setSearchRefNumber] = useState('')
   const [searchRefType, setSearchRefType] = useState<ReferenceType>('reply_to')
   const [searchRefNotes, setSearchRefNotes] = useState('')
+
+  // Tags
+  const [selectedTags, setSelectedTags] = useState<Tag[]>([])
+  const [selectedMentions, setSelectedMentions] = useState<MentionWithNote[]>([])
   const [searchResult, setSearchResult] = useState<Letter | null>(null)
   const [searchError, setSearchError] = useState('')
   const [searching, setSearching] = useState(false)
@@ -120,6 +132,17 @@ export function LetterForm({ letter, topics, authorities, existingReferences = [
     }
     loadSubcategories()
   }, [topicId])
+
+  // Load existing tags when editing a letter
+  useEffect(() => {
+    if (letter?.id) {
+      window.electronAPI.tags.getLetterTags(letter.id).then(tags => {
+        setSelectedTags(tags as Tag[])
+      }).catch(err => {
+        console.error('Error loading letter tags:', err)
+      })
+    }
+  }, [letter?.id])
 
   // Search for a letter by reference number
   const handleSearchLetter = async () => {
@@ -256,15 +279,17 @@ export function LetterForm({ letter, topics, authorities, existingReferences = [
       is_notification: letterType === 'internal' ? isNotification : false,
       letter_date: letterDate || undefined,
       received_date: letterType === 'incoming' ? receivedDate || undefined : undefined,
-      files: selectedFiles.length > 0 ? selectedFiles : undefined
+      files: selectedFiles.length > 0 ? selectedFiles : undefined,
+      tags: selectedTags.map(t => t.id),
+      mentions: selectedMentions.length > 0 ? selectedMentions : undefined
     }, pendingReferences)
   }
 
   return (
     <form onSubmit={handleSubmit} className="space-y-5">
       {/* Section 1: Organization Selection (determines internal/external) */}
-      <div className="bg-gray-50 rounded-lg p-4">
-        <label className="block text-sm font-medium text-gray-700 mb-2">
+      <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4">
+        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
           Organization / Party <span className="text-red-500">*</span>
         </label>
         <select
@@ -299,7 +324,7 @@ export function LetterForm({ letter, topics, authorities, existingReferences = [
       {/* Section 2: Letter Type & Importance */}
       <div className="grid grid-cols-2 gap-4">
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
             Letter Type <span className="text-red-500">*</span>
           </label>
           <select
@@ -322,15 +347,15 @@ export function LetterForm({ letter, topics, authorities, existingReferences = [
                 type="checkbox"
                 checked={isNotification}
                 onChange={(e) => setIsNotification(e.target.checked)}
-                className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                className="w-4 h-4 text-blue-600 border-gray-300 dark:border-gray-600 rounded focus:ring-blue-500 bg-white dark:bg-gray-700"
               />
-              <span className="text-sm text-gray-600">Mark as Internal Notification</span>
+              <span className="text-sm text-gray-600 dark:text-gray-400">Mark as Internal Notification</span>
             </label>
           )}
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
             Importance Status <span className="text-red-500">*</span>
           </label>
           <select
@@ -348,11 +373,11 @@ export function LetterForm({ letter, topics, authorities, existingReferences = [
 
       {/* Section 3: Number Fields - Based on Internal/External */}
       {selectedAuthority && (
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+        <div className="bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
           {isInternal ? (
             // Internal: Show Incoming or Outgoing Number
             <div>
-              <label className="block text-sm font-medium text-blue-800 mb-2">
+              <label className="block text-sm font-medium text-blue-800 dark:text-blue-300 mb-2">
                 {letterType === 'incoming' ? 'Incoming Number' : letterType === 'outgoing' ? 'Outgoing Number' : 'Internal Number'}
               </label>
               {letterType === 'incoming' && (
@@ -382,14 +407,14 @@ export function LetterForm({ letter, topics, authorities, existingReferences = [
                   placeholder="Internal reference number"
                 />
               )}
-              <p className="text-xs text-blue-600 mt-1">
+              <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
                 Internal letters use numeric numbering system
               </p>
             </div>
           ) : (
             // External: Show Reference Code
             <div>
-              <label className="block text-sm font-medium text-amber-800 mb-2">
+              <label className="block text-sm font-medium text-amber-800 dark:text-amber-300 mb-2">
                 Reference Code
               </label>
               <input
@@ -399,7 +424,7 @@ export function LetterForm({ letter, topics, authorities, existingReferences = [
                 className="input w-full"
                 placeholder="e.g., O/ASE/04012026/6339"
               />
-              <p className="text-xs text-amber-600 mt-1">
+              <p className="text-xs text-amber-600 dark:text-amber-400 mt-1">
                 External letters use unique reference codes
               </p>
             </div>
@@ -409,12 +434,12 @@ export function LetterForm({ letter, topics, authorities, existingReferences = [
 
       {/* Section 4: Att (Contact Person) - Only for External */}
       {isExternal && (
-        <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+        <div className="bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-800 rounded-lg p-4">
           <div className="flex items-center gap-2 mb-2">
             <svg className="w-5 h-5 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
             </svg>
-            <label className="text-sm font-medium text-amber-800">
+            <label className="text-sm font-medium text-amber-800 dark:text-amber-300">
               Att (Attention - Contact Person)
             </label>
           </div>
@@ -430,7 +455,7 @@ export function LetterForm({ letter, topics, authorities, existingReferences = [
               </option>
             ))}
           </select>
-          <p className="text-xs text-amber-600 mt-1">
+          <p className="text-xs text-amber-600 dark:text-amber-400 mt-1">
             The person this letter is addressed to
           </p>
         </div>
@@ -438,7 +463,7 @@ export function LetterForm({ letter, topics, authorities, existingReferences = [
 
       {/* Section 5: Subject */}
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">
+        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
           Subject <span className="text-red-500">*</span>
         </label>
         <input
@@ -454,7 +479,7 @@ export function LetterForm({ letter, topics, authorities, existingReferences = [
       {/* Section 5b: Dates */}
       <div className="grid grid-cols-2 gap-4">
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
             Letter Date
           </label>
           <input
@@ -466,7 +491,7 @@ export function LetterForm({ letter, topics, authorities, existingReferences = [
         </div>
         {letterType === 'incoming' && (
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
               Received Date
             </label>
             <input
@@ -482,7 +507,7 @@ export function LetterForm({ letter, topics, authorities, existingReferences = [
       {/* Section 6: Topic & Subcategory */}
       <div className="grid grid-cols-2 gap-4">
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
             Topic <span className="text-red-500">*</span>
           </label>
           <select
@@ -499,7 +524,7 @@ export function LetterForm({ letter, topics, authorities, existingReferences = [
         </div>
         {subcategories.length > 0 && (
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
               Subcategory
             </label>
             <select
@@ -518,7 +543,7 @@ export function LetterForm({ letter, topics, authorities, existingReferences = [
 
       {/* Section 7: Summary */}
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">
+        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
           Summary
         </label>
         <textarea
@@ -530,27 +555,53 @@ export function LetterForm({ letter, topics, authorities, existingReferences = [
         />
       </div>
 
+      {/* Section 7.5: Tags */}
+      <div>
+        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+          Tags
+        </label>
+        <TagSelector
+          selectedTags={selectedTags}
+          onChange={setSelectedTags}
+          placeholder="Add tags..."
+        />
+      </div>
+
+      {/* Section 7.6: Mention Users */}
+      {!letter && (
+        <div>
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+            Mention Users
+          </label>
+          <MentionUserSelector
+            selectedMentions={selectedMentions}
+            onChange={setSelectedMentions}
+            entityType="letter"
+          />
+        </div>
+      )}
+
       {/* Section 8: Attachments */}
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">
+        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
           Attachments
           {existingAttachmentCount > 0 && (
-            <span className="text-gray-500 font-normal ml-2">
+            <span className="text-gray-500 dark:text-gray-400 font-normal ml-2">
               ({existingAttachmentCount} existing)
             </span>
           )}
         </label>
-        <div className="border-2 border-dashed border-gray-300 rounded-lg p-3">
+        <div className="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-3">
           {selectedFiles.length > 0 && (
             <div className="space-y-2 mb-3">
               {selectedFiles.map((file, index) => (
-                <div key={index} className="flex items-center justify-between bg-blue-50 rounded px-3 py-2">
+                <div key={index} className="flex items-center justify-between bg-blue-50 dark:bg-blue-900/30 rounded px-3 py-2">
                   <div className="flex items-center gap-2">
                     <svg className="w-5 h-5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                     </svg>
-                    <span className="text-sm text-gray-900">{file.filename}</span>
-                    <span className="text-xs text-gray-500">({formatFileSize(file.size)})</span>
+                    <span className="text-sm text-gray-900 dark:text-gray-100">{file.filename}</span>
+                    <span className="text-xs text-gray-500 dark:text-gray-400">({formatFileSize(file.size)})</span>
                   </div>
                   <button type="button" onClick={() => handleRemoveFile(index)} className="text-red-500 hover:text-red-700">
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -570,23 +621,23 @@ export function LetterForm({ letter, topics, authorities, existingReferences = [
       </div>
 
       {/* Section 9: References */}
-      <div className="border-t pt-4">
-        <h3 className="text-sm font-medium text-gray-900 mb-3">
+      <div className="border-t dark:border-gray-700 pt-4">
+        <h3 className="text-sm font-medium text-gray-900 dark:text-gray-100 mb-3">
           References (Related Letters)
         </h3>
 
         {existingReferences.length > 0 && (
           <div className="mb-3">
-            <p className="text-xs text-gray-500 mb-2">Existing references:</p>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">Existing references:</p>
             <div className="space-y-1">
               {existingReferences.map((ref) => (
-                <div key={ref.id} className="bg-gray-100 rounded px-3 py-2 flex items-center gap-2 text-sm">
-                  <span className="text-xs font-medium text-gray-500 uppercase px-2 py-0.5 bg-gray-200 rounded">
+                <div key={ref.id} className="bg-gray-100 dark:bg-gray-700 rounded px-3 py-2 flex items-center gap-2 text-sm">
+                  <span className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase px-2 py-0.5 bg-gray-200 dark:bg-gray-600 rounded">
                     {getReferenceTypeLabel(ref.reference_type)}
                   </span>
-                  <span className="text-gray-700">{ref.target_subject}</span>
+                  <span className="text-gray-700 dark:text-gray-300">{ref.target_subject}</span>
                   {ref.target_reference_number && (
-                    <span className="text-xs text-gray-500 font-mono">({ref.target_reference_number})</span>
+                    <span className="text-xs text-gray-500 dark:text-gray-400 font-mono">({ref.target_reference_number})</span>
                   )}
                 </div>
               ))}
@@ -594,7 +645,7 @@ export function LetterForm({ letter, topics, authorities, existingReferences = [
           </div>
         )}
 
-        <div className="bg-gray-50 rounded-lg p-3 space-y-3">
+        <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-3 space-y-3">
           <div className="flex gap-2">
             <input
               type="text"
@@ -620,9 +671,9 @@ export function LetterForm({ letter, topics, authorities, existingReferences = [
           {searchError && <p className="text-red-600 text-sm">{searchError}</p>}
 
           {searchResult && (
-            <div className="bg-white border border-green-200 rounded-lg p-3 space-y-2">
-              <p className="text-sm font-medium text-green-700">Letter found:</p>
-              <p className="text-sm text-gray-900">{searchResult.subject}</p>
+            <div className="bg-white dark:bg-gray-800 border border-green-200 dark:border-green-800 rounded-lg p-3 space-y-2">
+              <p className="text-sm font-medium text-green-700 dark:text-green-400">Letter found:</p>
+              <p className="text-sm text-gray-900 dark:text-gray-100">{searchResult.subject}</p>
               <div className="grid grid-cols-2 gap-2">
                 <select
                   value={searchRefType}
@@ -642,15 +693,15 @@ export function LetterForm({ letter, topics, authorities, existingReferences = [
 
         {pendingReferences.length > 0 && (
           <div className="mt-3">
-            <p className="text-xs text-gray-500 mb-2">References to add:</p>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">References to add:</p>
             <div className="space-y-1">
               {pendingReferences.map((ref, index) => (
-                <div key={index} className="bg-blue-50 border border-blue-200 rounded px-3 py-2 flex items-center justify-between">
+                <div key={index} className="bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 rounded px-3 py-2 flex items-center justify-between">
                   <div className="flex items-center gap-2 text-sm">
-                    <span className="text-xs font-medium text-blue-600 uppercase px-2 py-0.5 bg-blue-100 rounded">
+                    <span className="text-xs font-medium text-blue-600 dark:text-blue-400 uppercase px-2 py-0.5 bg-blue-100 dark:bg-blue-900/50 rounded">
                       {getReferenceTypeLabel(ref.referenceType)}
                     </span>
-                    <span className="text-gray-700">{ref.targetLetter.subject}</span>
+                    <span className="text-gray-700 dark:text-gray-300">{ref.targetLetter.subject}</span>
                   </div>
                   <button type="button" onClick={() => handleRemoveReference(index)} className="text-red-500 hover:text-red-700">
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -667,7 +718,7 @@ export function LetterForm({ letter, topics, authorities, existingReferences = [
       {/* Section 10: Status (edit only) */}
       {letter && (
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Status</label>
           <select value={status} onChange={(e) => setStatus(e.target.value as LetterStatus)} className="input w-full">
             <option value="pending">Pending</option>
             <option value="in_progress">In Progress</option>
@@ -679,7 +730,7 @@ export function LetterForm({ letter, topics, authorities, existingReferences = [
       )}
 
       {/* Actions */}
-      <div className="flex justify-end gap-3 pt-4 border-t">
+      <div className="flex justify-end gap-3 pt-4 border-t dark:border-gray-700">
         <button type="button" onClick={onCancel} className="btn-secondary">Cancel</button>
         <button type="submit" className="btn-primary">{letter ? 'Update Letter' : 'Create Letter'}</button>
       </div>

@@ -4,11 +4,14 @@ import { initializeLogger } from './services/logger.service'
 import { initializeSchema, hasUsers } from './database/schema'
 import { initializeAuditSchema, logAudit } from './database/audit'
 import { runMigrations } from './database/migrations'
-import { closeDatabase, getDatabase } from './database/connection'
+import { closeDatabase, getDatabase, isRestoreInProgress } from './database/connection'
 import { registerIpcHandlers } from './ipc/handlers'
 import { clearTempFolder } from './services/secure-resources-crypto'
 import { registerUpdaterHandlers } from './services/updater.service'
 import { generateMissedInstances } from './services/scheduled-email.service'
+import { startHealthMonitoring, stopHealthMonitoring } from './services/health.service'
+import { runStartupIntegrityCheck } from './services/integrity.service'
+import { cleanupOldArchivedMentions } from './services/mention.service'
 
 // Initialize logger before anything else
 initializeLogger()
@@ -213,6 +216,36 @@ async function initializeApp() {
     version: app.getVersion(),
     platform: process.platform
   })
+
+  // Start health monitoring (periodic checks every 5 minutes)
+  console.log('[MAIN] Starting health monitoring...')
+  startHealthMonitoring()
+
+  // Run mentions cleanup on startup and daily
+  console.log('[MAIN] Running mentions cleanup...')
+  cleanupOldArchivedMentions()
+  // Schedule daily cleanup (every 24 hours)
+  setInterval(() => {
+    console.log('[MAIN] Running scheduled mentions cleanup...')
+    cleanupOldArchivedMentions()
+  }, 24 * 60 * 60 * 1000)
+
+  // Run startup integrity check in background
+  console.log('[MAIN] Running startup integrity check...')
+  runStartupIntegrityCheck()
+    .then(result => {
+      if (result.valid) {
+        console.log('[MAIN] Startup integrity check passed:', result.passedChecks, 'checks OK')
+      } else {
+        console.warn('[MAIN] Startup integrity check found issues:', result.failedChecks, 'failed checks')
+        result.checks.filter(c => !c.passed).forEach(c => {
+          console.warn(`  - ${c.name}: ${c.details || 'Failed'}`)
+        })
+      }
+    })
+    .catch(err => {
+      console.error('[MAIN] Startup integrity check error:', err)
+    })
 }
 
 app.whenReady().then(async () => {
@@ -227,6 +260,10 @@ app.whenReady().then(async () => {
 })
 
 app.on('window-all-closed', () => {
+  // Stop health monitoring
+  console.log('[MAIN] Stopping health monitoring...')
+  stopHealthMonitoring()
+
   // Clear decrypted temp files before closing
   console.log('[MAIN] Clearing secure resources temp folder on shutdown...')
   clearTempFolder()
@@ -234,8 +271,8 @@ app.on('window-all-closed', () => {
   // Log system shutdown
   logAudit('SYSTEM_SHUTDOWN', null, null, 'system', null, null)
 
-  // Close database connections
-  closeDatabase()
+  // Close database connections (force WAL deletion on shutdown)
+  closeDatabase(true)
 
   if (process.platform !== 'darwin') {
     app.quit()
@@ -245,7 +282,8 @@ app.on('window-all-closed', () => {
 app.on('before-quit', () => {
   // Clear decrypted temp files
   clearTempFolder()
-  closeDatabase()
+  // Force WAL deletion on app quit
+  closeDatabase(true)
 })
 
 // Handle uncaught exceptions
@@ -308,6 +346,11 @@ const DEFAULT_ZOOM = 0.85
 // Function to apply zoom factor from settings
 function applyZoomFactor() {
   if (!mainWindow) return
+  // Skip during restore to avoid database access
+  if (isRestoreInProgress()) {
+    mainWindow.webContents.setZoomFactor(DEFAULT_ZOOM)
+    return
+  }
 
   try {
     const db = getDatabase()

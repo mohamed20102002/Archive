@@ -20,6 +20,7 @@ import * as credentialService from '../services/credential.service'
 import * as secureReferenceService from '../services/secure-reference.service'
 import * as secureResourcesCrypto from '../services/secure-resources-crypto'
 import * as auditService from '../database/audit'
+import { runBackgroundIntegrityCheck, getIntegrityStatus, verifyAuditRange, getLatestAuditId } from '../database/audit'
 import * as settingsService from '../services/settings.service'
 import * as attendanceService from '../services/attendance.service'
 import * as attendancePdfService from '../services/attendance-pdf.service'
@@ -37,7 +38,20 @@ import * as tagService from '../services/tag.service'
 import * as exportService from '../services/export.service'
 import * as historyService from '../services/history.service'
 import * as pinService from '../services/pin.service'
-import { refreshDatabase } from '../database/connection'
+import * as twofaService from '../services/twofa.service'
+import * as healthService from '../services/health.service'
+import * as integrityService from '../services/integrity.service'
+import * as filterPresetService from '../services/filter-preset.service'
+import * as syncService from '../services/sync.service'
+import * as notificationService from '../services/notification.service'
+import * as documentVersionService from '../services/document-version.service'
+import * as ocrService from '../services/ocr.service'
+import * as signatureService from '../services/signature.service'
+import * as viewService from '../services/view.service'
+import * as customFieldService from '../services/custom-field.service'
+import * as importService from '../services/import.service'
+import * as mentionService from '../services/mention.service'
+import { refreshDatabase, isRestoreInProgress } from '../database/connection'
 
 export function registerIpcHandlers(): void {
   // ===== Auth Handlers =====
@@ -62,6 +76,10 @@ export function registerIpcHandlers(): void {
     return authService.getAllUsers()
   })
 
+  ipcMain.handle('auth:getUserById', async (_event, id: string) => {
+    return authService.getUserById(id)
+  })
+
   ipcMain.handle('auth:updateUser', async (_event, id: string, updates: unknown, updatedBy: string) => {
     return authService.updateUser(id, updates as Parameters<typeof authService.updateUser>[1], updatedBy)
   })
@@ -84,6 +102,64 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle('auth:checkUsername', async (_event, username: string) => {
     return authService.checkUsernameExists(username)
+  })
+
+  // Session management handlers
+  ipcMain.handle('auth:updateSessionActivity', async (_event, token: string) => {
+    return authService.updateSessionActivity(token)
+  })
+
+  ipcMain.handle('auth:extendSession', async (_event, token: string) => {
+    return authService.extendSession(token)
+  })
+
+  ipcMain.handle('auth:getSessionInfo', async (_event, token: string) => {
+    return authService.getSessionInfo(token)
+  })
+
+  ipcMain.handle('auth:getSessionTimeout', async () => {
+    return authService.getSessionTimeout()
+  })
+
+  ipcMain.handle('auth:setSessionTimeout', async (_event, minutes: number) => {
+    return authService.setSessionTimeout(minutes)
+  })
+
+  ipcMain.handle('auth:resetUserLockout', async (_event, username: string, adminId: string) => {
+    return authService.resetUserLockout(username, adminId)
+  })
+
+  ipcMain.handle('auth:getUserLockoutStatus', async (_event, username: string) => {
+    return authService.getUserLockoutStatus(username)
+  })
+
+  // ===== Two-Factor Authentication Handlers =====
+  ipcMain.handle('twofa:isEnabled', async (_event, userId: string) => {
+    return twofaService.isTwoFAEnabled(userId)
+  })
+
+  ipcMain.handle('twofa:setEnabled', async (_event, userId: string, enabled: boolean, adminId: string) => {
+    return twofaService.setTwoFAEnabled(userId, enabled, adminId)
+  })
+
+  ipcMain.handle('twofa:generateSessionToken', async () => {
+    return twofaService.generateTwoFASessionToken()
+  })
+
+  ipcMain.handle('twofa:initiate', async (_event, userId: string, sessionToken: string) => {
+    return twofaService.initiateTwoFA(userId, sessionToken)
+  })
+
+  ipcMain.handle('twofa:verify', async (_event, sessionToken: string, code: string) => {
+    return twofaService.verifyTwoFACode(sessionToken, code)
+  })
+
+  ipcMain.handle('twofa:cancel', async (_event, sessionToken: string) => {
+    return twofaService.cancelTwoFA(sessionToken)
+  })
+
+  ipcMain.handle('twofa:getRemainingTime', async (_event, sessionToken: string) => {
+    return twofaService.getTwoFARemainingTime(sessionToken)
   })
 
   // ===== Global Search Handler =====
@@ -375,14 +451,18 @@ export function registerIpcHandlers(): void {
   })
 
   ipcMain.handle('reminders:getAll', async () => {
+    // Return empty during restore to avoid database access
+    if (isRestoreInProgress()) return []
     return reminderService.getAllReminders()
   })
 
   ipcMain.handle('reminders:getUpcoming', async (_event, days?: number) => {
+    if (isRestoreInProgress()) return []
     return reminderService.getUpcomingReminders(days)
   })
 
   ipcMain.handle('reminders:getOverdue', async () => {
+    if (isRestoreInProgress()) return []
     return reminderService.getOverdueReminders()
   })
 
@@ -397,15 +477,38 @@ export function registerIpcHandlers(): void {
   // ===== Audit Handlers =====
 
   ipcMain.handle('audit:getLog', async (_event, options?: unknown) => {
+    if (isRestoreInProgress()) return { entries: [], totalCount: 0, page: 1, pageSize: 50 }
     return auditService.getAuditLog(options as Parameters<typeof auditService.getAuditLog>[0])
   })
 
   ipcMain.handle('audit:verifyIntegrity', async () => {
+    if (isRestoreInProgress()) return { valid: false, totalEntries: 0, checkedEntries: 0, invalidEntries: [], stats: {} }
     return auditService.verifyAuditIntegrity()
   })
 
   ipcMain.handle('audit:getStats', async () => {
+    if (isRestoreInProgress()) return {}
     return auditService.getAuditStats()
+  })
+
+  ipcMain.handle('audit:runBackgroundIntegrityCheck', async () => {
+    if (isRestoreInProgress()) return
+    return runBackgroundIntegrityCheck()
+  })
+
+  ipcMain.handle('audit:getIntegrityStatus', async () => {
+    // Returns cached status, no database access
+    return getIntegrityStatus()
+  })
+
+  ipcMain.handle('audit:verifyRange', async (_event, startId: number, endId: number) => {
+    if (isRestoreInProgress()) return { valid: false, entries: [] }
+    return verifyAuditRange(startId, endId)
+  })
+
+  ipcMain.handle('audit:getLatestId', async () => {
+    if (isRestoreInProgress()) return 0
+    return getLatestAuditId()
   })
 
   // ===== Handover Handlers =====
@@ -517,7 +620,13 @@ export function registerIpcHandlers(): void {
   // ===== Letter Handlers =====
 
   ipcMain.handle('letters:create', async (_event, data: unknown, userId: string) => {
-    return letterService.createLetter(data as letterService.CreateLetterData, userId)
+    const letterData = data as letterService.CreateLetterData & { tags?: string[] }
+    const result = letterService.createLetter(letterData, userId)
+    // Save tags if provided
+    if (result.success && result.letter && letterData.tags && letterData.tags.length > 0) {
+      tagService.setLetterTags(result.letter.id, letterData.tags, userId)
+    }
+    return result
   })
 
   ipcMain.handle('letters:getAll', async (_event, filters?: unknown) => {
@@ -542,7 +651,13 @@ export function registerIpcHandlers(): void {
   })
 
   ipcMain.handle('letters:update', async (_event, id: string, data: unknown, userId: string) => {
-    return letterService.updateLetter(id, data as letterService.UpdateLetterData, userId)
+    const letterData = data as letterService.UpdateLetterData & { tags?: string[] }
+    const result = letterService.updateLetter(id, letterData, userId)
+    // Save tags if provided
+    if (result.success && letterData.tags !== undefined) {
+      tagService.setLetterTags(id, letterData.tags, userId)
+    }
+    return result
   })
 
   ipcMain.handle('letters:delete', async (_event, id: string, userId: string) => {
@@ -753,7 +868,13 @@ export function registerIpcHandlers(): void {
   // ===== Issue Handlers =====
 
   ipcMain.handle('issues:create', async (_event, data: unknown, userId: string) => {
-    return issueService.createIssue(data as issueService.CreateIssueData, userId)
+    const issueData = data as issueService.CreateIssueData & { tag_ids?: string[] }
+    const result = issueService.createIssue(issueData, userId)
+    // Save tags if provided
+    if (result.success && result.issue && issueData.tag_ids && issueData.tag_ids.length > 0) {
+      tagService.setIssueTags(result.issue.id, issueData.tag_ids, userId)
+    }
+    return result
   })
 
   ipcMain.handle('issues:getById', async (_event, id: string) => {
@@ -769,7 +890,13 @@ export function registerIpcHandlers(): void {
   })
 
   ipcMain.handle('issues:update', async (_event, id: string, data: unknown, userId: string) => {
-    return issueService.updateIssue(id, data as issueService.UpdateIssueData, userId)
+    const issueData = data as issueService.UpdateIssueData & { tag_ids?: string[] }
+    const result = issueService.updateIssue(id, issueData, userId)
+    // Save tags if provided
+    if (result.success && issueData.tag_ids !== undefined) {
+      tagService.setIssueTags(id, issueData.tag_ids, userId)
+    }
+    return result
   })
 
   ipcMain.handle('issues:close', async (_event, id: string, closureNote: string | null, userId: string) => {
@@ -821,6 +948,8 @@ export function registerIpcHandlers(): void {
   })
 
   ipcMain.handle('issues:getWithReminders', async (_event, days?: number) => {
+    // Return empty during restore to avoid database access
+    if (isRestoreInProgress()) return []
     return issueService.getIssuesWithReminders(days)
   })
 
@@ -1151,7 +1280,13 @@ export function registerIpcHandlers(): void {
   // ===== MOM Handlers =====
 
   ipcMain.handle('moms:create', async (_event, data: unknown, userId: string) => {
-    return momService.createMom(data as momService.CreateMomData, userId)
+    const momData = data as momService.CreateMomData & { tag_ids?: string[] }
+    const result = momService.createMom(momData, userId)
+    // Save tags if provided
+    if (result.success && result.mom && momData.tag_ids && momData.tag_ids.length > 0) {
+      tagService.setMomTags(result.mom.id, momData.tag_ids, userId)
+    }
+    return result
   })
 
   ipcMain.handle('moms:getById', async (_event, id: string) => {
@@ -1167,7 +1302,13 @@ export function registerIpcHandlers(): void {
   })
 
   ipcMain.handle('moms:update', async (_event, id: string, data: unknown, userId: string) => {
-    return momService.updateMom(id, data as momService.UpdateMomData, userId)
+    const momData = data as momService.UpdateMomData & { tag_ids?: string[] }
+    const result = momService.updateMom(id, momData, userId)
+    // Save tags if provided
+    if (result.success && momData.tag_ids !== undefined) {
+      tagService.setMomTags(id, momData.tag_ids, userId)
+    }
+    return result
   })
 
   ipcMain.handle('moms:delete', async (_event, id: string, userId: string) => {
@@ -1301,10 +1442,14 @@ export function registerIpcHandlers(): void {
   })
 
   ipcMain.handle('momActions:getWithReminders', async () => {
+    // Return empty during restore to avoid database access
+    if (isRestoreInProgress()) return []
     return momService.getActionsWithReminders()
   })
 
   ipcMain.handle('momActions:getWithDeadlines', async () => {
+    // Return empty during restore to avoid database access
+    if (isRestoreInProgress()) return []
     return momService.getActionsWithDeadlines()
   })
 
@@ -1588,10 +1733,14 @@ export function registerIpcHandlers(): void {
   })
 
   ipcMain.handle('scheduledEmails:getPendingCounts', async () => {
+    // Return empty counts during restore to avoid database access
+    if (isRestoreInProgress()) return { today: 0, overdue: 0 }
     return scheduledEmailService.getPendingCounts()
   })
 
   ipcMain.handle('scheduledEmails:generateInstances', async (_event, date: string) => {
+    // Return empty during restore to avoid database access
+    if (isRestoreInProgress()) return { success: true, generated: 0 }
     const dateObj = new Date(date)
     return scheduledEmailService.generateInstancesForDate(dateObj)
   })
@@ -1709,6 +1858,15 @@ export function registerIpcHandlers(): void {
     return tagService.setLetterTags(letterId, tagIds, userId)
   })
 
+  // MOM tags
+  ipcMain.handle('tags:getMomTags', async (_event, momId: string) => {
+    return tagService.getMomTags(momId)
+  })
+
+  ipcMain.handle('tags:setMomTags', async (_event, momId: string, tagIds: string[], userId: string) => {
+    return tagService.setMomTags(momId, tagIds, userId)
+  })
+
   // Search by tag
   ipcMain.handle('tags:getRecordsByTag', async (_event, tagId: string) => {
     return tagService.getRecordsByTag(tagId)
@@ -1722,10 +1880,43 @@ export function registerIpcHandlers(): void {
     return tagService.getLettersByTag(tagId)
   })
 
+  ipcMain.handle('tags:getMomsByTag', async (_event, tagId: string) => {
+    return tagService.getMomsByTag(tagId)
+  })
+
   // ===== Advanced Search Handlers =====
 
-  ipcMain.handle('search:advanced', async (_event, filters: unknown) => {
-    return searchService.advancedSearch(filters as searchService.AdvancedSearchFilters)
+  ipcMain.handle('search:advanced', async (_event, filters: unknown, userId?: string) => {
+    return searchService.advancedSearch(filters as searchService.AdvancedSearchFilters, userId)
+  })
+
+  ipcMain.handle('search:suggestions', async (_event, partialQuery: string, userId: string, limit?: number) => {
+    return searchService.getSearchSuggestions(partialQuery, userId, limit)
+  })
+
+  ipcMain.handle('search:history', async (_event, userId: string, limit?: number) => {
+    return searchService.getSearchHistory(userId, limit)
+  })
+
+  ipcMain.handle('search:clearHistory', async (_event, userId: string) => {
+    searchService.clearSearchHistory(userId)
+    return { success: true }
+  })
+
+  ipcMain.handle('search:deleteHistoryEntry', async (_event, id: string, userId: string) => {
+    return searchService.deleteSearchHistoryEntry(id, userId)
+  })
+
+  ipcMain.handle('search:rebuildFtsIndexes', async () => {
+    return searchService.rebuildFtsIndexes()
+  })
+
+  ipcMain.handle('search:getFtsStats', async () => {
+    return searchService.getFtsStats()
+  })
+
+  ipcMain.handle('search:highlight', async (_event, text: string, searchTerms: string[], maxLength?: number) => {
+    return searchService.highlightMatches(text, searchTerms, maxLength)
   })
 
   ipcMain.handle('search:createSaved', async (_event, userId: string, name: string, filters: unknown) => {
@@ -1782,6 +1973,81 @@ export function registerIpcHandlers(): void {
     return exportService.exportCustomData(data, sheetName, filename)
   })
 
+  // ===== Filter Preset Handlers =====
+
+  ipcMain.handle('filterPresets:create', async (
+    _event,
+    userId: string,
+    entityType: filterPresetService.EntityType,
+    name: string,
+    filters: Record<string, unknown>,
+    isDefault?: boolean,
+    isShared?: boolean
+  ) => {
+    return filterPresetService.createFilterPreset({
+      userId,
+      entityType,
+      name,
+      filters,
+      isDefault,
+      isShared
+    })
+  })
+
+  ipcMain.handle('filterPresets:getAll', async (
+    _event,
+    userId: string,
+    entityType: filterPresetService.EntityType
+  ) => {
+    return filterPresetService.getFilterPresets(userId, entityType)
+  })
+
+  ipcMain.handle('filterPresets:getById', async (_event, id: string) => {
+    return filterPresetService.getFilterPresetById(id)
+  })
+
+  ipcMain.handle('filterPresets:getDefault', async (
+    _event,
+    userId: string,
+    entityType: filterPresetService.EntityType
+  ) => {
+    return filterPresetService.getDefaultPreset(userId, entityType)
+  })
+
+  ipcMain.handle('filterPresets:update', async (
+    _event,
+    id: string,
+    userId: string,
+    input: filterPresetService.UpdatePresetInput
+  ) => {
+    return filterPresetService.updateFilterPreset(id, userId, input)
+  })
+
+  ipcMain.handle('filterPresets:delete', async (_event, id: string, userId: string) => {
+    return filterPresetService.deleteFilterPreset(id, userId)
+  })
+
+  ipcMain.handle('filterPresets:setDefault', async (
+    _event,
+    id: string,
+    userId: string,
+    entityType: filterPresetService.EntityType
+  ) => {
+    return filterPresetService.setDefaultPreset(id, userId, entityType)
+  })
+
+  ipcMain.handle('filterPresets:clearDefault', async (
+    _event,
+    userId: string,
+    entityType: filterPresetService.EntityType
+  ) => {
+    return filterPresetService.clearDefaultPreset(userId, entityType)
+  })
+
+  ipcMain.handle('filterPresets:getStats', async (_event, userId: string) => {
+    return filterPresetService.getPresetStats(userId)
+  })
+
   // ===== History (Undo/Redo) Handlers =====
 
   ipcMain.handle('history:undoCreate', async (_event, entityType: historyService.EntityType, entityId: string, userId: string) => {
@@ -1828,6 +2094,623 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle('pins:getPinStatuses', async (_event, entityType: pinService.PinnableEntityType, entityIds: string[], userId: string) => {
     return pinService.getPinStatuses(entityType, entityIds, userId)
+  })
+
+  // ===== Health Monitoring Handlers =====
+
+  ipcMain.handle('health:runChecks', async () => {
+    // Health service already checks isRestoreInProgress internally
+    return healthService.runHealthChecks()
+  })
+
+  ipcMain.handle('health:getMetrics', async () => {
+    // System metrics don't require database access, safe during restore
+    return healthService.getSystemMetrics()
+  })
+
+  ipcMain.handle('health:getLastStatus', async () => {
+    // Returns cached status, no database access
+    return healthService.getLastHealthStatus()
+  })
+
+  ipcMain.handle('health:forceCheckpoint', async () => {
+    if (isRestoreInProgress()) return { success: false, error: 'Restore in progress' }
+    return healthService.forceCheckpoint()
+  })
+
+  ipcMain.handle('health:optimizeDatabase', async () => {
+    if (isRestoreInProgress()) return { success: false, error: 'Restore in progress' }
+    return healthService.optimizeDatabase()
+  })
+
+  ipcMain.handle('health:analyzeDatabase', async () => {
+    if (isRestoreInProgress()) return { success: false, error: 'Restore in progress' }
+    return healthService.analyzeDatabase()
+  })
+
+  // ===== Data Integrity Handlers =====
+
+  ipcMain.handle('integrity:check', async () => {
+    if (isRestoreInProgress()) return {
+      valid: false,
+      checks: [],
+      totalChecks: 0,
+      passedChecks: 0,
+      failedChecks: 0,
+      timestamp: new Date().toISOString()
+    }
+    return integrityService.checkDatabaseIntegrity()
+  })
+
+  ipcMain.handle('integrity:getStartupResult', async () => {
+    // Returns cached result, no database access
+    return integrityService.getStartupCheckResult()
+  })
+
+  ipcMain.handle('integrity:isStartupComplete', async () => {
+    // Returns cached boolean, no database access
+    return integrityService.isStartupCheckComplete()
+  })
+
+  ipcMain.handle('integrity:repairOrphanedRecords', async () => {
+    if (isRestoreInProgress()) return { success: false, repaired: 0, errors: ['Restore in progress'] }
+    return integrityService.repairOrphanedRecords()
+  })
+
+  ipcMain.handle('integrity:rebuildFtsIndexes', async () => {
+    if (isRestoreInProgress()) return { success: false, repaired: 0, errors: ['Restore in progress'] }
+    return integrityService.rebuildFtsIndexes()
+  })
+
+  ipcMain.handle('integrity:repairForeignKeyViolations', async () => {
+    if (isRestoreInProgress()) return { success: false, repaired: 0, errors: ['Restore in progress'] }
+    return integrityService.repairForeignKeyViolations()
+  })
+
+  ipcMain.handle('integrity:repairOrphanedEmails', async () => {
+    if (isRestoreInProgress()) return { success: false, repaired: 0, errors: ['Restore in progress'] }
+    return integrityService.repairOrphanedEmails()
+  })
+
+  ipcMain.handle('integrity:repairOrphanedAttachments', async () => {
+    if (isRestoreInProgress()) return { success: false, repaired: 0, errors: ['Restore in progress'] }
+    return integrityService.repairOrphanedAttachments()
+  })
+
+  // ===== Sync Service Handlers =====
+
+  ipcMain.handle('sync:getEntityVersion', async (_event, entityType: string, entityId: string) => {
+    return syncService.getEntityVersion(entityType, entityId)
+  })
+
+  ipcMain.handle('sync:updateEntityVersion', async (
+    _event,
+    entityType: string,
+    entityId: string,
+    data: Record<string, unknown>,
+    userId: string | null
+  ) => {
+    return syncService.updateEntityVersion(entityType, entityId, data, userId)
+  })
+
+  ipcMain.handle('sync:checkConflict', async (
+    _event,
+    entityType: string,
+    entityId: string,
+    clientVersion: number,
+    clientData: Record<string, unknown>,
+    originalData: Record<string, unknown>
+  ) => {
+    return syncService.checkConflict(entityType, entityId, clientVersion, clientData, originalData)
+  })
+
+  ipcMain.handle('sync:mergeConflict', async (
+    _event,
+    conflict: syncService.ConflictInfo,
+    clientData: Record<string, unknown>,
+    strategy: syncService.MergeStrategy,
+    manualResolutions?: Record<string, unknown>
+  ) => {
+    return syncService.mergeConflict(conflict, clientData, strategy, manualResolutions)
+  })
+
+  ipcMain.handle('sync:getRecentChanges', async (
+    _event,
+    entityType?: string,
+    since?: string,
+    limit?: number
+  ) => {
+    return syncService.getRecentChanges(entityType, since, limit)
+  })
+
+  // ===== Notification Service Handlers =====
+
+  ipcMain.handle('notifications:create', async (_event, input: notificationService.CreateNotificationInput) => {
+    return notificationService.createNotification(input)
+  })
+
+  ipcMain.handle('notifications:get', async (
+    _event,
+    userId: string,
+    options?: {
+      unreadOnly?: boolean
+      limit?: number
+      offset?: number
+      type?: notificationService.NotificationType
+    }
+  ) => {
+    return notificationService.getNotifications(userId, options)
+  })
+
+  ipcMain.handle('notifications:markAsRead', async (_event, notificationId: string, userId: string) => {
+    return notificationService.markAsRead(notificationId, userId)
+  })
+
+  ipcMain.handle('notifications:markAllAsRead', async (_event, userId: string) => {
+    return notificationService.markAllAsRead(userId)
+  })
+
+  ipcMain.handle('notifications:getUnreadCount', async (_event, userId: string) => {
+    return notificationService.getUnreadCount(userId)
+  })
+
+  ipcMain.handle('notifications:processMentions', async (
+    _event,
+    text: string,
+    entityType: string,
+    entityId: string,
+    actorId: string,
+    actorName: string,
+    entityTitle: string
+  ) => {
+    return notificationService.processMentions(text, entityType, entityId, actorId, actorName, entityTitle)
+  })
+
+  ipcMain.handle('notifications:getPreferences', async (_event, userId: string) => {
+    return notificationService.getNotificationPreferences(userId)
+  })
+
+  ipcMain.handle('notifications:updatePreferences', async (
+    _event,
+    userId: string,
+    preferences: Partial<Record<string, boolean>>
+  ) => {
+    return notificationService.updateNotificationPreferences(userId, preferences)
+  })
+
+  // ===== Document Version Handlers =====
+
+  ipcMain.handle('documentVersions:create', async (_event, input: documentVersionService.CreateVersionInput) => {
+    return documentVersionService.createVersion(input)
+  })
+
+  ipcMain.handle('documentVersions:getVersions', async (
+    _event,
+    documentType: documentVersionService.DocumentVersion['document_type'],
+    documentId: string
+  ) => {
+    return documentVersionService.getVersions(documentType, documentId)
+  })
+
+  ipcMain.handle('documentVersions:getVersion', async (_event, versionId: string) => {
+    return documentVersionService.getVersion(versionId)
+  })
+
+  ipcMain.handle('documentVersions:getCurrentVersion', async (
+    _event,
+    documentType: documentVersionService.DocumentVersion['document_type'],
+    documentId: string
+  ) => {
+    return documentVersionService.getCurrentVersion(documentType, documentId)
+  })
+
+  ipcMain.handle('documentVersions:restore', async (_event, versionId: string, userId: string) => {
+    return documentVersionService.restoreVersion(versionId, userId)
+  })
+
+  ipcMain.handle('documentVersions:compare', async (_event, versionId1: string, versionId2: string) => {
+    return documentVersionService.compareVersions(versionId1, versionId2)
+  })
+
+  ipcMain.handle('documentVersions:getCount', async (
+    _event,
+    documentType: documentVersionService.DocumentVersion['document_type'],
+    documentId: string
+  ) => {
+    return documentVersionService.getVersionCount(documentType, documentId)
+  })
+
+  ipcMain.handle('documentVersions:verifyIntegrity', async (_event, versionId: string) => {
+    return documentVersionService.verifyIntegrity(versionId)
+  })
+
+  // ===== OCR Service Handlers =====
+
+  ipcMain.handle('ocr:recognizeImage', async (
+    _event,
+    imagePath: string,
+    language: ocrService.OCRLanguage
+  ) => {
+    return ocrService.recognizeImage(imagePath, language)
+  })
+
+  ipcMain.handle('ocr:extractAndIndex', async (
+    _event,
+    attachmentId: string,
+    attachmentType: 'record_attachment' | 'letter_attachment',
+    filePath: string,
+    language: ocrService.OCRLanguage,
+    userId: string | null
+  ) => {
+    return ocrService.extractAndIndexText(attachmentId, attachmentType, filePath, language, userId)
+  })
+
+  ipcMain.handle('ocr:getExtractedText', async (_event, attachmentId: string) => {
+    return ocrService.getExtractedText(attachmentId)
+  })
+
+  ipcMain.handle('ocr:searchText', async (
+    _event,
+    query: string,
+    attachmentType?: 'record_attachment' | 'letter_attachment',
+    limit?: number
+  ) => {
+    return ocrService.searchExtractedText(query, attachmentType, limit)
+  })
+
+  ipcMain.handle('ocr:deleteExtractedText', async (_event, attachmentId: string) => {
+    return ocrService.deleteExtractedText(attachmentId)
+  })
+
+  ipcMain.handle('ocr:getStats', async () => {
+    return ocrService.getOCRStats()
+  })
+
+  // ===== Signature Service Handlers =====
+
+  ipcMain.handle('signatures:create', async (_event, input: signatureService.CreateSignatureInput) => {
+    return signatureService.createSignature(input)
+  })
+
+  ipcMain.handle('signatures:getAll', async (_event, userId: string, type?: signatureService.Signature['type']) => {
+    return signatureService.getSignatures(userId, type)
+  })
+
+  ipcMain.handle('signatures:get', async (_event, signatureId: string) => {
+    return signatureService.getSignature(signatureId)
+  })
+
+  ipcMain.handle('signatures:getDefault', async (
+    _event,
+    userId: string,
+    type: signatureService.Signature['type']
+  ) => {
+    return signatureService.getDefaultSignature(userId, type)
+  })
+
+  ipcMain.handle('signatures:update', async (
+    _event,
+    signatureId: string,
+    updates: Partial<Pick<signatureService.Signature, 'name' | 'image_data' | 'is_default'>>,
+    userId: string
+  ) => {
+    return signatureService.updateSignature(signatureId, updates, userId)
+  })
+
+  ipcMain.handle('signatures:delete', async (_event, signatureId: string, userId: string) => {
+    return signatureService.deleteSignature(signatureId, userId)
+  })
+
+  ipcMain.handle('signatures:place', async (_event, input: signatureService.PlaceSignatureInput) => {
+    return signatureService.placeSignature(input)
+  })
+
+  ipcMain.handle('signatures:getPlacements', async (_event, documentType: string, documentId: string) => {
+    return signatureService.getDocumentPlacements(documentType, documentId)
+  })
+
+  ipcMain.handle('signatures:removePlacement', async (_event, placementId: string, userId: string) => {
+    return signatureService.removePlacement(placementId, userId)
+  })
+
+  ipcMain.handle('signatures:getForExport', async (_event, documentType: string, documentId: string) => {
+    return signatureService.getSignaturesForExport(documentType, documentId)
+  })
+
+  // ===== View Handlers =====
+
+  ipcMain.handle('views:create', async (_event, input: viewService.CreateViewInput) => {
+    return viewService.createView(input)
+  })
+
+  ipcMain.handle('views:getById', async (_event, id: number) => {
+    return viewService.getViewById(id)
+  })
+
+  ipcMain.handle('views:getViews', async (
+    _event,
+    entityType: string,
+    userId: number,
+    includeShared?: boolean
+  ) => {
+    return viewService.getViews(entityType, userId, includeShared)
+  })
+
+  ipcMain.handle('views:getDefault', async (_event, entityType: string, userId: number) => {
+    return viewService.getDefaultView(entityType, userId)
+  })
+
+  ipcMain.handle('views:update', async (
+    _event,
+    id: number,
+    input: viewService.UpdateViewInput,
+    userId: number
+  ) => {
+    return viewService.updateView(id, input, userId)
+  })
+
+  ipcMain.handle('views:delete', async (_event, id: number, userId: number) => {
+    return viewService.deleteView(id, userId)
+  })
+
+  ipcMain.handle('views:duplicate', async (
+    _event,
+    id: number,
+    newName: string,
+    userId: number
+  ) => {
+    return viewService.duplicateView(id, newName, userId)
+  })
+
+  ipcMain.handle('views:toggleShare', async (_event, id: number, userId: number) => {
+    return viewService.toggleShareView(id, userId)
+  })
+
+  // ===== Custom Field Handlers =====
+
+  ipcMain.handle('customFields:createDefinition', async (_event, input: customFieldService.CreateFieldInput) => {
+    return customFieldService.createFieldDefinition(input)
+  })
+
+  ipcMain.handle('customFields:getDefinitions', async (
+    _event,
+    entityType: customFieldService.CustomFieldEntityType
+  ) => {
+    return customFieldService.getFieldDefinitions(entityType)
+  })
+
+  ipcMain.handle('customFields:getDefinitionById', async (_event, id: string) => {
+    return customFieldService.getFieldDefinitionById(id)
+  })
+
+  ipcMain.handle('customFields:getDefinitionByName', async (
+    _event,
+    entityType: customFieldService.CustomFieldEntityType,
+    name: string
+  ) => {
+    return customFieldService.getFieldDefinitionByName(entityType, name)
+  })
+
+  ipcMain.handle('customFields:updateDefinition', async (
+    _event,
+    id: string,
+    input: customFieldService.UpdateFieldInput,
+    userId: string
+  ) => {
+    return customFieldService.updateFieldDefinition(id, input, userId)
+  })
+
+  ipcMain.handle('customFields:deleteDefinition', async (_event, id: string, userId: string) => {
+    return customFieldService.deleteFieldDefinition(id, userId)
+  })
+
+  ipcMain.handle('customFields:reorderDefinitions', async (
+    _event,
+    entityType: customFieldService.CustomFieldEntityType,
+    fieldIds: string[],
+    userId: string
+  ) => {
+    return customFieldService.reorderFieldDefinitions(entityType, fieldIds, userId)
+  })
+
+  ipcMain.handle('customFields:setFieldValue', async (
+    _event,
+    fieldId: string,
+    entityType: customFieldService.CustomFieldEntityType,
+    entityId: string,
+    value: unknown
+  ) => {
+    return customFieldService.setFieldValue(fieldId, entityType, entityId, value)
+  })
+
+  ipcMain.handle('customFields:setFieldValues', async (
+    _event,
+    entityType: customFieldService.CustomFieldEntityType,
+    entityId: string,
+    values: Record<string, unknown>
+  ) => {
+    return customFieldService.setFieldValues(entityType, entityId, values)
+  })
+
+  ipcMain.handle('customFields:getFieldValues', async (
+    _event,
+    entityType: customFieldService.CustomFieldEntityType,
+    entityId: string
+  ) => {
+    return customFieldService.getFieldValues(entityType, entityId)
+  })
+
+  ipcMain.handle('customFields:getFieldValuesWithDefinitions', async (
+    _event,
+    entityType: customFieldService.CustomFieldEntityType,
+    entityId: string
+  ) => {
+    return customFieldService.getFieldValuesWithDefinitions(entityType, entityId)
+  })
+
+  ipcMain.handle('customFields:deleteFieldValues', async (
+    _event,
+    entityType: customFieldService.CustomFieldEntityType,
+    entityId: string
+  ) => {
+    return customFieldService.deleteFieldValuesForEntity(entityType, entityId)
+  })
+
+  ipcMain.handle('customFields:searchByField', async (
+    _event,
+    entityType: customFieldService.CustomFieldEntityType,
+    fieldName: string,
+    value: string,
+    operator?: 'eq' | 'contains' | 'gt' | 'lt' | 'gte' | 'lte'
+  ) => {
+    return customFieldService.searchByCustomField(entityType, fieldName, value, operator)
+  })
+
+  // ===== Import Handlers =====
+
+  ipcMain.handle('import:preview', async (_event, filePath: string) => {
+    return importService.previewImportFile(filePath)
+  })
+
+  ipcMain.handle('import:getSuggestedMappings', async (
+    _event,
+    entityType: importService.ImportEntityType,
+    headers: string[]
+  ) => {
+    return importService.getSuggestedMappings(entityType, headers)
+  })
+
+  ipcMain.handle('import:execute', async (_event, config: importService.ImportConfig) => {
+    return importService.executeImport(config)
+  })
+
+  ipcMain.handle('import:getProgress', async () => {
+    return importService.getImportProgress()
+  })
+
+  ipcMain.handle('import:cancel', async () => {
+    importService.cancelImport()
+    return { success: true }
+  })
+
+  ipcMain.handle('import:generateTemplate', async (
+    _event,
+    entityType: importService.ImportEntityType
+  ) => {
+    const buffer = importService.generateImportTemplate(entityType)
+    return { success: true, data: buffer.toString('base64') }
+  })
+
+  ipcMain.handle('import:selectFile', async () => {
+    const win = BrowserWindow.getFocusedWindow()
+    if (!win) return { success: false, error: 'No active window' }
+
+    const result = await dialog.showOpenDialog(win, {
+      title: 'Select Import File',
+      filters: [
+        { name: 'Excel Files', extensions: ['xlsx', 'xls'] },
+        { name: 'CSV Files', extensions: ['csv'] },
+        { name: 'All Files', extensions: ['*'] }
+      ],
+      properties: ['openFile']
+    })
+
+    if (result.canceled || result.filePaths.length === 0) {
+      return { success: false, error: 'Selection canceled' }
+    }
+
+    return { success: true, filePath: result.filePaths[0] }
+  })
+
+  // ===== Mention Handlers =====
+
+  ipcMain.handle('mentions:create', async (
+    _event,
+    input: mentionService.CreateMentionInput,
+    userId: string
+  ) => {
+    return mentionService.createMention(input, userId)
+  })
+
+  ipcMain.handle('mentions:createBulk', async (
+    _event,
+    inputs: mentionService.CreateMentionInput[],
+    userId: string
+  ) => {
+    return mentionService.createMentions(inputs, userId)
+  })
+
+  ipcMain.handle('mentions:getById', async (_event, id: string) => {
+    return mentionService.getMentionById(id)
+  })
+
+  ipcMain.handle('mentions:getForUser', async (
+    _event,
+    userId: string,
+    filters?: mentionService.MentionFilters
+  ) => {
+    return mentionService.getMentionsForUser(userId, filters)
+  })
+
+  ipcMain.handle('mentions:getSentByUser', async (
+    _event,
+    userId: string,
+    filters?: mentionService.MentionFilters
+  ) => {
+    return mentionService.getMentionsSentByUser(userId, filters)
+  })
+
+  ipcMain.handle('mentions:getForEntity', async (
+    _event,
+    entityType: mentionService.EntityType,
+    entityId: string
+  ) => {
+    return mentionService.getMentionsForEntity(entityType, entityId)
+  })
+
+  ipcMain.handle('mentions:getAll', async (_event, filters?: mentionService.MentionFilters) => {
+    return mentionService.getAllMentions(filters)
+  })
+
+  ipcMain.handle('mentions:acknowledge', async (_event, id: string, userId: string) => {
+    return mentionService.acknowledgeMention(id, userId)
+  })
+
+  ipcMain.handle('mentions:archive', async (_event, id: string, userId: string) => {
+    return mentionService.archiveMention(id, userId)
+  })
+
+  ipcMain.handle('mentions:updateNote', async (
+    _event,
+    id: string,
+    note: string,
+    userId: string
+  ) => {
+    return mentionService.updateMentionNote(id, note, userId)
+  })
+
+  ipcMain.handle('mentions:delete', async (_event, id: string, userId: string) => {
+    return mentionService.deleteMention(id, userId)
+  })
+
+  ipcMain.handle('mentions:getUnacknowledgedCount', async (_event, userId: string) => {
+    // Return 0 during restore to avoid database access
+    if (isRestoreInProgress()) return 0
+    return mentionService.getUnacknowledgedCount(userId)
+  })
+
+  ipcMain.handle('mentions:getCounts', async (_event, userId: string) => {
+    // Return empty counts during restore to avoid database access
+    if (isRestoreInProgress()) return { pending: 0, acknowledged: 0, archived: 0, sent: 0 }
+    return mentionService.getMentionCounts(userId)
+  })
+
+  ipcMain.handle('mentions:searchUsers', async (_event, query: string) => {
+    return mentionService.searchUsersForMention(query)
+  })
+
+  ipcMain.handle('mentions:cleanup', async () => {
+    return mentionService.cleanupOldArchivedMentions()
   })
 
   console.log('IPC handlers registered')

@@ -19,6 +19,10 @@ interface AuthContextType {
   login: (username: string, password: string) => Promise<{ success: boolean; error?: string }>
   logout: () => void
   checkAuth: () => Promise<boolean>
+  sessionTimeoutWarning: boolean
+  sessionRemainingSeconds: number
+  extendSession: () => void
+  dismissTimeoutWarning: () => void
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
@@ -30,6 +34,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [token, setToken] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(true)
+  const [sessionTimeoutWarning, setSessionTimeoutWarning] = useState(false)
+  const [sessionRemainingSeconds, setSessionRemainingSeconds] = useState(0)
+  const [warningDismissed, setWarningDismissed] = useState(false)
 
   // Load stored auth on mount
   useEffect(() => {
@@ -80,6 +87,89 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
+  // Session timeout tracking - check every 30 seconds
+  useEffect(() => {
+    if (!token) {
+      setSessionTimeoutWarning(false)
+      setSessionRemainingSeconds(0)
+      return
+    }
+
+    const checkSession = async () => {
+      try {
+        const result = await window.electronAPI.auth.verifyToken(token)
+        if (!result.valid) {
+          // Session expired
+          console.log('[Auth] Session expired:', result.error)
+          localStorage.removeItem(TOKEN_STORAGE_KEY)
+          localStorage.removeItem(USER_STORAGE_KEY)
+          setToken(null)
+          setUser(null)
+          setSessionTimeoutWarning(false)
+          return
+        }
+
+        // Update remaining time
+        if (result.remainingSeconds !== undefined) {
+          setSessionRemainingSeconds(result.remainingSeconds)
+        }
+
+        // Show warning if within 5 minutes and not dismissed
+        if (result.timeoutWarning && !warningDismissed) {
+          setSessionTimeoutWarning(true)
+        }
+      } catch (error) {
+        console.error('[Auth] Error checking session:', error)
+      }
+    }
+
+    // Check immediately
+    checkSession()
+
+    // Then check every 30 seconds
+    const interval = setInterval(checkSession, 30000)
+
+    return () => clearInterval(interval)
+  }, [token, warningDismissed])
+
+  // Track user activity and update session
+  useEffect(() => {
+    if (!token) return
+
+    const updateActivity = async () => {
+      try {
+        await window.electronAPI.auth.updateSessionActivity?.(token)
+        // Reset warning dismissed on activity
+        setWarningDismissed(false)
+      } catch (error) {
+        // Ignore errors
+      }
+    }
+
+    // Track various user activities
+    const events = ['mousedown', 'keydown', 'scroll', 'touchstart']
+    let lastUpdate = 0
+    const throttleMs = 60000 // Only update once per minute
+
+    const handleActivity = () => {
+      const now = Date.now()
+      if (now - lastUpdate > throttleMs) {
+        lastUpdate = now
+        updateActivity()
+      }
+    }
+
+    events.forEach(event => {
+      document.addEventListener(event, handleActivity, { passive: true })
+    })
+
+    return () => {
+      events.forEach(event => {
+        document.removeEventListener(event, handleActivity)
+      })
+    }
+  }, [token])
+
   const login = useCallback(async (username: string, password: string): Promise<{ success: boolean; error?: string }> => {
     try {
       const result = await window.electronAPI.auth.login(username, password)
@@ -124,6 +214,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return true
   }, [token, logout])
 
+  const extendSession = useCallback(() => {
+    if (!token) return
+
+    window.electronAPI.auth.extendSession?.(token).then(result => {
+      if (result?.success) {
+        setSessionTimeoutWarning(false)
+        setWarningDismissed(false)
+        if (result.newExpiresIn) {
+          setSessionRemainingSeconds(result.newExpiresIn)
+        }
+      }
+    }).catch(error => {
+      console.error('[Auth] Error extending session:', error)
+    })
+  }, [token])
+
+  const dismissTimeoutWarning = useCallback(() => {
+    setSessionTimeoutWarning(false)
+    setWarningDismissed(true)
+  }, [])
+
   const value: AuthContextType = {
     user,
     token,
@@ -131,7 +242,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     isLoading,
     login,
     logout,
-    checkAuth
+    checkAuth,
+    sessionTimeoutWarning,
+    sessionRemainingSeconds,
+    extendSession,
+    dismissTimeoutWarning
   }
 
   return (

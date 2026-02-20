@@ -1,4 +1,25 @@
 import { getDatabase } from '../database/connection'
+import {
+  parseAdvancedQuery,
+  escapeFts5Query as escapeFts5QueryEnhanced,
+  recordSearchHistory,
+  highlightMatches,
+  HighlightedText
+} from './search-enhanced.service'
+
+// Re-export enhanced search utilities
+export {
+  parseAdvancedQuery,
+  highlightMatches,
+  getSearchSuggestions,
+  getSearchHistory,
+  clearSearchHistory,
+  deleteSearchHistoryEntry,
+  rebuildFtsIndexes,
+  getFtsStats
+} from './search-enhanced.service'
+
+export type { SearchSuggestion, SearchHistoryEntry, HighlightedText } from './search-enhanced.service'
 
 export interface SearchResult {
   id: string
@@ -10,6 +31,44 @@ export interface SearchResult {
   status?: string
   parentId?: string
   parentTitle?: string
+}
+
+// Query result cache for performance optimization
+interface CacheEntry<T> {
+  data: T
+  timestamp: number
+}
+
+const queryCache = new Map<string, CacheEntry<any>>()
+const CACHE_TTL = 5 * 60 * 1000 // 5 minutes
+
+function getCached<T>(key: string): T | null {
+  const entry = queryCache.get(key)
+  if (!entry) return null
+  if (Date.now() - entry.timestamp > CACHE_TTL) {
+    queryCache.delete(key)
+    return null
+  }
+  return entry.data
+}
+
+function setCache<T>(key: string, data: T): void {
+  queryCache.set(key, { data, timestamp: Date.now() })
+}
+
+export function clearSearchCache(): void {
+  queryCache.clear()
+}
+
+// Escape special FTS5 characters for safe search (uses enhanced version)
+function escapeFts5Query(query: string): string {
+  return escapeFts5QueryEnhanced(query)
+}
+
+// Parse advanced query with operators (AND, OR, NOT, quotes)
+function getAdvancedFtsQuery(query: string): { ftsQuery: string; terms: string[] } {
+  const parsed = parseAdvancedQuery(query)
+  return { ftsQuery: parsed.ftsQuery, terms: parsed.terms }
 }
 
 export interface GlobalSearchResults {
@@ -47,19 +106,40 @@ export function globalSearch(query: string, limit: number = 10): GlobalSearchRes
     return results
   }
 
+  // Check cache first
+  const cacheKey = `global:${query}:${limit}`
+  const cached = getCached<GlobalSearchResults>(cacheKey)
+  if (cached) return cached
+
   // Limit query length to prevent DoS attacks
   const safeQuery = query.trim().substring(0, 200)
-  const searchTerm = `%${safeQuery}%`
+  const ftsQuery = escapeFts5Query(safeQuery)
+  const likeSearchTerm = `%${safeQuery}%` // Fallback for non-FTS tables
 
-  // Search Topics
-  const topics = db.prepare(`
-    SELECT id, title, description, status, priority, created_at
-    FROM topics
-    WHERE deleted_at IS NULL
-      AND (title LIKE ? OR description LIKE ?)
-    ORDER BY updated_at DESC
-    LIMIT ?
-  `).all(searchTerm, searchTerm, limit) as any[]
+  // Search Topics using FTS5
+  let topics: any[] = []
+  if (ftsQuery) {
+    try {
+      topics = db.prepare(`
+        SELECT t.id, t.title, t.description, t.status, t.priority, t.created_at
+        FROM topics t
+        WHERE t.deleted_at IS NULL
+          AND t.rowid IN (SELECT rowid FROM topics_fts WHERE topics_fts MATCH ?)
+        ORDER BY t.updated_at DESC
+        LIMIT ?
+      `).all(ftsQuery, limit) as any[]
+    } catch (e) {
+      // Fallback to LIKE if FTS fails
+      topics = db.prepare(`
+        SELECT id, title, description, status, priority, created_at
+        FROM topics
+        WHERE deleted_at IS NULL
+          AND (title LIKE ? OR description LIKE ?)
+        ORDER BY updated_at DESC
+        LIMIT ?
+      `).all(likeSearchTerm, likeSearchTerm, limit) as any[]
+    }
+  }
 
   results.topics = topics.map(t => ({
     id: t.id,
@@ -70,17 +150,56 @@ export function globalSearch(query: string, limit: number = 10): GlobalSearchRes
     date: t.created_at
   }))
 
-  // Search Records (including attachment filenames)
-  const records = db.prepare(`
-    SELECT DISTINCT r.id, r.title, r.content, r.type, r.created_at, r.topic_id, t.title as topic_title
-    FROM records r
-    LEFT JOIN topics t ON r.topic_id = t.id
-    LEFT JOIN record_attachments ra ON r.id = ra.record_id
-    WHERE r.deleted_at IS NULL
-      AND (r.title LIKE ? OR r.content LIKE ? OR ra.filename LIKE ?)
-    ORDER BY r.updated_at DESC
-    LIMIT ?
-  `).all(searchTerm, searchTerm, searchTerm, limit) as any[]
+  // Search Records using FTS5 (including attachment filenames via LIKE fallback)
+  let records: any[] = []
+  if (ftsQuery) {
+    try {
+      // First try FTS5 for title/content
+      const ftsRecords = db.prepare(`
+        SELECT DISTINCT r.id, r.title, r.content, r.type, r.created_at, r.topic_id, t.title as topic_title
+        FROM records r
+        LEFT JOIN topics t ON r.topic_id = t.id
+        WHERE r.deleted_at IS NULL
+          AND r.rowid IN (SELECT rowid FROM records_fts WHERE records_fts MATCH ?)
+        ORDER BY r.updated_at DESC
+        LIMIT ?
+      `).all(ftsQuery, limit) as any[]
+
+      // Also search attachment filenames (no FTS for this)
+      const attachmentRecords = db.prepare(`
+        SELECT DISTINCT r.id, r.title, r.content, r.type, r.created_at, r.topic_id, t.title as topic_title
+        FROM records r
+        LEFT JOIN topics t ON r.topic_id = t.id
+        JOIN record_attachments ra ON r.id = ra.record_id
+        WHERE r.deleted_at IS NULL
+          AND ra.filename LIKE ?
+        ORDER BY r.updated_at DESC
+        LIMIT ?
+      `).all(likeSearchTerm, limit) as any[]
+
+      // Merge and deduplicate
+      const seen = new Set<string>()
+      for (const r of [...ftsRecords, ...attachmentRecords]) {
+        if (!seen.has(r.id)) {
+          seen.add(r.id)
+          records.push(r)
+          if (records.length >= limit) break
+        }
+      }
+    } catch (e) {
+      // Fallback to LIKE if FTS fails
+      records = db.prepare(`
+        SELECT DISTINCT r.id, r.title, r.content, r.type, r.created_at, r.topic_id, t.title as topic_title
+        FROM records r
+        LEFT JOIN topics t ON r.topic_id = t.id
+        LEFT JOIN record_attachments ra ON r.id = ra.record_id
+        WHERE r.deleted_at IS NULL
+          AND (r.title LIKE ? OR r.content LIKE ? OR ra.filename LIKE ?)
+        ORDER BY r.updated_at DESC
+        LIMIT ?
+      `).all(likeSearchTerm, likeSearchTerm, likeSearchTerm, limit) as any[]
+    }
+  }
 
   results.records = records.map(r => ({
     id: r.id,
@@ -93,18 +212,59 @@ export function globalSearch(query: string, limit: number = 10): GlobalSearchRes
     parentTitle: r.topic_title
   }))
 
-  // Search Letters (including attachment filenames)
-  const letters = db.prepare(`
-    SELECT DISTINCT l.id, l.reference_number, l.subject, l.summary, l.letter_type, l.status, l.letter_date,
-           a.name as authority_name
-    FROM letters l
-    LEFT JOIN authorities a ON l.authority_id = a.id
-    LEFT JOIN letter_attachments la ON l.id = la.letter_id AND la.deleted_at IS NULL
-    WHERE l.deleted_at IS NULL
-      AND (l.reference_number LIKE ? OR l.subject LIKE ? OR l.summary LIKE ? OR l.original_filename LIKE ? OR la.filename LIKE ?)
-    ORDER BY l.updated_at DESC
-    LIMIT ?
-  `).all(searchTerm, searchTerm, searchTerm, searchTerm, searchTerm, limit) as any[]
+  // Search Letters using FTS5 (including attachment filenames via LIKE fallback)
+  let letters: any[] = []
+  if (ftsQuery) {
+    try {
+      // First try FTS5 for subject/summary/content/reference numbers
+      const ftsLetters = db.prepare(`
+        SELECT DISTINCT l.id, l.reference_number, l.subject, l.summary, l.letter_type, l.status, l.letter_date,
+               a.name as authority_name
+        FROM letters l
+        LEFT JOIN authorities a ON l.authority_id = a.id
+        WHERE l.deleted_at IS NULL
+          AND l.rowid IN (SELECT rowid FROM letters_fts WHERE letters_fts MATCH ?)
+        ORDER BY l.updated_at DESC
+        LIMIT ?
+      `).all(ftsQuery, limit) as any[]
+
+      // Also search attachment filenames (no FTS for this)
+      const attachmentLetters = db.prepare(`
+        SELECT DISTINCT l.id, l.reference_number, l.subject, l.summary, l.letter_type, l.status, l.letter_date,
+               a.name as authority_name
+        FROM letters l
+        LEFT JOIN authorities a ON l.authority_id = a.id
+        JOIN letter_attachments la ON l.id = la.letter_id AND la.deleted_at IS NULL
+        WHERE l.deleted_at IS NULL
+          AND (l.original_filename LIKE ? OR la.filename LIKE ?)
+        ORDER BY l.updated_at DESC
+        LIMIT ?
+      `).all(likeSearchTerm, likeSearchTerm, limit) as any[]
+
+      // Merge and deduplicate
+      const seen = new Set<string>()
+      for (const l of [...ftsLetters, ...attachmentLetters]) {
+        if (!seen.has(l.id)) {
+          seen.add(l.id)
+          letters.push(l)
+          if (letters.length >= limit) break
+        }
+      }
+    } catch (e) {
+      // Fallback to LIKE if FTS fails
+      letters = db.prepare(`
+        SELECT DISTINCT l.id, l.reference_number, l.subject, l.summary, l.letter_type, l.status, l.letter_date,
+               a.name as authority_name
+        FROM letters l
+        LEFT JOIN authorities a ON l.authority_id = a.id
+        LEFT JOIN letter_attachments la ON l.id = la.letter_id AND la.deleted_at IS NULL
+        WHERE l.deleted_at IS NULL
+          AND (l.reference_number LIKE ? OR l.subject LIKE ? OR l.summary LIKE ? OR l.original_filename LIKE ? OR la.filename LIKE ?)
+        ORDER BY l.updated_at DESC
+        LIMIT ?
+      `).all(likeSearchTerm, likeSearchTerm, likeSearchTerm, likeSearchTerm, likeSearchTerm, limit) as any[]
+    }
+  }
 
   results.letters = letters.map(l => ({
     id: l.id,
@@ -116,18 +276,59 @@ export function globalSearch(query: string, limit: number = 10): GlobalSearchRes
     date: l.letter_date
   }))
 
-  // Search MOMs (including attachment filenames)
-  const moms = db.prepare(`
-    SELECT DISTINCT m.id, m.mom_id, m.title, m.subject, m.status, m.meeting_date,
-           ml.name as location_name
-    FROM moms m
-    LEFT JOIN mom_locations ml ON m.location_id = ml.id
-    LEFT JOIN mom_drafts md ON m.id = md.mom_internal_id AND md.deleted_at IS NULL
-    WHERE m.deleted_at IS NULL
-      AND (m.mom_id LIKE ? OR m.title LIKE ? OR m.subject LIKE ? OR m.original_filename LIKE ? OR md.original_filename LIKE ?)
-    ORDER BY m.updated_at DESC
-    LIMIT ?
-  `).all(searchTerm, searchTerm, searchTerm, searchTerm, searchTerm, limit) as any[]
+  // Search MOMs using FTS5 (including draft filenames via LIKE fallback)
+  let moms: any[] = []
+  if (ftsQuery) {
+    try {
+      // First try FTS5 for mom_id/title/subject
+      const ftsMoms = db.prepare(`
+        SELECT DISTINCT m.id, m.mom_id, m.title, m.subject, m.status, m.meeting_date,
+               ml.name as location_name
+        FROM moms m
+        LEFT JOIN mom_locations ml ON m.location_id = ml.id
+        WHERE m.deleted_at IS NULL
+          AND m.rowid IN (SELECT rowid FROM moms_fts WHERE moms_fts MATCH ?)
+        ORDER BY m.updated_at DESC
+        LIMIT ?
+      `).all(ftsQuery, limit) as any[]
+
+      // Also search draft filenames and main file (no FTS for this)
+      const draftMoms = db.prepare(`
+        SELECT DISTINCT m.id, m.mom_id, m.title, m.subject, m.status, m.meeting_date,
+               ml.name as location_name
+        FROM moms m
+        LEFT JOIN mom_locations ml ON m.location_id = ml.id
+        LEFT JOIN mom_drafts md ON m.id = md.mom_internal_id AND md.deleted_at IS NULL
+        WHERE m.deleted_at IS NULL
+          AND (m.original_filename LIKE ? OR md.original_filename LIKE ?)
+        ORDER BY m.updated_at DESC
+        LIMIT ?
+      `).all(likeSearchTerm, likeSearchTerm, limit) as any[]
+
+      // Merge and deduplicate
+      const seen = new Set<string>()
+      for (const m of [...ftsMoms, ...draftMoms]) {
+        if (!seen.has(m.id)) {
+          seen.add(m.id)
+          moms.push(m)
+          if (moms.length >= limit) break
+        }
+      }
+    } catch (e) {
+      // Fallback to LIKE if FTS fails
+      moms = db.prepare(`
+        SELECT DISTINCT m.id, m.mom_id, m.title, m.subject, m.status, m.meeting_date,
+               ml.name as location_name
+        FROM moms m
+        LEFT JOIN mom_locations ml ON m.location_id = ml.id
+        LEFT JOIN mom_drafts md ON m.id = md.mom_internal_id AND md.deleted_at IS NULL
+        WHERE m.deleted_at IS NULL
+          AND (m.mom_id LIKE ? OR m.title LIKE ? OR m.subject LIKE ? OR m.original_filename LIKE ? OR md.original_filename LIKE ?)
+        ORDER BY m.updated_at DESC
+        LIMIT ?
+      `).all(likeSearchTerm, likeSearchTerm, likeSearchTerm, likeSearchTerm, likeSearchTerm, limit) as any[]
+    }
+  }
 
   results.moms = moms.map(m => ({
     id: m.id,
@@ -139,7 +340,7 @@ export function globalSearch(query: string, limit: number = 10): GlobalSearchRes
     date: m.meeting_date
   }))
 
-  // Search MOM Actions
+  // Search MOM Actions (no FTS table, use LIKE)
   const momActions = db.prepare(`
     SELECT ma.id, ma.description, ma.responsible_party, ma.status, ma.deadline,
            m.mom_id, m.id as mom_internal_id
@@ -149,7 +350,7 @@ export function globalSearch(query: string, limit: number = 10): GlobalSearchRes
       AND (ma.description LIKE ? OR ma.responsible_party LIKE ?)
     ORDER BY ma.updated_at DESC
     LIMIT ?
-  `).all(searchTerm, searchTerm, limit) as any[]
+  `).all(likeSearchTerm, likeSearchTerm, limit) as any[]
 
   results.momActions = momActions.map(a => ({
     id: a.id,
@@ -162,7 +363,7 @@ export function globalSearch(query: string, limit: number = 10): GlobalSearchRes
     parentTitle: a.mom_id
   }))
 
-  // Search Issues (issues table has no deleted_at column)
+  // Search Issues (no FTS table, use LIKE)
   const issues = db.prepare(`
     SELECT i.id, i.title, i.description, i.status, i.importance, i.created_at,
            t.title as topic_title
@@ -171,7 +372,7 @@ export function globalSearch(query: string, limit: number = 10): GlobalSearchRes
     WHERE (i.title LIKE ? OR i.description LIKE ?)
     ORDER BY i.updated_at DESC
     LIMIT ?
-  `).all(searchTerm, searchTerm, limit) as any[]
+  `).all(likeSearchTerm, likeSearchTerm, limit) as any[]
 
   results.issues = issues.map(i => ({
     id: i.id,
@@ -184,7 +385,7 @@ export function globalSearch(query: string, limit: number = 10): GlobalSearchRes
     parentTitle: i.topic_title
   }))
 
-  // Search Credentials (system names only, not passwords)
+  // Search Credentials (system names only, not passwords - no FTS)
   const credentials = db.prepare(`
     SELECT id, system_name, username, category, description, created_at
     FROM credentials
@@ -192,7 +393,7 @@ export function globalSearch(query: string, limit: number = 10): GlobalSearchRes
       AND (system_name LIKE ? OR username LIKE ? OR description LIKE ? OR category LIKE ?)
     ORDER BY updated_at DESC
     LIMIT ?
-  `).all(searchTerm, searchTerm, searchTerm, searchTerm, limit) as any[]
+  `).all(likeSearchTerm, likeSearchTerm, likeSearchTerm, likeSearchTerm, limit) as any[]
 
   results.credentials = credentials.map(c => ({
     id: c.id,
@@ -203,7 +404,7 @@ export function globalSearch(query: string, limit: number = 10): GlobalSearchRes
     date: c.created_at
   }))
 
-  // Search Secure References (including attachment filenames)
+  // Search Secure References (including attachment filenames - no FTS)
   const secureRefs = db.prepare(`
     SELECT DISTINCT sr.id, sr.name, sr.description, sr.category, sr.created_at
     FROM secure_references sr
@@ -212,7 +413,7 @@ export function globalSearch(query: string, limit: number = 10): GlobalSearchRes
       AND (sr.name LIKE ? OR sr.description LIKE ? OR sr.category LIKE ? OR srf.filename LIKE ?)
     ORDER BY sr.updated_at DESC
     LIMIT ?
-  `).all(searchTerm, searchTerm, searchTerm, searchTerm, limit) as any[]
+  `).all(likeSearchTerm, likeSearchTerm, likeSearchTerm, likeSearchTerm, limit) as any[]
 
   results.secureReferences = secureRefs.map(r => ({
     id: r.id,
@@ -223,7 +424,7 @@ export function globalSearch(query: string, limit: number = 10): GlobalSearchRes
     date: r.created_at
   }))
 
-  // Search Contacts
+  // Search Contacts (no FTS)
   const contacts = db.prepare(`
     SELECT c.id, c.name, c.title, c.email, c.phone,
            a.name as authority_name
@@ -233,7 +434,7 @@ export function globalSearch(query: string, limit: number = 10): GlobalSearchRes
       AND (c.name LIKE ? OR c.title LIKE ? OR c.email LIKE ? OR c.phone LIKE ?)
     ORDER BY c.updated_at DESC
     LIMIT ?
-  `).all(searchTerm, searchTerm, searchTerm, searchTerm, limit) as any[]
+  `).all(likeSearchTerm, likeSearchTerm, likeSearchTerm, likeSearchTerm, limit) as any[]
 
   results.contacts = contacts.map(c => ({
     id: c.id,
@@ -244,7 +445,7 @@ export function globalSearch(query: string, limit: number = 10): GlobalSearchRes
     parentTitle: c.authority_name
   }))
 
-  // Search Authorities
+  // Search Authorities (no FTS)
   const authorities = db.prepare(`
     SELECT id, name, short_name, type, contact_email
     FROM authorities
@@ -252,7 +453,7 @@ export function globalSearch(query: string, limit: number = 10): GlobalSearchRes
       AND (name LIKE ? OR short_name LIKE ? OR contact_email LIKE ?)
     ORDER BY updated_at DESC
     LIMIT ?
-  `).all(searchTerm, searchTerm, searchTerm, limit) as any[]
+  `).all(likeSearchTerm, likeSearchTerm, likeSearchTerm, limit) as any[]
 
   results.authorities = authorities.map(a => ({
     id: a.id,
@@ -274,6 +475,9 @@ export function globalSearch(query: string, limit: number = 10): GlobalSearchRes
     results.secureReferences.length +
     results.contacts.length +
     results.authorities.length
+
+  // Cache the results
+  setCache(cacheKey, results)
 
   return results
 }
@@ -313,24 +517,39 @@ export interface AdvancedSearchResponse {
   total: number
   offset: number
   limit: number
+  searchTerms?: string[] // Terms for highlighting
 }
 
-export function advancedSearch(filters: AdvancedSearchFilters): AdvancedSearchResponse {
+export function advancedSearch(filters: AdvancedSearchFilters, userId?: string): AdvancedSearchResponse {
   const db = getDatabase()
   const results: AdvancedSearchResult[] = []
   const limit = filters.limit || 50
   const offset = filters.offset || 0
   // Limit query length to prevent DoS attacks
   const safeQuery = filters.query ? filters.query.trim().substring(0, 200) : null
-  const searchTerm = safeQuery ? `%${safeQuery}%` : null
 
-  const types = filters.types && filters.types.length > 0
+  // Use advanced query parsing for AND, OR, NOT support
+  const { ftsQuery, terms: searchTerms } = safeQuery
+    ? getAdvancedFtsQuery(safeQuery)
+    : { ftsQuery: null, terms: [] }
+  const likeSearchTerm = safeQuery ? `%${safeQuery}%` : null
+
+  // Types that support tag filtering
+  const tagSupportedTypes = ['record', 'letter', 'mom', 'issue']
+
+  let types = filters.types && filters.types.length > 0
     ? filters.types
     : ['topic', 'record', 'letter', 'mom', 'issue', 'secure_reference']
 
-  console.log('[Search] advancedSearch called with:', JSON.stringify(filters))
+  // When tag filter is active but no types specified, only search tag-supported types
+  if (filters.tagIds && filters.tagIds.length > 0 && (!filters.types || filters.types.length === 0)) {
+    types = tagSupportedTypes
+  }
 
-  // Search Topics
+  console.log('[Search] advancedSearch called with:', JSON.stringify(filters))
+  console.log('[Search] Parsed FTS query:', ftsQuery, 'Terms:', searchTerms)
+
+  // Search Topics using FTS5
   if (types.includes('topic')) {
     let query = `
       SELECT t.id, 'topic' as type, t.title, t.description, t.status, t.created_at as date,
@@ -341,9 +560,10 @@ export function advancedSearch(filters: AdvancedSearchFilters): AdvancedSearchRe
     `
     const params: any[] = []
 
-    if (searchTerm) {
-      query += ' AND (t.title LIKE ? OR t.description LIKE ?)'
-      params.push(searchTerm, searchTerm)
+    if (ftsQuery) {
+      // Use FTS5 for text search
+      query += ' AND t.rowid IN (SELECT rowid FROM topics_fts WHERE topics_fts MATCH ?)'
+      params.push(ftsQuery)
     }
     if (filters.status && filters.status.length > 0) {
       query += ` AND t.status IN (${filters.status.map(() => '?').join(',')})`
@@ -364,11 +584,46 @@ export function advancedSearch(filters: AdvancedSearchFilters): AdvancedSearchRe
 
     query += ' ORDER BY t.created_at DESC'
 
-    const topics = db.prepare(query).all(...params) as AdvancedSearchResult[]
-    results.push(...topics)
+    try {
+      const topics = db.prepare(query).all(...params) as AdvancedSearchResult[]
+      results.push(...topics)
+    } catch (e) {
+      // Fallback to LIKE if FTS fails
+      let fallbackQuery = `
+        SELECT t.id, 'topic' as type, t.title, t.description, t.status, t.created_at as date,
+               t.created_by, u.display_name as creator_name
+        FROM topics t
+        LEFT JOIN users u ON u.id = t.created_by
+        WHERE t.deleted_at IS NULL
+      `
+      const fallbackParams: any[] = []
+      if (likeSearchTerm) {
+        fallbackQuery += ' AND (t.title LIKE ? OR t.description LIKE ?)'
+        fallbackParams.push(likeSearchTerm, likeSearchTerm)
+      }
+      if (filters.status && filters.status.length > 0) {
+        fallbackQuery += ` AND t.status IN (${filters.status.map(() => '?').join(',')})`
+        fallbackParams.push(...filters.status)
+      }
+      if (filters.dateFrom) {
+        fallbackQuery += ' AND date(t.created_at) >= ?'
+        fallbackParams.push(filters.dateFrom)
+      }
+      if (filters.dateTo) {
+        fallbackQuery += ' AND date(t.created_at) <= ?'
+        fallbackParams.push(filters.dateTo)
+      }
+      if (filters.createdBy) {
+        fallbackQuery += ' AND t.created_by = ?'
+        fallbackParams.push(filters.createdBy)
+      }
+      fallbackQuery += ' ORDER BY t.created_at DESC'
+      const topics = db.prepare(fallbackQuery).all(...fallbackParams) as AdvancedSearchResult[]
+      results.push(...topics)
+    }
   }
 
-  // Search Records (including attachment filenames)
+  // Search Records using FTS5 (including attachment filenames)
   if (types.includes('record')) {
     try {
       let query = `
@@ -378,14 +633,15 @@ export function advancedSearch(filters: AdvancedSearchFilters): AdvancedSearchRe
         FROM records r
         LEFT JOIN users u ON u.id = r.created_by
         LEFT JOIN topics t ON t.id = r.topic_id
-        LEFT JOIN record_attachments ra ON r.id = ra.record_id
         WHERE r.deleted_at IS NULL
       `
       const params: any[] = []
 
-      if (searchTerm) {
-        query += ' AND (r.title LIKE ? OR r.content LIKE ? OR ra.filename LIKE ?)'
-        params.push(searchTerm, searchTerm, searchTerm)
+      if (ftsQuery) {
+        // Use FTS5 for text search, also check attachment filenames with LIKE
+        query += ` AND (r.rowid IN (SELECT rowid FROM records_fts WHERE records_fts MATCH ?)
+                  OR EXISTS (SELECT 1 FROM record_attachments ra WHERE ra.record_id = r.id AND ra.filename LIKE ?))`
+        params.push(ftsQuery, likeSearchTerm)
       }
       if (filters.topicId) {
         query += ' AND r.topic_id = ?'
@@ -418,10 +674,56 @@ export function advancedSearch(filters: AdvancedSearchFilters): AdvancedSearchRe
       results.push(...records)
     } catch (err) {
       console.error('[Search] Error searching records:', err)
+      // Fallback to LIKE
+      try {
+        let fallbackQuery = `
+          SELECT DISTINCT r.id, 'record' as type, r.title, r.content as description, NULL as status,
+                 r.created_at as date, r.created_by, u.display_name as creator_name,
+                 r.topic_id, t.title as topic_title
+          FROM records r
+          LEFT JOIN users u ON u.id = r.created_by
+          LEFT JOIN topics t ON t.id = r.topic_id
+          LEFT JOIN record_attachments ra ON r.id = ra.record_id
+          WHERE r.deleted_at IS NULL
+        `
+        const fallbackParams: any[] = []
+        if (likeSearchTerm) {
+          fallbackQuery += ' AND (r.title LIKE ? OR r.content LIKE ? OR ra.filename LIKE ?)'
+          fallbackParams.push(likeSearchTerm, likeSearchTerm, likeSearchTerm)
+        }
+        if (filters.topicId) {
+          fallbackQuery += ' AND r.topic_id = ?'
+          fallbackParams.push(filters.topicId)
+        }
+        if (filters.dateFrom) {
+          fallbackQuery += ' AND date(r.created_at) >= ?'
+          fallbackParams.push(filters.dateFrom)
+        }
+        if (filters.dateTo) {
+          fallbackQuery += ' AND date(r.created_at) <= ?'
+          fallbackParams.push(filters.dateTo)
+        }
+        if (filters.createdBy) {
+          fallbackQuery += ' AND r.created_by = ?'
+          fallbackParams.push(filters.createdBy)
+        }
+        if (filters.tagIds && filters.tagIds.length > 0) {
+          fallbackQuery += ` AND EXISTS (
+            SELECT 1 FROM record_tags rt
+            WHERE rt.record_id = r.id AND rt.tag_id IN (${filters.tagIds.map(() => '?').join(',')})
+          )`
+          fallbackParams.push(...filters.tagIds)
+        }
+        fallbackQuery += ' ORDER BY r.created_at DESC'
+        const records = db.prepare(fallbackQuery).all(...fallbackParams) as AdvancedSearchResult[]
+        results.push(...records)
+      } catch (fallbackErr) {
+        console.error('[Search] Fallback error searching records:', fallbackErr)
+      }
     }
   }
 
-  // Search Letters (including attachment filenames)
+  // Search Letters using FTS5 (including attachment filenames)
   if (types.includes('letter')) {
     try {
       let query = `
@@ -431,88 +733,149 @@ export function advancedSearch(filters: AdvancedSearchFilters): AdvancedSearchRe
         FROM letters l
         LEFT JOIN users u ON u.id = l.created_by
         LEFT JOIN topics t ON t.id = l.topic_id
-        LEFT JOIN letter_attachments la ON l.id = la.letter_id AND la.deleted_at IS NULL
         WHERE l.deleted_at IS NULL
       `
       const params: any[] = []
 
-      if (searchTerm) {
-        query += ' AND (l.subject LIKE ? OR l.summary LIKE ? OR l.reference_number LIKE ? OR l.original_filename LIKE ? OR la.filename LIKE ?)'
-        params.push(searchTerm, searchTerm, searchTerm, searchTerm, searchTerm)
+      if (ftsQuery) {
+        // Use FTS5 for text search, also check attachment filenames with LIKE
+        query += ` AND (l.rowid IN (SELECT rowid FROM letters_fts WHERE letters_fts MATCH ?)
+                  OR l.original_filename LIKE ?
+                  OR EXISTS (SELECT 1 FROM letter_attachments la WHERE la.letter_id = l.id AND la.deleted_at IS NULL AND la.filename LIKE ?))`
+        params.push(ftsQuery, likeSearchTerm, likeSearchTerm)
       }
-    if (filters.status && filters.status.length > 0) {
-      query += ` AND l.status IN (${filters.status.map(() => '?').join(',')})`
-      params.push(...filters.status)
-    }
-    if (filters.topicId) {
-      query += ' AND l.topic_id = ?'
-      params.push(filters.topicId)
-    }
-    if (filters.dateFrom) {
-      query += ' AND date(l.created_at) >= ?'
-      params.push(filters.dateFrom)
-    }
-    if (filters.dateTo) {
-      query += ' AND date(l.created_at) <= ?'
-      params.push(filters.dateTo)
-    }
-    if (filters.createdBy) {
-      query += ' AND l.created_by = ?'
-      params.push(filters.createdBy)
-    }
-    if (filters.tagIds && filters.tagIds.length > 0) {
-      query += ` AND EXISTS (
-        SELECT 1 FROM letter_tags lt
-        WHERE lt.letter_id = l.id AND lt.tag_id IN (${filters.tagIds.map(() => '?').join(',')})
-      )`
-      params.push(...filters.tagIds)
-    }
+      if (filters.status && filters.status.length > 0) {
+        query += ` AND l.status IN (${filters.status.map(() => '?').join(',')})`
+        params.push(...filters.status)
+      }
+      if (filters.topicId) {
+        query += ' AND l.topic_id = ?'
+        params.push(filters.topicId)
+      }
+      if (filters.dateFrom) {
+        query += ' AND date(l.created_at) >= ?'
+        params.push(filters.dateFrom)
+      }
+      if (filters.dateTo) {
+        query += ' AND date(l.created_at) <= ?'
+        params.push(filters.dateTo)
+      }
+      if (filters.createdBy) {
+        query += ' AND l.created_by = ?'
+        params.push(filters.createdBy)
+      }
+      if (filters.tagIds && filters.tagIds.length > 0) {
+        query += ` AND EXISTS (
+          SELECT 1 FROM letter_tags lt
+          WHERE lt.letter_id = l.id AND lt.tag_id IN (${filters.tagIds.map(() => '?').join(',')})
+        )`
+        params.push(...filters.tagIds)
+      }
 
-    query += ' ORDER BY l.created_at DESC'
+      query += ' ORDER BY l.created_at DESC'
 
       const letters = db.prepare(query).all(...params) as AdvancedSearchResult[]
       console.log('[Search] Letters found:', letters.length)
       results.push(...letters)
     } catch (err) {
       console.error('[Search] Error searching letters:', err)
+      // Fallback to LIKE
+      try {
+        let fallbackQuery = `
+          SELECT DISTINCT l.id, 'letter' as type, l.subject as title, l.summary as description, l.status,
+                 l.created_at as date, l.created_by, u.display_name as creator_name,
+                 l.topic_id, t.title as topic_title
+          FROM letters l
+          LEFT JOIN users u ON u.id = l.created_by
+          LEFT JOIN topics t ON t.id = l.topic_id
+          LEFT JOIN letter_attachments la ON l.id = la.letter_id AND la.deleted_at IS NULL
+          WHERE l.deleted_at IS NULL
+        `
+        const fallbackParams: any[] = []
+        if (likeSearchTerm) {
+          fallbackQuery += ' AND (l.subject LIKE ? OR l.summary LIKE ? OR l.reference_number LIKE ? OR l.original_filename LIKE ? OR la.filename LIKE ?)'
+          fallbackParams.push(likeSearchTerm, likeSearchTerm, likeSearchTerm, likeSearchTerm, likeSearchTerm)
+        }
+        if (filters.status && filters.status.length > 0) {
+          fallbackQuery += ` AND l.status IN (${filters.status.map(() => '?').join(',')})`
+          fallbackParams.push(...filters.status)
+        }
+        if (filters.topicId) {
+          fallbackQuery += ' AND l.topic_id = ?'
+          fallbackParams.push(filters.topicId)
+        }
+        if (filters.dateFrom) {
+          fallbackQuery += ' AND date(l.created_at) >= ?'
+          fallbackParams.push(filters.dateFrom)
+        }
+        if (filters.dateTo) {
+          fallbackQuery += ' AND date(l.created_at) <= ?'
+          fallbackParams.push(filters.dateTo)
+        }
+        if (filters.createdBy) {
+          fallbackQuery += ' AND l.created_by = ?'
+          fallbackParams.push(filters.createdBy)
+        }
+        if (filters.tagIds && filters.tagIds.length > 0) {
+          fallbackQuery += ` AND EXISTS (
+            SELECT 1 FROM letter_tags lt
+            WHERE lt.letter_id = l.id AND lt.tag_id IN (${filters.tagIds.map(() => '?').join(',')})
+          )`
+          fallbackParams.push(...filters.tagIds)
+        }
+        fallbackQuery += ' ORDER BY l.created_at DESC'
+        const letters = db.prepare(fallbackQuery).all(...fallbackParams) as AdvancedSearchResult[]
+        results.push(...letters)
+      } catch (fallbackErr) {
+        console.error('[Search] Fallback error searching letters:', fallbackErr)
+      }
     }
   }
 
-  // Search MOMs (including attachment filenames)
+  // Search MOMs using FTS5 (including attachment filenames)
   if (types.includes('mom')) {
     try {
       let query = `
-      SELECT DISTINCT m.id, 'mom' as type, m.title, m.subject as description, m.status,
-             m.created_at as date, m.created_by, u.display_name as creator_name
-      FROM moms m
-      LEFT JOIN users u ON u.id = m.created_by
-      LEFT JOIN mom_drafts md ON m.id = md.mom_internal_id AND md.deleted_at IS NULL
-      WHERE m.deleted_at IS NULL
-    `
-    const params: any[] = []
+        SELECT DISTINCT m.id, 'mom' as type, m.title, m.subject as description, m.status,
+               m.created_at as date, m.created_by, u.display_name as creator_name
+        FROM moms m
+        LEFT JOIN users u ON u.id = m.created_by
+        WHERE m.deleted_at IS NULL
+      `
+      const params: any[] = []
 
-    if (searchTerm) {
-      query += ' AND (m.title LIKE ? OR m.subject LIKE ? OR m.mom_id LIKE ? OR m.original_filename LIKE ? OR md.original_filename LIKE ?)'
-      params.push(searchTerm, searchTerm, searchTerm, searchTerm, searchTerm)
-    }
-    if (filters.status && filters.status.length > 0) {
-      query += ` AND m.status IN (${filters.status.map(() => '?').join(',')})`
-      params.push(...filters.status)
-    }
-    if (filters.dateFrom) {
-      query += ' AND date(m.meeting_date) >= ?'
-      params.push(filters.dateFrom)
-    }
-    if (filters.dateTo) {
-      query += ' AND date(m.meeting_date) <= ?'
-      params.push(filters.dateTo)
-    }
-    if (filters.createdBy) {
-      query += ' AND m.created_by = ?'
-      params.push(filters.createdBy)
-    }
+      if (ftsQuery) {
+        // Use FTS5 for text search, also check filenames with LIKE
+        query += ` AND (m.rowid IN (SELECT rowid FROM moms_fts WHERE moms_fts MATCH ?)
+                  OR m.original_filename LIKE ?
+                  OR EXISTS (SELECT 1 FROM mom_drafts md WHERE md.mom_internal_id = m.id AND md.deleted_at IS NULL AND md.original_filename LIKE ?))`
+        params.push(ftsQuery, likeSearchTerm, likeSearchTerm)
+      }
+      if (filters.status && filters.status.length > 0) {
+        query += ` AND m.status IN (${filters.status.map(() => '?').join(',')})`
+        params.push(...filters.status)
+      }
+      if (filters.dateFrom) {
+        query += ' AND date(m.meeting_date) >= ?'
+        params.push(filters.dateFrom)
+      }
+      if (filters.dateTo) {
+        query += ' AND date(m.meeting_date) <= ?'
+        params.push(filters.dateTo)
+      }
+      if (filters.createdBy) {
+        query += ' AND m.created_by = ?'
+        params.push(filters.createdBy)
+      }
+      if (filters.tagIds && filters.tagIds.length > 0) {
+        query += ` AND EXISTS (
+          SELECT 1 FROM mom_tags mt
+          WHERE mt.mom_id = m.id AND mt.tag_id IN (${filters.tagIds.map(() => '?').join(',')})
+        )`
+        params.push(...filters.tagIds)
+      }
 
-    query += ' ORDER BY m.meeting_date DESC'
+      query += ' ORDER BY m.meeting_date DESC'
 
       const moms = db.prepare(query).all(...params) as AdvancedSearchResult[]
       console.log('[Search] MOMs found:', moms.length)
@@ -522,7 +885,7 @@ export function advancedSearch(filters: AdvancedSearchFilters): AdvancedSearchRe
     }
   }
 
-  // Search Issues
+  // Search Issues (no FTS table, use LIKE)
   if (types.includes('issue')) {
     let query = `
       SELECT i.id, 'issue' as type, i.title, i.description, i.status,
@@ -535,9 +898,9 @@ export function advancedSearch(filters: AdvancedSearchFilters): AdvancedSearchRe
     `
     const params: any[] = []
 
-    if (searchTerm) {
+    if (likeSearchTerm) {
       query += ' AND (i.title LIKE ? OR i.description LIKE ?)'
-      params.push(searchTerm, searchTerm)
+      params.push(likeSearchTerm, likeSearchTerm)
     }
     if (filters.status && filters.status.length > 0) {
       query += ` AND i.status IN (${filters.status.map(() => '?').join(',')})`
@@ -578,7 +941,7 @@ export function advancedSearch(filters: AdvancedSearchFilters): AdvancedSearchRe
     results.push(...issues)
   }
 
-  // Search Secure References (including file names)
+  // Search Secure References (no FTS, use LIKE)
   if (types.includes('secure_reference')) {
     try {
       let query = `
@@ -592,9 +955,9 @@ export function advancedSearch(filters: AdvancedSearchFilters): AdvancedSearchRe
       `
       const params: any[] = []
 
-      if (searchTerm) {
+      if (likeSearchTerm) {
         query += ' AND (sr.name LIKE ? OR sr.description LIKE ? OR sr.category LIKE ? OR srf.filename LIKE ?)'
-        params.push(searchTerm, searchTerm, searchTerm, searchTerm)
+        params.push(likeSearchTerm, likeSearchTerm, likeSearchTerm, likeSearchTerm)
       }
       if (filters.dateFrom) {
         query += ' AND date(sr.created_at) >= ?'
@@ -629,11 +992,21 @@ export function advancedSearch(filters: AdvancedSearchFilters): AdvancedSearchRe
   const total = results.length
   const paginatedResults = results.slice(offset, offset + limit)
 
+  // Record search history if query was provided and user is authenticated
+  if (safeQuery && userId) {
+    try {
+      recordSearchHistory(userId, safeQuery, filters, total)
+    } catch (error) {
+      console.error('[Search] Error recording search history:', error)
+    }
+  }
+
   return {
     results: paginatedResults,
     total,
     offset,
-    limit
+    limit,
+    searchTerms
   }
 }
 

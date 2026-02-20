@@ -274,7 +274,7 @@ export function TopicList() {
   return (
     <div className="flex flex-col h-full">
       {/* Sticky Header Actions */}
-      <div className="sticky top-0 z-10 bg-archive-light px-6 pt-6 pb-4 border-b border-gray-200">
+      <div className="sticky top-0 z-10 bg-archive-light dark:bg-gray-900 px-6 pt-6 pb-4 border-b border-gray-200 dark:border-gray-700">
         <div className="flex flex-col sm:flex-row gap-4 justify-between">
           <div className="flex flex-1 gap-4">
             {/* Search */}
@@ -321,10 +321,10 @@ export function TopicList() {
             </select>
 
             {/* View Toggle */}
-            <div className="flex rounded-lg border border-gray-200 overflow-hidden">
+            <div className="flex rounded-lg border border-gray-200 dark:border-gray-600 overflow-hidden">
               <button
                 onClick={() => setViewMode('card')}
-                className={`p-2 ${viewMode === 'card' ? 'bg-primary-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+                className={`p-2 ${viewMode === 'card' ? 'bg-primary-600 text-white' : 'bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-600'}`}
                 title="Card View"
               >
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -333,7 +333,7 @@ export function TopicList() {
               </button>
               <button
                 onClick={() => setViewMode('table')}
-                className={`p-2 ${viewMode === 'table' ? 'bg-primary-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+                className={`p-2 ${viewMode === 'table' ? 'bg-primary-600 text-white' : 'bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-600'}`}
                 title="Table View"
               >
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -363,11 +363,11 @@ export function TopicList() {
       <div className="flex-1 overflow-auto px-6 py-6">
       {filteredTopics.length === 0 ? (
         <div className="text-center py-12">
-          <svg className="w-16 h-16 text-gray-300 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg className="w-16 h-16 text-gray-300 dark:text-gray-600 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
           </svg>
-          <h3 className="text-lg font-medium text-gray-900 mb-1">No topics found</h3>
-          <p className="text-gray-500">
+          <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-1">No topics found</h3>
+          <p className="text-gray-500 dark:text-gray-400">
             {searchQuery || filterStatus !== 'all'
               ? 'Try adjusting your filters'
               : 'Create your first topic to get started'}
@@ -425,20 +425,20 @@ export function TopicList() {
           )}
         </>
       ) : (
-        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+        <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
           <table className="w-full">
-            <thead className="bg-gray-50 border-b border-gray-200">
+            <thead className="bg-gray-50 dark:bg-gray-700 border-b border-gray-200 dark:border-gray-600">
               <tr>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Title</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Description</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Priority</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Records</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Updated</th>
-                <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Title</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Description</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Priority</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Status</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Records</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Updated</th>
+                <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-100">
+            <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
               {filteredTopics.map((topic) => {
                 const priorityColors: Record<string, string> = {
                   low: 'bg-gray-100 text-gray-600',
@@ -454,14 +454,14 @@ export function TopicList() {
                 return (
                   <tr
                     key={topic.id}
-                    className="hover:bg-gray-50 cursor-pointer"
+                    className="hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer"
                     onClick={() => navigate(`/topics/${topic.id}`)}
                   >
                     <td className="px-4 py-3">
-                      <span className="font-medium text-gray-900">{topic.title}</span>
+                      <span className="font-medium text-gray-900 dark:text-gray-100">{topic.title}</span>
                     </td>
                     <td className="px-4 py-3">
-                      <span className="text-sm text-gray-500 line-clamp-1 max-w-xs">
+                      <span className="text-sm text-gray-500 dark:text-gray-400 line-clamp-1 max-w-xs">
                         {topic.description || '-'}
                       </span>
                     </td>
@@ -476,10 +476,10 @@ export function TopicList() {
                       </span>
                     </td>
                     <td className="px-4 py-3">
-                      <span className="text-sm text-gray-600">{topic.record_count || 0}</span>
+                      <span className="text-sm text-gray-600 dark:text-gray-300">{topic.record_count || 0}</span>
                     </td>
                     <td className="px-4 py-3">
-                      <span className="text-sm text-gray-500">
+                      <span className="text-sm text-gray-500 dark:text-gray-400">
                         {new Date(topic.updated_at).toLocaleDateString()}
                       </span>
                     </td>

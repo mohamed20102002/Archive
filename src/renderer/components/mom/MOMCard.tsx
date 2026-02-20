@@ -1,7 +1,8 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { useSettings } from '../../context/SettingsContext'
 import { PinButton } from '../common/PinButton'
-import type { Mom } from '../../types'
+import { TagBadge } from '../tags/TagBadge'
+import type { Mom, Tag } from '../../types'
 
 interface MOMCardProps {
   mom: Mom
@@ -18,7 +19,16 @@ function isOverdue(deadline: string | null): boolean {
 
 export function MOMCard({ mom, onClick, highlighted, isPinned = false, onTogglePin }: MOMCardProps) {
   const [copied, setCopied] = useState(false)
+  const [tags, setTags] = useState<Tag[]>([])
   const { formatDate } = useSettings()
+
+  useEffect(() => {
+    window.electronAPI.tags.getMomTags(mom.id).then(t => {
+      setTags(t as Tag[])
+    }).catch(err => {
+      console.error('[MOMCard] Error fetching tags:', err)
+    })
+  }, [mom.id])
 
   const handleCopyId = async (e: React.MouseEvent) => {
     e.stopPropagation()
@@ -39,7 +49,7 @@ export function MOMCard({ mom, onClick, highlighted, isPinned = false, onToggleP
     <div
       data-mom-id={mom.id}
       onClick={onClick}
-      className={`bg-white rounded-lg border border-gray-200 border-l-4 ${borderColor} p-4 hover:shadow-md transition-all duration-700 cursor-pointer group ${highlighted ? 'ring-2 ring-primary-400 bg-primary-50/50' : ''} ${isPinned ? 'ring-2 ring-amber-200 bg-amber-50/30' : ''}`}
+      className={`bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 border-l-4 ${borderColor} p-4 hover:shadow-md dark:hover:shadow-gray-900/50 transition-all duration-700 cursor-pointer group flex flex-col h-full ${highlighted ? 'ring-2 ring-primary-400 bg-primary-50/50 dark:bg-primary-900/20' : ''} ${isPinned ? 'ring-2 ring-amber-400 dark:ring-amber-600 bg-amber-50/30 dark:bg-amber-900/20' : ''}`}
     >
       {/* Header */}
       <div className="flex items-start justify-between gap-3 mb-2">
@@ -51,7 +61,7 @@ export function MOMCard({ mom, onClick, highlighted, isPinned = false, onToggleP
               </svg>
             )}
             {mom.mom_id && (
-              <span className="inline-flex px-2 py-0.5 text-xs font-mono font-medium rounded bg-gray-100 text-gray-700 flex-shrink-0">
+              <span className="inline-flex px-2 py-0.5 text-xs font-mono font-medium rounded bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 flex-shrink-0">
                 {mom.mom_id}
               </span>
             )}
@@ -61,7 +71,7 @@ export function MOMCard({ mom, onClick, highlighted, isPinned = false, onToggleP
               {mom.status}
             </span>
           </div>
-          <h3 className="text-sm font-semibold text-gray-900 line-clamp-2">{mom.title}</h3>
+          <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100 line-clamp-2">{mom.title}</h3>
         </div>
         {onTogglePin && (
           <span className="opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
@@ -71,7 +81,7 @@ export function MOMCard({ mom, onClick, highlighted, isPinned = false, onToggleP
       </div>
 
       {/* Meeting date & location */}
-      <div className="flex flex-wrap items-center gap-2 mb-3 text-xs text-gray-500">
+      <div className="flex flex-wrap items-center gap-2 mb-3 text-xs text-gray-500 dark:text-gray-400">
         {mom.meeting_date && (
           <span className="inline-flex items-center gap-1">
             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -92,24 +102,36 @@ export function MOMCard({ mom, onClick, highlighted, isPinned = false, onToggleP
       </div>
 
       {/* Action summary */}
-      {actionTotal > 0 && (
-        <div className="flex items-center gap-2 mb-3">
-          <span className="text-xs text-gray-600">
-            {actionResolved}/{actionTotal} resolved
-          </span>
-          <div className="flex-1 h-1.5 bg-gray-200 rounded-full overflow-hidden">
-            <div
-              className="h-full bg-green-500 rounded-full transition-all"
-              style={{ width: `${actionTotal > 0 ? (actionResolved / actionTotal) * 100 : 0}%` }}
-            />
-          </div>
-          {actionOverdue > 0 && (
-            <span className="text-xs font-medium text-red-600">
-              {actionOverdue} overdue
+      <div className="flex-grow">
+        {actionTotal > 0 && (
+          <div className="flex items-center gap-2 mb-3">
+            <span className="text-xs text-gray-600 dark:text-gray-400">
+              {actionResolved}/{actionTotal} resolved
             </span>
-          )}
-        </div>
-      )}
+            <div className="flex-1 h-1.5 bg-gray-200 dark:bg-gray-600 rounded-full overflow-hidden">
+              <div
+                className="h-full bg-green-500 rounded-full transition-all"
+                style={{ width: `${actionTotal > 0 ? (actionResolved / actionTotal) * 100 : 0}%` }}
+              />
+            </div>
+            {actionOverdue > 0 && (
+              <span className="text-xs font-medium text-red-600">
+                {actionOverdue} overdue
+              </span>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Tags - always reserve space for consistent card height */}
+      <div className="min-h-[24px] flex flex-wrap items-center gap-2 mb-3">
+        {tags.slice(0, 5).map(tag => (
+          <TagBadge key={tag.id} tag={tag} size="sm" />
+        ))}
+        {tags.length > 5 && (
+          <span className="text-xs text-gray-400">+{tags.length - 5}</span>
+        )}
+      </div>
 
       {/* Footer */}
       <div className="flex items-center justify-between text-xs text-gray-400">
@@ -127,7 +149,7 @@ export function MOMCard({ mom, onClick, highlighted, isPinned = false, onToggleP
             <span className="text-[11px] font-mono text-gray-400">{mom.id.slice(0, 8)}</span>
             <button
               onClick={handleCopyId}
-              className="relative p-0.5 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors"
+              className="relative p-0.5 rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors"
               title="Copy MOM ID"
             >
               {copied ? (

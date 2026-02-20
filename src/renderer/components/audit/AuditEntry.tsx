@@ -85,28 +85,28 @@ const actionIcons: Record<string, React.ReactNode> = {
 }
 
 const actionColors: Record<string, string> = {
-  USER_LOGIN: 'bg-green-100 text-green-700',
-  USER_LOGOUT: 'bg-gray-100 text-gray-700',
-  USER_CREATE: 'bg-blue-100 text-blue-700',
-  USER_UPDATE: 'bg-blue-100 text-blue-700',
-  USER_LOGIN_FAILED: 'bg-red-100 text-red-700',
-  TOPIC_CREATE: 'bg-purple-100 text-purple-700',
-  TOPIC_UPDATE: 'bg-purple-100 text-purple-700',
-  TOPIC_DELETE: 'bg-red-100 text-red-700',
-  SUBCATEGORY_CREATE: 'bg-violet-100 text-violet-700',
-  SUBCATEGORY_UPDATE: 'bg-violet-100 text-violet-700',
-  SUBCATEGORY_DELETE: 'bg-red-100 text-red-700',
-  RECORD_CREATE: 'bg-teal-100 text-teal-700',
-  RECORD_UPDATE: 'bg-teal-100 text-teal-700',
-  RECORD_DELETE: 'bg-red-100 text-red-700',
-  EMAIL_ARCHIVE: 'bg-indigo-100 text-indigo-700',
-  EMAIL_DELETE: 'bg-red-100 text-red-700',
-  REMINDER_CREATE: 'bg-orange-100 text-orange-700',
-  REMINDER_UPDATE: 'bg-orange-100 text-orange-700',
-  REMINDER_COMPLETE: 'bg-green-100 text-green-700',
-  REMINDER_DELETE: 'bg-red-100 text-red-700',
-  SYSTEM_STARTUP: 'bg-green-100 text-green-700',
-  SYSTEM_SHUTDOWN: 'bg-gray-100 text-gray-700'
+  USER_LOGIN: 'bg-green-100 dark:bg-green-900/50 text-green-700 dark:text-green-300',
+  USER_LOGOUT: 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300',
+  USER_CREATE: 'bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300',
+  USER_UPDATE: 'bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300',
+  USER_LOGIN_FAILED: 'bg-red-100 dark:bg-red-900/50 text-red-700 dark:text-red-300',
+  TOPIC_CREATE: 'bg-purple-100 dark:bg-purple-900/50 text-purple-700 dark:text-purple-300',
+  TOPIC_UPDATE: 'bg-purple-100 dark:bg-purple-900/50 text-purple-700 dark:text-purple-300',
+  TOPIC_DELETE: 'bg-red-100 dark:bg-red-900/50 text-red-700 dark:text-red-300',
+  SUBCATEGORY_CREATE: 'bg-violet-100 dark:bg-violet-900/50 text-violet-700 dark:text-violet-300',
+  SUBCATEGORY_UPDATE: 'bg-violet-100 dark:bg-violet-900/50 text-violet-700 dark:text-violet-300',
+  SUBCATEGORY_DELETE: 'bg-red-100 dark:bg-red-900/50 text-red-700 dark:text-red-300',
+  RECORD_CREATE: 'bg-teal-100 dark:bg-teal-900/50 text-teal-700 dark:text-teal-300',
+  RECORD_UPDATE: 'bg-teal-100 dark:bg-teal-900/50 text-teal-700 dark:text-teal-300',
+  RECORD_DELETE: 'bg-red-100 dark:bg-red-900/50 text-red-700 dark:text-red-300',
+  EMAIL_ARCHIVE: 'bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300',
+  EMAIL_DELETE: 'bg-red-100 dark:bg-red-900/50 text-red-700 dark:text-red-300',
+  REMINDER_CREATE: 'bg-orange-100 dark:bg-orange-900/50 text-orange-700 dark:text-orange-300',
+  REMINDER_UPDATE: 'bg-orange-100 dark:bg-orange-900/50 text-orange-700 dark:text-orange-300',
+  REMINDER_COMPLETE: 'bg-green-100 dark:bg-green-900/50 text-green-700 dark:text-green-300',
+  REMINDER_DELETE: 'bg-red-100 dark:bg-red-900/50 text-red-700 dark:text-red-300',
+  SYSTEM_STARTUP: 'bg-green-100 dark:bg-green-900/50 text-green-700 dark:text-green-300',
+  SYSTEM_SHUTDOWN: 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
 }
 
 function formatAction(action: string): string {
@@ -236,10 +236,10 @@ export function AuditEntry({ entry }: AuditEntryProps) {
   const summary = formatDetailsSummary(entry.action, details)
 
   return (
-    <div className="p-4 hover:bg-gray-50 transition-colors">
+    <div className="p-4 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
       <div className="flex items-start gap-4">
         {/* Icon */}
-        <div className={`flex-shrink-0 w-8 h-8 rounded-lg flex items-center justify-center ${actionColors[entry.action] || 'bg-gray-100 text-gray-700'}`}>
+        <div className={`flex-shrink-0 w-8 h-8 rounded-lg flex items-center justify-center ${actionColors[entry.action] || 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300'}`}>
           {actionIcons[entry.action] || (
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -250,11 +250,11 @@ export function AuditEntry({ entry }: AuditEntryProps) {
         {/* Content */}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
-            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${actionColors[entry.action] || 'bg-gray-100 text-gray-700'}`}>
+            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${actionColors[entry.action] || 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300'}`}>
               {formatAction(entry.action)}
             </span>
             {entry.entity_type && (
-              <span className="text-xs text-gray-400">
+              <span className="text-xs text-gray-400 dark:text-gray-500">
                 {entry.entity_type}
               </span>
             )}
@@ -262,19 +262,19 @@ export function AuditEntry({ entry }: AuditEntryProps) {
 
           <div className="mt-1 flex items-center gap-2 text-sm">
             {entry.username ? (
-              <span className="text-gray-900 font-medium">@{entry.username}</span>
+              <span className="text-gray-900 dark:text-gray-100 font-medium">@{entry.username}</span>
             ) : (
-              <span className="text-gray-500">System</span>
+              <span className="text-gray-500 dark:text-gray-400">System</span>
             )}
-            <span className="text-gray-400">-</span>
-            <span className="text-gray-500">
+            <span className="text-gray-400 dark:text-gray-500">-</span>
+            <span className="text-gray-500 dark:text-gray-400">
               {formatDate(entry.timestamp, 'withTime')}
             </span>
           </div>
 
           {/* Human-readable summary */}
           {summary && (
-            <p className="mt-2 text-sm text-gray-700">
+            <p className="mt-2 text-sm text-gray-700 dark:text-gray-300">
               {summary}
             </p>
           )}
@@ -283,7 +283,7 @@ export function AuditEntry({ entry }: AuditEntryProps) {
           {details && (
             <button
               onClick={() => setIsExpanded(!isExpanded)}
-              className="mt-2 text-xs text-primary-600 hover:text-primary-700 flex items-center gap-1"
+              className="mt-2 text-xs text-primary-600 dark:text-primary-400 hover:text-primary-700 dark:hover:text-primary-300 flex items-center gap-1"
             >
               {isExpanded ? 'Hide raw details' : 'Show raw details'}
               <svg
@@ -299,8 +299,8 @@ export function AuditEntry({ entry }: AuditEntryProps) {
 
           {/* Expanded Details */}
           {isExpanded && details && (
-            <div className="mt-3 p-3 bg-gray-50 rounded-lg">
-              <pre className="text-xs text-gray-600 whitespace-pre-wrap overflow-x-auto">
+            <div className="mt-3 p-3 bg-gray-50 dark:bg-gray-900 rounded-lg">
+              <pre className="text-xs text-gray-600 dark:text-gray-400 whitespace-pre-wrap overflow-x-auto">
                 {JSON.stringify(details, null, 2)}
               </pre>
             </div>
@@ -309,7 +309,7 @@ export function AuditEntry({ entry }: AuditEntryProps) {
 
         {/* Checksum indicator */}
         <div className="flex-shrink-0" title={`Checksum: ${entry.checksum.substring(0, 16)}...`}>
-          <svg className="w-4 h-4 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg className="w-4 h-4 text-gray-300 dark:text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
           </svg>
         </div>

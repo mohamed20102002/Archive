@@ -1674,6 +1674,318 @@ const migrations: Migration[] = [
         CREATE INDEX IF NOT EXISTS idx_pins_type_user ON pins(entity_type, user_id);
       `)
     }
+  },
+  // Migration 41: Security enhancements - 2FA, email for users, session timeout settings
+  {
+    version: 41,
+    name: 'security_enhancements',
+    up: (db) => {
+      // Add two_factor_enabled column to users
+      db.exec(`
+        ALTER TABLE users ADD COLUMN two_factor_enabled INTEGER NOT NULL DEFAULT 0
+      `)
+
+      // Add email column to users for 2FA
+      db.exec(`
+        ALTER TABLE users ADD COLUMN email TEXT DEFAULT NULL
+      `)
+
+      // Add session timeout setting if not exists
+      const existing = db.prepare(`
+        SELECT value FROM app_settings WHERE key = 'session_timeout_minutes'
+      `).get()
+
+      if (!existing) {
+        db.prepare(`
+          INSERT INTO app_settings (key, value) VALUES (?, ?)
+        `).run('session_timeout_minutes', '30')
+      }
+
+      // Add composite indexes for common query patterns
+      db.exec(`
+        CREATE INDEX IF NOT EXISTS idx_records_topic_created ON records(topic_id, created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_records_topic_date ON records(topic_id, record_date DESC);
+        CREATE INDEX IF NOT EXISTS idx_letters_topic_date ON letters(topic_id, letter_date DESC);
+        CREATE INDEX IF NOT EXISTS idx_issues_status_importance ON issues(status, importance);
+        CREATE INDEX IF NOT EXISTS idx_moms_status_date ON moms(status, meeting_date DESC);
+        CREATE INDEX IF NOT EXISTS idx_topics_status_updated ON topics(status, updated_at DESC) WHERE deleted_at IS NULL;
+      `)
+    }
+  },
+  // Migration 42: Sync and notification tables for collaboration features
+  {
+    version: 42,
+    name: 'sync_and_notifications',
+    up: (db) => {
+      // Entity version tracking for conflict detection
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS entity_versions (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          entity_type TEXT NOT NULL,
+          entity_id TEXT NOT NULL,
+          version INTEGER NOT NULL DEFAULT 1,
+          updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+          updated_by TEXT,
+          checksum TEXT NOT NULL,
+          UNIQUE(entity_type, entity_id)
+        )
+      `)
+
+      db.exec(`
+        CREATE INDEX IF NOT EXISTS idx_entity_versions_lookup
+        ON entity_versions(entity_type, entity_id)
+      `)
+
+      // Notifications table
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS notifications (
+          id TEXT PRIMARY KEY,
+          user_id TEXT NOT NULL,
+          type TEXT NOT NULL,
+          title TEXT NOT NULL,
+          message TEXT NOT NULL,
+          entity_type TEXT,
+          entity_id TEXT,
+          actor_id TEXT,
+          actor_name TEXT,
+          is_read INTEGER NOT NULL DEFAULT 0,
+          email_sent INTEGER NOT NULL DEFAULT 0,
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          read_at TEXT,
+          FOREIGN KEY (user_id) REFERENCES users(id)
+        )
+      `)
+
+      db.exec(`
+        CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id, is_read);
+        CREATE INDEX IF NOT EXISTS idx_notifications_created ON notifications(created_at);
+      `)
+
+      // User notification preferences
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS user_notification_preferences (
+          user_id TEXT PRIMARY KEY,
+          email_mentions INTEGER NOT NULL DEFAULT 1,
+          email_assignments INTEGER NOT NULL DEFAULT 1,
+          email_comments INTEGER NOT NULL DEFAULT 0,
+          email_status_changes INTEGER NOT NULL DEFAULT 0,
+          email_reminders INTEGER NOT NULL DEFAULT 1,
+          FOREIGN KEY (user_id) REFERENCES users(id)
+        )
+      `)
+    }
+  },
+  // Migration 43: Document management - versioning, OCR, signatures
+  {
+    version: 43,
+    name: 'document_management',
+    up: (db) => {
+      // Document versions table
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS document_versions (
+          id TEXT PRIMARY KEY,
+          document_type TEXT NOT NULL,
+          document_id TEXT NOT NULL,
+          version_number INTEGER NOT NULL DEFAULT 1,
+          file_path TEXT NOT NULL,
+          file_name TEXT NOT NULL,
+          file_size INTEGER NOT NULL DEFAULT 0,
+          file_hash TEXT NOT NULL,
+          mime_type TEXT NOT NULL,
+          created_by TEXT,
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          change_summary TEXT,
+          is_current INTEGER NOT NULL DEFAULT 0
+        )
+      `)
+
+      db.exec(`
+        CREATE INDEX IF NOT EXISTS idx_document_versions_lookup
+        ON document_versions(document_type, document_id);
+        CREATE INDEX IF NOT EXISTS idx_document_versions_current
+        ON document_versions(document_type, document_id, is_current);
+      `)
+
+      // OCR extracted text table
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS ocr_extracted_text (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          attachment_id TEXT NOT NULL,
+          attachment_type TEXT NOT NULL,
+          extracted_text TEXT NOT NULL,
+          confidence REAL NOT NULL DEFAULT 0,
+          language TEXT NOT NULL DEFAULT 'eng',
+          extracted_at TEXT NOT NULL DEFAULT (datetime('now')),
+          UNIQUE(attachment_id)
+        )
+      `)
+
+      db.exec(`
+        CREATE INDEX IF NOT EXISTS idx_ocr_attachment
+        ON ocr_extracted_text(attachment_id);
+      `)
+
+      // FTS for OCR text search
+      db.exec(`
+        CREATE VIRTUAL TABLE IF NOT EXISTS ocr_text_fts USING fts5(
+          attachment_id,
+          extracted_text,
+          content='ocr_extracted_text',
+          content_rowid='id'
+        )
+      `)
+
+      // Signatures table
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS signatures (
+          id TEXT PRIMARY KEY,
+          user_id TEXT NOT NULL,
+          name TEXT NOT NULL,
+          type TEXT NOT NULL DEFAULT 'signature',
+          image_path TEXT NOT NULL,
+          width INTEGER NOT NULL DEFAULT 0,
+          height INTEGER NOT NULL DEFAULT 0,
+          is_default INTEGER NOT NULL DEFAULT 0,
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+          FOREIGN KEY (user_id) REFERENCES users(id)
+        )
+      `)
+
+      db.exec(`
+        CREATE INDEX IF NOT EXISTS idx_signatures_user
+        ON signatures(user_id, type);
+      `)
+
+      // Signature placements table
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS signature_placements (
+          id TEXT PRIMARY KEY,
+          document_type TEXT NOT NULL,
+          document_id TEXT NOT NULL,
+          signature_id TEXT NOT NULL,
+          page_number INTEGER NOT NULL DEFAULT 1,
+          x_position REAL NOT NULL DEFAULT 0,
+          y_position REAL NOT NULL DEFAULT 0,
+          scale REAL NOT NULL DEFAULT 1,
+          rotation REAL NOT NULL DEFAULT 0,
+          placed_by TEXT NOT NULL,
+          placed_at TEXT NOT NULL DEFAULT (datetime('now')),
+          FOREIGN KEY (signature_id) REFERENCES signatures(id)
+        )
+      `)
+
+      db.exec(`
+        CREATE INDEX IF NOT EXISTS idx_signature_placements_doc
+        ON signature_placements(document_type, document_id);
+      `)
+    }
+  },
+  {
+    version: 44,
+    name: 'saved_views',
+    up: (db) => {
+      // Saved views table for customizable list views
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS saved_views (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          name TEXT NOT NULL,
+          entity_type TEXT NOT NULL,
+          config TEXT NOT NULL,
+          is_default INTEGER NOT NULL DEFAULT 0,
+          is_shared INTEGER NOT NULL DEFAULT 0,
+          created_by INTEGER NOT NULL,
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+          FOREIGN KEY (created_by) REFERENCES users(id)
+        )
+      `)
+
+      db.exec(`
+        CREATE INDEX IF NOT EXISTS idx_saved_views_entity
+        ON saved_views(entity_type, created_by);
+        CREATE INDEX IF NOT EXISTS idx_saved_views_default
+        ON saved_views(entity_type, is_default);
+        CREATE INDEX IF NOT EXISTS idx_saved_views_shared
+        ON saved_views(entity_type, is_shared);
+      `)
+    }
+  },
+  {
+    version: 45,
+    name: 'mom_tags',
+    up: (db) => {
+      // Create mom_tags junction table for MOM tagging
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS mom_tags (
+          mom_id TEXT NOT NULL,
+          tag_id TEXT NOT NULL,
+          created_by TEXT NOT NULL,
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          PRIMARY KEY (mom_id, tag_id),
+          FOREIGN KEY (mom_id) REFERENCES moms(id) ON DELETE CASCADE,
+          FOREIGN KEY (tag_id) REFERENCES tags(id) ON DELETE CASCADE,
+          FOREIGN KEY (created_by) REFERENCES users(id)
+        )
+      `)
+
+      // Create indexes for efficient queries
+      db.exec(`
+        CREATE INDEX IF NOT EXISTS idx_mom_tags_mom ON mom_tags(mom_id);
+        CREATE INDEX IF NOT EXISTS idx_mom_tags_tag ON mom_tags(tag_id);
+      `)
+    }
+  },
+  {
+    version: 46,
+    name: 'add_created_by_to_tags',
+    up: (db) => {
+      // Add created_by column to tags table
+      const tableInfo = db.prepare("PRAGMA table_info(tags)").all() as { name: string }[]
+      const hasCreatedBy = tableInfo.some(col => col.name === 'created_by')
+      const hasDescription = tableInfo.some(col => col.name === 'description')
+
+      if (!hasCreatedBy) {
+        db.exec(`ALTER TABLE tags ADD COLUMN created_by TEXT`)
+      }
+      if (!hasDescription) {
+        db.exec(`ALTER TABLE tags ADD COLUMN description TEXT`)
+      }
+    }
+  },
+  {
+    version: 47,
+    name: 'add_mentions',
+    up: (db) => {
+      // Create mentions table for user mentions system
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS mentions (
+          id TEXT PRIMARY KEY,
+          entity_type TEXT NOT NULL CHECK(entity_type IN ('record', 'mom', 'letter', 'issue')),
+          entity_id TEXT NOT NULL,
+          mentioned_user_id TEXT NOT NULL,
+          created_by TEXT NOT NULL,
+          note TEXT,
+          status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'acknowledged', 'archived')),
+          acknowledged_at TEXT,
+          archived_at TEXT,
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+          FOREIGN KEY (mentioned_user_id) REFERENCES users(id),
+          FOREIGN KEY (created_by) REFERENCES users(id)
+        )
+      `)
+
+      // Create indexes for efficient queries
+      db.exec(`
+        CREATE INDEX IF NOT EXISTS idx_mentions_mentioned_user ON mentions(mentioned_user_id, status);
+        CREATE INDEX IF NOT EXISTS idx_mentions_entity ON mentions(entity_type, entity_id);
+        CREATE INDEX IF NOT EXISTS idx_mentions_created_by ON mentions(created_by);
+        CREATE INDEX IF NOT EXISTS idx_mentions_archived_at ON mentions(archived_at);
+        CREATE INDEX IF NOT EXISTS idx_mentions_status ON mentions(status);
+        CREATE INDEX IF NOT EXISTS idx_mentions_created_at ON mentions(created_at);
+      `)
+    }
   }
 ]
 

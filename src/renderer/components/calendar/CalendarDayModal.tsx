@@ -1,4 +1,5 @@
-import React from 'react'
+import React, { useEffect, useMemo } from 'react'
+import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
 import { format } from 'date-fns'
 
@@ -32,6 +33,26 @@ const typeLabels: Record<string, string> = {
 export function CalendarDayModal({ date, events, onClose }: CalendarDayModalProps) {
   const navigate = useNavigate()
 
+  // Create a stable container element for this modal instance
+  const portalContainer = useMemo(() => {
+    const container = document.createElement('div')
+    container.className = 'calendar-day-modal-portal-container'
+    container.style.cssText = 'position: absolute; inset: 0; z-index: 50; pointer-events: none;'
+    return container
+  }, [])
+
+  // Mount/unmount the container
+  useEffect(() => {
+    const parent = document.getElementById('modal-root') || document.body
+    parent.appendChild(portalContainer)
+
+    return () => {
+      if (portalContainer.parentNode === parent) {
+        parent.removeChild(portalContainer)
+      }
+    }
+  }, [portalContainer])
+
   const handleEventClick = (event: CalendarEvent) => {
     // Build highlight state to pass to destination
     // For actions, we highlight the parent MOM
@@ -62,8 +83,8 @@ export function CalendarDayModal({ date, events, onClose }: CalendarDayModalProp
     onClose()
   }
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
+  const modalContent = (
+    <div className="absolute inset-0 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm pointer-events-auto">
       <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-md w-full max-h-[80vh] flex flex-col">
         {/* Header */}
         <div className="p-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
@@ -142,4 +163,6 @@ export function CalendarDayModal({ date, events, onClose }: CalendarDayModalProp
       </div>
     </div>
   )
+
+  return createPortal(modalContent, portalContainer)
 }

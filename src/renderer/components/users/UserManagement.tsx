@@ -322,7 +322,7 @@ export function UserManagement({ isOpen, onClose }: UserManagementProps) {
       <div className="space-y-4">
         {/* Header */}
         <div className="flex items-center justify-between">
-          <p className="text-sm text-gray-600">
+          <p className="text-sm text-gray-600 dark:text-gray-400">
             Manage user accounts and permissions
           </p>
           <button
@@ -342,7 +342,7 @@ export function UserManagement({ isOpen, onClose }: UserManagementProps) {
             <div className="animate-spin w-6 h-6 border-2 border-primary-600 border-t-transparent rounded-full" />
           </div>
         ) : activeUsers.length === 0 && deletedUsers.length === 0 ? (
-          <div className="text-center py-8 text-gray-500">
+          <div className="text-center py-8 text-gray-500 dark:text-gray-400">
             No users found
           </div>
         ) : (
@@ -581,7 +581,7 @@ export function UserManagement({ isOpen, onClose }: UserManagementProps) {
         >
           <div className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                 Username
               </label>
               <input
@@ -594,7 +594,7 @@ export function UserManagement({ isOpen, onClose }: UserManagementProps) {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                 Display Name
               </label>
               <input
@@ -607,7 +607,7 @@ export function UserManagement({ isOpen, onClose }: UserManagementProps) {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                 Employee Number
               </label>
               <input
@@ -620,7 +620,7 @@ export function UserManagement({ isOpen, onClose }: UserManagementProps) {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                 Role
               </label>
               <select
@@ -634,7 +634,7 @@ export function UserManagement({ isOpen, onClose }: UserManagementProps) {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                 Password
               </label>
               <div className="relative">
@@ -648,7 +648,7 @@ export function UserManagement({ isOpen, onClose }: UserManagementProps) {
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
                 >
                   {showPassword ? (
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -665,7 +665,7 @@ export function UserManagement({ isOpen, onClose }: UserManagementProps) {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                 Confirm Password
               </label>
               <div className="relative">
@@ -679,7 +679,7 @@ export function UserManagement({ isOpen, onClose }: UserManagementProps) {
                 <button
                   type="button"
                   onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
                 >
                   {showConfirmPassword ? (
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -695,7 +695,7 @@ export function UserManagement({ isOpen, onClose }: UserManagementProps) {
               </div>
             </div>
 
-            <div className="flex justify-end gap-3 pt-4 border-t border-gray-100">
+            <div className="flex justify-end gap-3 pt-4 border-t border-gray-100 dark:border-gray-700">
               <button
                 onClick={() => {
                   setShowAddModal(false)
@@ -734,12 +734,12 @@ export function UserManagement({ isOpen, onClose }: UserManagementProps) {
           size="sm"
         >
           <div className="space-y-4">
-            <p className="text-sm text-gray-600">
+            <p className="text-sm text-gray-600 dark:text-gray-400">
               Enter a new password for this user. The old password cannot be retrieved as it is securely hashed.
             </p>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                 New Password
               </label>
               <div className="relative">
@@ -753,7 +753,7 @@ export function UserManagement({ isOpen, onClose }: UserManagementProps) {
                 <button
                   type="button"
                   onClick={() => setShowNewPassword(!showNewPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
                 >
                   {showNewPassword ? (
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -770,7 +770,7 @@ export function UserManagement({ isOpen, onClose }: UserManagementProps) {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                 Confirm New Password
               </label>
               <div className="relative">
@@ -784,7 +784,7 @@ export function UserManagement({ isOpen, onClose }: UserManagementProps) {
                 <button
                   type="button"
                   onClick={() => setShowConfirmNewPassword(!showConfirmNewPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
                 >
                   {showConfirmNewPassword ? (
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -800,7 +800,7 @@ export function UserManagement({ isOpen, onClose }: UserManagementProps) {
               </div>
             </div>
 
-            <div className="flex justify-end gap-3 pt-4 border-t border-gray-100">
+            <div className="flex justify-end gap-3 pt-4 border-t border-gray-100 dark:border-gray-700">
               <button
                 onClick={() => {
                   setShowResetPassword(null)
@@ -835,7 +835,7 @@ export function UserManagement({ isOpen, onClose }: UserManagementProps) {
         >
           <div className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                 Username
               </label>
               <input
@@ -848,7 +848,7 @@ export function UserManagement({ isOpen, onClose }: UserManagementProps) {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                 Display Name
               </label>
               <input
@@ -861,7 +861,7 @@ export function UserManagement({ isOpen, onClose }: UserManagementProps) {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                 Arabic Name (for reports)
               </label>
               <input
@@ -875,7 +875,7 @@ export function UserManagement({ isOpen, onClose }: UserManagementProps) {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                 Role
               </label>
               <select
@@ -888,12 +888,12 @@ export function UserManagement({ isOpen, onClose }: UserManagementProps) {
                 <option value="admin">Admin</option>
               </select>
               {showEditUser.id === currentUser?.id && (
-                <p className="text-xs text-gray-500 mt-1">You cannot change your own role</p>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">You cannot change your own role</p>
               )}
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                 Employee Number
               </label>
               <input
@@ -907,7 +907,7 @@ export function UserManagement({ isOpen, onClose }: UserManagementProps) {
 
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                   Shift
                 </label>
                 <select
@@ -923,7 +923,7 @@ export function UserManagement({ isOpen, onClose }: UserManagementProps) {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                   Sort Order
                 </label>
                 <input
@@ -934,26 +934,26 @@ export function UserManagement({ isOpen, onClose }: UserManagementProps) {
                   min="1"
                   placeholder="100"
                 />
-                <p className="text-xs text-gray-500 mt-1">Lower = higher in list (unique per user)</p>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Lower = higher in list (unique per user)</p>
               </div>
             </div>
 
-            <div className="bg-gray-50 rounded-lg p-3 space-y-2">
+            <div className="bg-gray-50 dark:bg-gray-900 rounded-lg p-3 space-y-2">
               <div className="flex items-center justify-between text-sm">
-                <span className="text-gray-500">Status:</span>
-                <span className={`font-medium ${showEditUser.is_active ? 'text-green-600' : 'text-red-600'}`}>
+                <span className="text-gray-500 dark:text-gray-400">Status:</span>
+                <span className={`font-medium ${showEditUser.is_active ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
                   {showEditUser.is_active ? 'Active' : 'Inactive'}
                 </span>
               </div>
               <div className="flex items-center justify-between text-sm">
-                <span className="text-gray-500">Created:</span>
-                <span className="text-gray-900">
+                <span className="text-gray-500 dark:text-gray-400">Created:</span>
+                <span className="text-gray-900 dark:text-gray-100">
                   {new Date(showEditUser.created_at).toLocaleDateString()}
                 </span>
               </div>
               <div className="flex items-center justify-between text-sm">
-                <span className="text-gray-500">Last Login:</span>
-                <span className="text-gray-900">
+                <span className="text-gray-500 dark:text-gray-400">Last Login:</span>
+                <span className="text-gray-900 dark:text-gray-100">
                   {showEditUser.last_login_at
                     ? new Date(showEditUser.last_login_at).toLocaleString()
                     : 'Never'
@@ -962,7 +962,7 @@ export function UserManagement({ isOpen, onClose }: UserManagementProps) {
               </div>
             </div>
 
-            <div className="flex justify-end gap-3 pt-4 border-t border-gray-100">
+            <div className="flex justify-end gap-3 pt-4 border-t border-gray-100 dark:border-gray-700">
               <button
                 onClick={() => setShowEditUser(null)}
                 className="btn-secondary"
@@ -990,28 +990,28 @@ export function UserManagement({ isOpen, onClose }: UserManagementProps) {
           size="sm"
         >
           <div className="space-y-4">
-            <div className="flex items-center gap-3 p-3 bg-red-50 rounded-lg">
+            <div className="flex items-center gap-3 p-3 bg-red-50 dark:bg-red-900/20 rounded-lg">
               <div className="flex-shrink-0">
-                <svg className="w-6 h-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-6 h-6 text-red-600 dark:text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
                 </svg>
               </div>
               <div>
-                <p className="text-sm font-medium text-red-800">
+                <p className="text-sm font-medium text-red-800 dark:text-red-300">
                   Are you sure you want to delete this user?
                 </p>
-                <p className="text-sm text-red-600 mt-1">
+                <p className="text-sm text-red-600 dark:text-red-400 mt-1">
                   User: <strong>{showDeleteConfirm.display_name}</strong> (@{showDeleteConfirm.username})
                 </p>
               </div>
             </div>
 
-            <p className="text-sm text-gray-600">
+            <p className="text-sm text-gray-600 dark:text-gray-400">
               This user will be marked as deleted and will no longer be able to log in.
               Their audit history will be preserved for record-keeping purposes.
             </p>
 
-            <div className="flex justify-end gap-3 pt-4 border-t border-gray-100">
+            <div className="flex justify-end gap-3 pt-4 border-t border-gray-100 dark:border-gray-700">
               <button
                 onClick={() => setShowDeleteConfirm(null)}
                 className="btn-secondary"

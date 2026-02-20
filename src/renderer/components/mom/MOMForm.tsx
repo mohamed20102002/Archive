@@ -2,7 +2,15 @@ import React, { useState, useEffect, useCallback } from 'react'
 import { useAuth } from '../../context/AuthContext'
 import { Modal } from '../common/Modal'
 import { LocationManager } from './LocationManager'
-import type { Mom, MomLocation, Topic, CreateMomData, UpdateMomData } from '../../types'
+import { TagSelector } from '../tags/TagSelector'
+import { MentionUserSelector } from '../mentions'
+import type { Mom, MomLocation, Topic, CreateMomData, UpdateMomData, MentionWithNote } from '../../types'
+
+interface Tag {
+  id: string
+  name: string
+  color: string
+}
 
 interface MOMFormProps {
   mom?: Mom | null
@@ -32,6 +40,8 @@ export function MOMForm({ mom, onSubmit, onCancel }: MOMFormProps) {
   const [showLocationManager, setShowLocationManager] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [momIdError, setMomIdError] = useState('')
+  const [selectedTags, setSelectedTags] = useState<Tag[]>([])
+  const [selectedMentions, setSelectedMentions] = useState<MentionWithNote[]>([])
 
   // Load locations and topics
   const loadData = useCallback(async () => {
@@ -44,10 +54,14 @@ export function MOMForm({ mom, onSubmit, onCancel }: MOMFormProps) {
       const topicsData = (topicsResult as { data: Topic[] }).data || topicsResult
       setTopics((topicsData as Topic[]).filter(t => !t.deleted_at))
 
-      // For edit mode, load linked topics
+      // For edit mode, load linked topics and tags
       if (mom) {
-        const linkedTopics = await window.electronAPI.moms.getLinkedTopics(mom.id)
+        const [linkedTopics, momTags] = await Promise.all([
+          window.electronAPI.moms.getLinkedTopics(mom.id),
+          window.electronAPI.tags.getMomTags(mom.id)
+        ])
         setSelectedTopicIds((linkedTopics as { topic_id: string }[]).map(t => t.topic_id))
+        setSelectedTags(momTags as Tag[])
       }
     } catch (err) {
       console.error('Error loading form data:', err)
@@ -104,12 +118,14 @@ export function MOMForm({ mom, onSubmit, onCancel }: MOMFormProps) {
 
     setSubmitting(true)
     try {
+      const tagIds = selectedTags.map(t => t.id)
       if (isEdit) {
         onSubmit({
           title: title.trim(),
           subject: subject.trim() || undefined,
           meeting_date: meetingDate || undefined,
-          location_id: locationId || undefined
+          location_id: locationId || undefined,
+          tag_ids: tagIds.length > 0 ? tagIds : undefined
         } as UpdateMomData)
       } else {
         onSubmit({
@@ -119,7 +135,9 @@ export function MOMForm({ mom, onSubmit, onCancel }: MOMFormProps) {
           meeting_date: meetingDate || undefined,
           location_id: locationId || undefined,
           topic_ids: selectedTopicIds,
-          record_ids: selectedRecordIds.length > 0 ? selectedRecordIds : undefined
+          record_ids: selectedRecordIds.length > 0 ? selectedRecordIds : undefined,
+          tag_ids: tagIds.length > 0 ? tagIds : undefined,
+          mentions: selectedMentions.length > 0 ? selectedMentions : undefined
         } as CreateMomData)
       }
     } finally {
@@ -147,13 +165,13 @@ export function MOMForm({ mom, onSubmit, onCancel }: MOMFormProps) {
         {/* MOM ID - only on create */}
         {!isEdit && (
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">MOM ID (Optional)</label>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">MOM ID (Optional)</label>
             <input
               type="text"
               value={momId}
               onChange={(e) => setMomId(e.target.value)}
-              className={`w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 ${
-                momIdError ? 'border-red-300' : 'border-gray-300'
+              className={`w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-400 ${
+                momIdError ? 'border-red-300' : 'border-gray-300 dark:border-gray-600'
               }`}
               placeholder="e.g. MOM-2026-001"
             />
@@ -165,12 +183,12 @@ export function MOMForm({ mom, onSubmit, onCancel }: MOMFormProps) {
 
         {/* Title */}
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Title *</label>
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Title *</label>
           <input
             type="text"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-400"
             placeholder="Meeting title"
             required
           />
@@ -178,12 +196,12 @@ export function MOMForm({ mom, onSubmit, onCancel }: MOMFormProps) {
 
         {/* Subject */}
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Subject</label>
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Subject</label>
           <textarea
             value={subject}
             onChange={(e) => setSubject(e.target.value)}
             rows={2}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 resize-none"
+            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 resize-none bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-400"
             placeholder="Meeting subject or agenda"
           />
         </div>
@@ -191,21 +209,21 @@ export function MOMForm({ mom, onSubmit, onCancel }: MOMFormProps) {
         {/* Meeting Date & Location */}
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Meeting Date</label>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Meeting Date</label>
             <input
               type="date"
               value={meetingDate}
               onChange={(e) => setMeetingDate(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Location</label>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Location</label>
             <div className="flex gap-2">
               <select
                 value={locationId}
                 onChange={(e) => setLocationId(e.target.value)}
-                className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+                className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
               >
                 <option value="">Select location...</option>
                 {locations.map(loc => (
@@ -215,7 +233,7 @@ export function MOMForm({ mom, onSubmit, onCancel }: MOMFormProps) {
               <button
                 type="button"
                 onClick={() => setShowLocationManager(true)}
-                className="px-2 py-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+                className="px-2 py-2 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
                 title="Manage locations"
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -230,10 +248,10 @@ export function MOMForm({ mom, onSubmit, onCancel }: MOMFormProps) {
         {/* Topics (create only) */}
         {!isEdit && (
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Topics <span className="text-xs text-gray-400">(optional)</span>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              Topics <span className="text-xs text-gray-400 dark:text-gray-500">(optional)</span>
             </label>
-            <div className="flex flex-wrap gap-2 p-3 border border-gray-300 rounded-lg min-h-[42px]">
+            <div className="flex flex-wrap gap-2 p-3 border border-gray-300 dark:border-gray-600 rounded-lg min-h-[42px]">
               {topics.map(topic => (
                 <button
                   key={topic.id}
@@ -241,8 +259,8 @@ export function MOMForm({ mom, onSubmit, onCancel }: MOMFormProps) {
                   onClick={() => toggleTopic(topic.id)}
                   className={`inline-flex items-center px-2.5 py-1 text-xs font-medium rounded-full transition-colors ${
                     selectedTopicIds.includes(topic.id)
-                      ? 'bg-primary-100 text-primary-700 ring-1 ring-primary-300'
-                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                      ? 'bg-primary-100 dark:bg-primary-900/50 text-primary-700 dark:text-primary-300 ring-1 ring-primary-300 dark:ring-primary-700'
+                      : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600'
                   }`}
                 >
                   {topic.title}
@@ -257,14 +275,41 @@ export function MOMForm({ mom, onSubmit, onCancel }: MOMFormProps) {
           </div>
         )}
 
+        {/* Tags */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+            Tags <span className="text-xs text-gray-400 dark:text-gray-500">(optional)</span>
+          </label>
+          <TagSelector
+            selectedTags={selectedTags}
+            onChange={setSelectedTags}
+            placeholder="Select tags..."
+          />
+        </div>
+
+        {/* Mention Users */}
+        {!isEdit && (
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              Mention Users <span className="text-xs text-gray-400 dark:text-gray-500">(optional)</span>
+            </label>
+            <MentionUserSelector
+              selectedMentions={selectedMentions}
+              onChange={setSelectedMentions}
+              entityType="mom"
+              disabled={submitting}
+            />
+          </div>
+        )}
+
         {/* Record links (create only) */}
         {!isEdit && (
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Link Records (optional)</label>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Link Records (optional)</label>
             {selectedRecordIds.length > 0 && (
               <div className="flex flex-wrap gap-1.5 mb-2">
                 {selectedRecordIds.map(id => (
-                  <span key={id} className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-50 text-blue-700 rounded text-xs">
+                  <span key={id} className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded text-xs">
                     {id.slice(0, 8)}...
                     <button type="button" onClick={() => setSelectedRecordIds(prev => prev.filter(r => r !== id))}>
                       <svg className="w-3 h-3 text-blue-400 hover:text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -281,13 +326,13 @@ export function MOMForm({ mom, onSubmit, onCancel }: MOMFormProps) {
                 value={recordSearch}
                 onChange={(e) => setRecordSearch(e.target.value)}
                 placeholder="Search records to link..."
-                className="w-full pl-8 pr-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+                className="w-full pl-8 pr-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-400"
               />
               <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
               </svg>
               {recordResults.length > 0 && (
-                <div className="absolute z-20 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-44 overflow-auto">
+                <div className="absolute z-20 left-0 right-0 mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg max-h-44 overflow-auto">
                   {recordResults
                     .filter(r => !selectedRecordIds.includes(r.id))
                     .map(r => (
@@ -295,10 +340,10 @@ export function MOMForm({ mom, onSubmit, onCancel }: MOMFormProps) {
                         key={r.id}
                         type="button"
                         onClick={() => addRecord(r)}
-                        className="w-full text-left px-3 py-2 text-xs hover:bg-gray-50 border-b border-gray-100 last:border-0"
+                        className="w-full text-left px-3 py-2 text-xs hover:bg-gray-50 dark:hover:bg-gray-700 border-b border-gray-100 dark:border-gray-700 last:border-0"
                       >
                         <span className="text-gray-400">{r.topic_title} /</span>{' '}
-                        <span className="font-medium text-gray-700">{r.title}</span>
+                        <span className="font-medium text-gray-700 dark:text-gray-300">{r.title}</span>
                       </button>
                     ))}
                 </div>
@@ -308,11 +353,11 @@ export function MOMForm({ mom, onSubmit, onCancel }: MOMFormProps) {
         )}
 
         {/* Buttons */}
-        <div className="flex items-center justify-end gap-3 pt-2 border-t border-gray-200">
+        <div className="flex items-center justify-end gap-3 pt-2 border-t border-gray-200 dark:border-gray-700">
           <button
             type="button"
             onClick={onCancel}
-            className="px-4 py-2 text-sm font-medium text-gray-700 hover:text-gray-900 transition-colors"
+            className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100 transition-colors"
           >
             Cancel
           </button>

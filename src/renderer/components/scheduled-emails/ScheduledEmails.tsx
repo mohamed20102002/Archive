@@ -225,8 +225,8 @@ export function ScheduledEmails() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-semibold text-gray-900">Scheduled Emails</h1>
-          <p className="text-sm text-gray-500 mt-1">
+          <h1 className="text-2xl font-semibold text-gray-900 dark:text-gray-100">Scheduled Emails</h1>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
             Manage automated email schedules and track their status
           </p>
         </div>
@@ -242,13 +242,13 @@ export function ScheduledEmails() {
       </div>
 
       {/* View Mode Tabs */}
-      <div className="flex items-center gap-4 border-b border-gray-200">
+      <div className="flex items-center gap-4 border-b border-gray-200 dark:border-gray-700">
         <button
           onClick={() => setViewMode('schedules')}
           className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
             viewMode === 'schedules'
-              ? 'border-primary-600 text-primary-600'
-              : 'border-transparent text-gray-500 hover:text-gray-700'
+              ? 'border-primary-600 text-primary-600 dark:text-primary-400 dark:border-primary-400'
+              : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'
           }`}
         >
           All Schedules ({schedules.length})
@@ -257,16 +257,16 @@ export function ScheduledEmails() {
           onClick={() => setViewMode('today')}
           className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors flex items-center gap-2 ${
             viewMode === 'today'
-              ? 'border-primary-600 text-primary-600'
-              : 'border-transparent text-gray-500 hover:text-gray-700'
+              ? 'border-primary-600 text-primary-600 dark:text-primary-400 dark:border-primary-400'
+              : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'
           }`}
         >
           Today's Emails
           {pendingCounts.total > 0 && (
             <span className={`px-2 py-0.5 text-xs rounded-full ${
               pendingCounts.overdue > 0
-                ? 'bg-red-100 text-red-700'
-                : 'bg-orange-100 text-orange-700'
+                ? 'bg-red-100 dark:bg-red-900/50 text-red-700 dark:text-red-300'
+                : 'bg-orange-100 dark:bg-orange-900/50 text-orange-700 dark:text-orange-300'
             }`}>
               {pendingCounts.total}
             </span>
@@ -279,12 +279,12 @@ export function ScheduledEmails() {
         <div className="space-y-4">
           {/* Filter */}
           <div className="flex items-center gap-2">
-            <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer">
+            <label className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400 cursor-pointer">
               <input
                 type="checkbox"
                 checked={showInactive}
                 onChange={(e) => setShowInactive(e.target.checked)}
-                className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                className="rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500 dark:bg-gray-700"
               />
               Show inactive schedules
             </label>
@@ -292,12 +292,12 @@ export function ScheduledEmails() {
 
           {/* Schedule Cards */}
           {schedules.length === 0 ? (
-            <div className="text-center py-12 bg-white rounded-xl border border-gray-200">
-              <svg className="w-16 h-16 text-gray-300 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <div className="text-center py-12 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">
+              <svg className="w-16 h-16 text-gray-300 dark:text-gray-600 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
               </svg>
-              <h3 className="text-lg font-medium text-gray-900 mb-2">No Email Schedules</h3>
-              <p className="text-gray-500 mb-4">Create your first automated email schedule</p>
+              <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-2">No Email Schedules</h3>
+              <p className="text-gray-500 dark:text-gray-400 mb-4">Create your first automated email schedule</p>
               <button onClick={handleCreateSchedule} className="btn-primary">
                 Create Schedule
               </button>
@@ -325,42 +325,42 @@ export function ScheduledEmails() {
         <div className="space-y-4">
           {/* Summary Cards */}
           <div className="grid grid-cols-3 gap-4">
-            <div className="bg-white rounded-xl border border-gray-200 p-4">
+            <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
               <div className="flex items-center gap-3">
-                <div className="p-2 bg-orange-100 rounded-lg">
-                  <svg className="w-5 h-5 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <div className="p-2 bg-orange-100 dark:bg-orange-900/50 rounded-lg">
+                  <svg className="w-5 h-5 text-orange-600 dark:text-orange-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                   </svg>
                 </div>
                 <div>
-                  <p className="text-2xl font-semibold text-gray-900">{pendingCounts.pending}</p>
-                  <p className="text-sm text-gray-500">Pending Today</p>
+                  <p className="text-2xl font-semibold text-gray-900 dark:text-gray-100">{pendingCounts.pending}</p>
+                  <p className="text-sm text-gray-500 dark:text-gray-400">Pending Today</p>
                 </div>
               </div>
             </div>
-            <div className="bg-white rounded-xl border border-gray-200 p-4">
+            <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
               <div className="flex items-center gap-3">
-                <div className="p-2 bg-red-100 rounded-lg">
-                  <svg className="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <div className="p-2 bg-red-100 dark:bg-red-900/50 rounded-lg">
+                  <svg className="w-5 h-5 text-red-600 dark:text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
                   </svg>
                 </div>
                 <div>
-                  <p className="text-2xl font-semibold text-gray-900">{pendingCounts.overdue}</p>
-                  <p className="text-sm text-gray-500">Overdue</p>
+                  <p className="text-2xl font-semibold text-gray-900 dark:text-gray-100">{pendingCounts.overdue}</p>
+                  <p className="text-sm text-gray-500 dark:text-gray-400">Overdue</p>
                 </div>
               </div>
             </div>
-            <div className="bg-white rounded-xl border border-gray-200 p-4">
+            <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
               <div className="flex items-center gap-3">
-                <div className="p-2 bg-blue-100 rounded-lg">
-                  <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <div className="p-2 bg-blue-100 dark:bg-blue-900/50 rounded-lg">
+                  <svg className="w-5 h-5 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
                   </svg>
                 </div>
                 <div>
-                  <p className="text-2xl font-semibold text-gray-900">{pendingCounts.total}</p>
-                  <p className="text-sm text-gray-500">Total Active</p>
+                  <p className="text-2xl font-semibold text-gray-900 dark:text-gray-100">{pendingCounts.total}</p>
+                  <p className="text-sm text-gray-500 dark:text-gray-400">Total Active</p>
                 </div>
               </div>
             </div>
@@ -368,40 +368,40 @@ export function ScheduledEmails() {
 
           {/* Instance List */}
           {todayInstances.length === 0 ? (
-            <div className="text-center py-12 bg-white rounded-xl border border-gray-200">
-              <svg className="w-16 h-16 text-green-300 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <div className="text-center py-12 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">
+              <svg className="w-16 h-16 text-green-300 dark:text-green-600 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
-              <h3 className="text-lg font-medium text-gray-900 mb-2">All Caught Up!</h3>
-              <p className="text-gray-500">No emails pending for today</p>
+              <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-2">All Caught Up!</h3>
+              <p className="text-gray-500 dark:text-gray-400">No emails pending for today</p>
             </div>
           ) : (
-            <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-              <div className="divide-y divide-gray-100">
+            <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+              <div className="divide-y divide-gray-100 dark:divide-gray-700">
                 {todayInstances.map((instance) => (
-                  <div key={instance.id} className="p-4 hover:bg-gray-50">
+                  <div key={instance.id} className="p-4 hover:bg-gray-50 dark:hover:bg-gray-700/50">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-4">
                         <div className={`p-2 rounded-lg ${
                           instance.status === 'overdue'
-                            ? 'bg-red-100'
+                            ? 'bg-red-100 dark:bg-red-900/50'
                             : instance.status === 'pending'
-                            ? 'bg-orange-100'
-                            : 'bg-green-100'
+                            ? 'bg-orange-100 dark:bg-orange-900/50'
+                            : 'bg-green-100 dark:bg-green-900/50'
                         }`}>
                           <svg className={`w-5 h-5 ${
                             instance.status === 'overdue'
-                              ? 'text-red-600'
+                              ? 'text-red-600 dark:text-red-400'
                               : instance.status === 'pending'
-                              ? 'text-orange-600'
-                              : 'text-green-600'
+                              ? 'text-orange-600 dark:text-orange-400'
+                              : 'text-green-600 dark:text-green-400'
                           }`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
                           </svg>
                         </div>
                         <div>
-                          <h4 className="font-medium text-gray-900">{instance.schedule_name}</h4>
-                          <p className="text-sm text-gray-500">
+                          <h4 className="font-medium text-gray-900 dark:text-gray-100">{instance.schedule_name}</h4>
+                          <p className="text-sm text-gray-500 dark:text-gray-400">
                             {(() => {
                               // Format time to 12h format
                               const [hours, minutes] = instance.scheduled_time.split(':')
@@ -428,7 +428,7 @@ export function ScheduledEmails() {
                             })()}
                             {' - '}
                             <span className={`font-medium ${
-                              instance.status === 'overdue' ? 'text-red-600' : 'text-orange-600'
+                              instance.status === 'overdue' ? 'text-red-600 dark:text-red-400' : 'text-orange-600 dark:text-orange-400'
                             }`}>
                               {instance.status === 'overdue' ? 'Overdue' : 'Pending'}
                             </span>
@@ -461,7 +461,7 @@ export function ScheduledEmails() {
                         </button>
                         <button
                           onClick={() => handleDismiss(instance.id)}
-                          className="inline-flex items-center px-3 py-1.5 text-sm font-medium rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 transition-colors"
+                          className="inline-flex items-center px-3 py-1.5 text-sm font-medium rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
                           title="Dismiss without sending"
                         >
                           Dismiss

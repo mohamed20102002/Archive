@@ -3,7 +3,15 @@ import { useNavigate } from 'react-router-dom'
 import { Modal } from '../common/Modal'
 import { useAuth } from '../../context/AuthContext'
 import { notifyReminderDataChanged } from '../reminders/ReminderBadge'
-import type { Record, Subcategory, RecordAttachment, LinkedMomInfo, LinkedLetterInfo } from '../../types'
+import { TagSelector } from '../tags/TagSelector'
+import { MentionUserSelector, notifyMentionDataChanged } from '../mentions'
+import type { Record, Subcategory, RecordAttachment, LinkedMomInfo, LinkedLetterInfo, MentionWithNote } from '../../types'
+
+interface Tag {
+  id: string
+  name: string
+  color: string
+}
 
 // Extended types for lookup with status
 interface LinkedMomLookup extends LinkedMomInfo {
@@ -79,6 +87,8 @@ export function RecordForm({ record, topicId, topicTitle, subcategories = [], de
   })
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState('')
+  const [selectedTags, setSelectedTags] = useState<Tag[]>([])
+  const [selectedMentions, setSelectedMentions] = useState<MentionWithNote[]>([])
 
   // Linked item lookup state
   const navigate = useNavigate()
@@ -99,6 +109,17 @@ export function RecordForm({ record, topicId, topicTitle, subcategories = [], de
     if (record?.id) {
       window.electronAPI.recordAttachments.getByRecord(record.id).then(atts => {
         setExistingAttachments(atts as RecordAttachment[])
+      })
+    }
+  }, [record?.id])
+
+  // Load existing tags when editing a record
+  useEffect(() => {
+    if (record?.id) {
+      window.electronAPI.tags.getRecordTags(record.id).then(tags => {
+        setSelectedTags(tags as Tag[])
+      }).catch(err => {
+        console.error('Error loading record tags:', err)
       })
     }
   }, [record?.id])
@@ -382,6 +403,26 @@ export function RecordForm({ record, topicId, topicTitle, subcategories = [], de
         // Notify the reminder badge to refresh
         notifyReminderDataChanged()
       }
+
+      // Save tags
+      if (recordId && user) {
+        const tagIds = selectedTags.map(t => t.id)
+        await window.electronAPI.tags.setRecordTags(recordId, tagIds, user.id)
+      }
+
+      // Create mentions
+      if (selectedMentions.length > 0 && recordId && user) {
+        await window.electronAPI.mentions.createBulk(
+          selectedMentions.map(m => ({
+            entity_type: 'record' as const,
+            entity_id: recordId,
+            mentioned_user_id: m.user.id,
+            note: m.note || undefined
+          })),
+          user.id
+        )
+        notifyMentionDataChanged()
+      }
     } catch (err) {
       setError('An error occurred. Please try again.')
     } finally {
@@ -398,7 +439,7 @@ export function RecordForm({ record, topicId, topicTitle, subcategories = [], de
       <form onSubmit={handleSubmit} className="space-y-6">
         {/* Error Message */}
         {error && (
-          <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+          <div className="p-3 bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 rounded-lg text-sm text-red-700 dark:text-red-400">
             {error}
           </div>
         )}
@@ -416,8 +457,8 @@ export function RecordForm({ record, topicId, topicTitle, subcategories = [], de
                   onClick={() => toggleType(rt.value)}
                   className={`relative flex flex-col items-center gap-2 p-3 rounded-lg border-2 transition-colors ${
                     isSelected
-                      ? 'border-primary-500 bg-primary-50 text-primary-700'
-                      : 'border-gray-200 hover:border-gray-300 text-gray-600'
+                      ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300'
+                      : 'border-gray-200 dark:border-gray-600 hover:border-gray-300 dark:hover:border-gray-500 text-gray-600 dark:text-gray-400'
                   }`}
                   disabled={isSubmitting}
                 >
@@ -458,7 +499,7 @@ export function RecordForm({ record, topicId, topicTitle, subcategories = [], de
                 </option>
               ))}
             </select>
-            <p className="text-xs text-gray-500 mt-1">
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
               Organize this record under a specific subcategory
             </p>
           </div>
@@ -493,7 +534,7 @@ export function RecordForm({ record, topicId, topicTitle, subcategories = [], de
               className="input"
               disabled={isSubmitting}
             />
-            <p className="text-xs text-gray-400 mt-1">For shift handover</p>
+            <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">For shift handover</p>
           </div>
         </div>
 
@@ -512,9 +553,30 @@ export function RecordForm({ record, topicId, topicTitle, subcategories = [], de
           />
         </div>
 
+        {/* Tags */}
+        <div>
+          <label className="label">Tags</label>
+          <TagSelector
+            selectedTags={selectedTags}
+            onChange={setSelectedTags}
+            placeholder="Add tags..."
+          />
+        </div>
+
+        {/* Mention Users */}
+        <div>
+          <label className="label">Mention Users</label>
+          <MentionUserSelector
+            selectedMentions={selectedMentions}
+            onChange={setSelectedMentions}
+            entityType="record"
+            disabled={isSubmitting}
+          />
+        </div>
+
         {/* Link to MOMs and Letters - Multiple */}
-        <div className="border border-gray-200 rounded-lg p-4 space-y-4">
-          <div className="flex items-center gap-2 text-sm font-medium text-gray-700">
+        <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 space-y-4">
+          <div className="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300">
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
             </svg>
@@ -535,17 +597,17 @@ export function RecordForm({ record, topicId, topicTitle, subcategories = [], de
               <div className="space-y-1 mb-2">
                 {linkedMoms.map(mom => (
                   <div key={mom.id} className={`flex items-center justify-between p-2 rounded-lg ${
-                    mom.deleted ? 'bg-gray-100' : 'bg-amber-50'
+                    mom.deleted ? 'bg-gray-100 dark:bg-gray-700' : 'bg-amber-50 dark:bg-amber-900/30'
                   }`}>
                     <div className="flex items-center gap-2 min-w-0 flex-1">
                       <svg className="w-4 h-4 text-amber-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                       </svg>
                       <div className="min-w-0">
-                        <div className={`text-sm font-medium truncate ${mom.deleted ? 'text-gray-400 line-through' : 'text-gray-900'}`}>
+                        <div className={`text-sm font-medium truncate ${mom.deleted ? 'text-gray-400 line-through' : 'text-gray-900 dark:text-gray-100'}`}>
                           {mom.mom_id}
                         </div>
-                        <div className={`text-xs truncate ${mom.deleted ? 'text-gray-400' : 'text-gray-600'}`}>
+                        <div className={`text-xs truncate ${mom.deleted ? 'text-gray-400' : 'text-gray-600 dark:text-gray-400'}`}>
                           {mom.title}
                         </div>
                       </div>
@@ -597,7 +659,7 @@ export function RecordForm({ record, topicId, topicTitle, subcategories = [], de
                 type="button"
                 onClick={addMomLink}
                 disabled={!pendingMom || isSubmitting}
-                className="px-3 py-2 text-sm font-medium rounded-lg bg-amber-100 text-amber-700 hover:bg-amber-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="px-3 py-2 text-sm font-medium rounded-lg bg-amber-100 dark:bg-amber-900/50 text-amber-700 dark:text-amber-300 hover:bg-amber-200 dark:hover:bg-amber-900/70 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Add
               </button>
@@ -605,7 +667,7 @@ export function RecordForm({ record, topicId, topicTitle, subcategories = [], de
 
             {/* MOM Lookup feedback */}
             {momLookupLoading && (
-              <div className="flex items-center gap-2 text-xs text-gray-500">
+              <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
                 <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
                   <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
@@ -635,17 +697,17 @@ export function RecordForm({ record, topicId, topicTitle, subcategories = [], de
               <div className="space-y-1 mb-2">
                 {linkedLetters.map(letter => (
                   <div key={letter.id} className={`flex items-center justify-between p-2 rounded-lg ${
-                    letter.deleted ? 'bg-gray-100' : 'bg-cyan-50'
+                    letter.deleted ? 'bg-gray-100 dark:bg-gray-700' : 'bg-cyan-50 dark:bg-cyan-900/30'
                   }`}>
                     <div className="flex items-center gap-2 min-w-0 flex-1">
                       <svg className="w-4 h-4 text-cyan-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
                       </svg>
                       <div className="min-w-0">
-                        <div className={`text-sm font-medium truncate ${letter.deleted ? 'text-gray-400 line-through' : 'text-gray-900'}`}>
+                        <div className={`text-sm font-medium truncate ${letter.deleted ? 'text-gray-400 line-through' : 'text-gray-900 dark:text-gray-100'}`}>
                           {letter.reference_number}
                         </div>
-                        <div className={`text-xs truncate ${letter.deleted ? 'text-gray-400' : 'text-gray-600'}`}>
+                        <div className={`text-xs truncate ${letter.deleted ? 'text-gray-400' : 'text-gray-600 dark:text-gray-400'}`}>
                           {letter.subject}
                         </div>
                       </div>
@@ -697,7 +759,7 @@ export function RecordForm({ record, topicId, topicTitle, subcategories = [], de
                 type="button"
                 onClick={addLetterLink}
                 disabled={!pendingLetter || isSubmitting}
-                className="px-3 py-2 text-sm font-medium rounded-lg bg-cyan-100 text-cyan-700 hover:bg-cyan-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="px-3 py-2 text-sm font-medium rounded-lg bg-cyan-100 dark:bg-cyan-900/50 text-cyan-700 dark:text-cyan-300 hover:bg-cyan-200 dark:hover:bg-cyan-900/70 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Add
               </button>
@@ -705,7 +767,7 @@ export function RecordForm({ record, topicId, topicTitle, subcategories = [], de
 
             {/* Letter Lookup feedback */}
             {letterLookupLoading && (
-              <div className="flex items-center gap-2 text-xs text-gray-500">
+              <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
                 <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
                   <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
@@ -724,15 +786,15 @@ export function RecordForm({ record, topicId, topicTitle, subcategories = [], de
 
         {/* File Attachments - available for all record types */}
         {(
-          <div className="border border-gray-200 rounded-lg p-4 space-y-3">
+          <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 space-y-3">
             <div className="flex items-center justify-between">
-              <label className="text-sm font-medium text-gray-700">
+              <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
                 File Attachments
               </label>
               <button
                 type="button"
                 onClick={handleSelectFiles}
-                className="px-3 py-1.5 text-sm font-medium rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700 transition-colors flex items-center gap-2"
+                className="px-3 py-1.5 text-sm font-medium rounded-lg bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 transition-colors flex items-center gap-2"
                 disabled={isSubmitting}
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -745,18 +807,18 @@ export function RecordForm({ record, topicId, topicTitle, subcategories = [], de
             {/* Existing attachments (when editing) */}
             {existingAttachments.length > 0 && (
               <div className="space-y-2">
-                <p className="text-xs text-gray-500 font-medium">Current Attachments:</p>
+                <p className="text-xs text-gray-500 dark:text-gray-400 font-medium">Current Attachments:</p>
                 {existingAttachments.map((att) => (
                   <div
                     key={att.id}
-                    className="flex items-center justify-between p-2 bg-purple-50 rounded-lg"
+                    className="flex items-center justify-between p-2 bg-purple-50 dark:bg-purple-900/30 rounded-lg"
                   >
                     <div className="flex items-center gap-2 min-w-0 flex-1">
                       <svg className="w-5 h-5 text-purple-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                       </svg>
-                      <span className="text-sm text-gray-700 truncate">{att.filename}</span>
-                      <span className="text-xs text-gray-500 flex-shrink-0">({formatFileSize(att.file_size)})</span>
+                      <span className="text-sm text-gray-700 dark:text-gray-300 truncate">{att.filename}</span>
+                      <span className="text-xs text-gray-500 dark:text-gray-400 flex-shrink-0">({formatFileSize(att.file_size)})</span>
                     </div>
                     <div className="flex items-center gap-1">
                       <button
@@ -798,19 +860,19 @@ export function RecordForm({ record, topicId, topicTitle, subcategories = [], de
             {pendingFiles.length > 0 && (
               <div className="space-y-2">
                 {existingAttachments.length > 0 && (
-                  <p className="text-xs text-gray-500 font-medium">New Attachments:</p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 font-medium">New Attachments:</p>
                 )}
                 {pendingFiles.map((file, index) => (
                   <div
                     key={index}
-                    className="flex items-center justify-between p-2 bg-green-50 rounded-lg"
+                    className="flex items-center justify-between p-2 bg-green-50 dark:bg-green-900/30 rounded-lg"
                   >
                     <div className="flex items-center gap-2 min-w-0">
                       <svg className="w-5 h-5 text-green-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
                       </svg>
-                      <span className="text-sm text-gray-700 truncate">{file.filename}</span>
-                      <span className="text-xs text-gray-500 flex-shrink-0">({formatFileSize(file.size)})</span>
+                      <span className="text-sm text-gray-700 dark:text-gray-300 truncate">{file.filename}</span>
+                      <span className="text-xs text-gray-500 dark:text-gray-400 flex-shrink-0">({formatFileSize(file.size)})</span>
                     </div>
                     <button
                       type="button"
@@ -828,7 +890,7 @@ export function RecordForm({ record, topicId, topicTitle, subcategories = [], de
             )}
 
             {existingAttachments.length === 0 && pendingFiles.length === 0 && (
-              <p className="text-sm text-gray-500">
+              <p className="text-sm text-gray-500 dark:text-gray-400">
                 No files attached. Click "Add Files" to attach documents.
               </p>
             )}
@@ -837,16 +899,16 @@ export function RecordForm({ record, topicId, topicTitle, subcategories = [], de
 
         {/* Reminder Option - available for both new and editing records */}
         {(
-          <div className="border border-gray-200 rounded-lg p-4 space-y-4">
+          <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 space-y-4">
             <label className="flex items-center gap-3 cursor-pointer">
               <input
                 type="checkbox"
                 checked={setReminder}
                 onChange={(e) => setSetReminder(e.target.checked)}
-                className="w-4 h-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                className="w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500 bg-white dark:bg-gray-700"
                 disabled={isSubmitting}
               />
-              <span className="text-sm font-medium text-gray-700">
+              <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
                 Set a reminder for this record
               </span>
             </label>
@@ -858,7 +920,7 @@ export function RecordForm({ record, topicId, topicTitle, subcategories = [], de
                   <button
                     type="button"
                     onClick={() => setQuickDate('hour')}
-                    className="px-3 py-1.5 text-xs font-medium rounded-full bg-gray-100 hover:bg-gray-200 text-gray-700 transition-colors"
+                    className="px-3 py-1.5 text-xs font-medium rounded-full bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 transition-colors"
                     disabled={isSubmitting}
                   >
                     In 1 hour
@@ -866,7 +928,7 @@ export function RecordForm({ record, topicId, topicTitle, subcategories = [], de
                   <button
                     type="button"
                     onClick={() => setQuickDate('tomorrow')}
-                    className="px-3 py-1.5 text-xs font-medium rounded-full bg-gray-100 hover:bg-gray-200 text-gray-700 transition-colors"
+                    className="px-3 py-1.5 text-xs font-medium rounded-full bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 transition-colors"
                     disabled={isSubmitting}
                   >
                     Tomorrow 9 AM
@@ -874,7 +936,7 @@ export function RecordForm({ record, topicId, topicTitle, subcategories = [], de
                   <button
                     type="button"
                     onClick={() => setQuickDate('week')}
-                    className="px-3 py-1.5 text-xs font-medium rounded-full bg-gray-100 hover:bg-gray-200 text-gray-700 transition-colors"
+                    className="px-3 py-1.5 text-xs font-medium rounded-full bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 transition-colors"
                     disabled={isSubmitting}
                   >
                     Next week
@@ -920,7 +982,7 @@ export function RecordForm({ record, topicId, topicTitle, subcategories = [], de
         )}
 
         {/* Actions */}
-        <div className="flex justify-end gap-3 pt-4 border-t border-gray-100">
+        <div className="flex justify-end gap-3 pt-4 border-t border-gray-100 dark:border-gray-700">
           <button
             type="button"
             onClick={onClose}

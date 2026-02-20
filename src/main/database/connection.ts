@@ -58,10 +58,23 @@ export function getDatabase(): Database.Database {
 
     db = new Database(dbPath)
 
-    // Enable WAL mode for better concurrency and crash safety
-    db.pragma('journal_mode = WAL')
-    db.pragma('foreign_keys = ON')
+    // Set busy timeout first (this rarely fails)
     db.pragma('busy_timeout = 5000')
+    db.pragma('foreign_keys = ON')
+
+    // Try to enable WAL mode - may fail if orphaned WAL files are locked
+    try {
+      db.pragma('journal_mode = WAL')
+    } catch (walErr: any) {
+      console.warn(`Could not set WAL mode (will use DELETE mode): ${walErr.message}`)
+      // If WAL fails, try to use DELETE mode instead
+      try {
+        db.pragma('journal_mode = DELETE')
+      } catch {
+        // If that also fails, just continue - default journal mode will be used
+        console.warn('Could not set any journal mode, using default')
+      }
+    }
 
     console.log(`Database opened at: ${dbPath}`)
   }
@@ -83,9 +96,22 @@ export function getAuditDatabase(): Database.Database {
 
     auditDb = new Database(auditDbPath)
 
-    // Enable WAL mode
-    auditDb.pragma('journal_mode = WAL')
+    // Set busy timeout first (this rarely fails)
     auditDb.pragma('busy_timeout = 5000')
+
+    // Try to enable WAL mode - may fail if orphaned WAL files are locked
+    try {
+      auditDb.pragma('journal_mode = WAL')
+    } catch (walErr: any) {
+      console.warn(`Audit DB: Could not set WAL mode (will use DELETE mode): ${walErr.message}`)
+      // If WAL fails, try to use DELETE mode instead
+      try {
+        auditDb.pragma('journal_mode = DELETE')
+      } catch {
+        // If that also fails, just continue - default journal mode will be used
+        console.warn('Audit DB: Could not set any journal mode, using default')
+      }
+    }
 
     console.log(`Audit database opened at: ${auditDbPath}`)
   }
@@ -93,7 +119,7 @@ export function getAuditDatabase(): Database.Database {
   return auditDb
 }
 
-export function closeDatabase(): void {
+export function closeDatabase(forceDeleteWal = false): void {
   const dataPath = getDataPath()
   const mainDbPath = path.join(dataPath, 'archive.db')
   const auditDbPath = path.join(dataPath, 'audit.db')
@@ -102,11 +128,22 @@ export function closeDatabase(): void {
     try {
       // Force checkpoint to merge WAL into main database file
       console.log('Main database: Running TRUNCATE checkpoint...')
-      db.pragma('wal_checkpoint(TRUNCATE)')
+      try {
+        db.pragma('wal_checkpoint(TRUNCATE)')
+      } catch (checkpointErr) {
+        console.warn('Main database: Checkpoint failed (may be locked):', checkpointErr)
+      }
 
-      // Switch to DELETE journal mode to remove WAL files
-      console.log('Main database: Switching to DELETE journal mode...')
-      db.pragma('journal_mode = DELETE')
+      // Only try to switch journal mode if forceDeleteWal is true (app shutdown)
+      // This avoids locking issues during normal refresh operations
+      if (forceDeleteWal) {
+        try {
+          console.log('Main database: Switching to DELETE journal mode...')
+          db.pragma('journal_mode = DELETE')
+        } catch (journalErr) {
+          console.warn('Main database: Could not switch journal mode:', journalErr)
+        }
+      }
 
       console.log('Main database: Closing...')
       db.close()
@@ -114,6 +151,8 @@ export function closeDatabase(): void {
       console.log('Main database closed successfully')
     } catch (err) {
       console.error('Error closing main database:', err)
+      // Still try to nullify the reference
+      try { db?.close() } catch { /* ignore */ }
       db = null
     }
   }
@@ -122,11 +161,21 @@ export function closeDatabase(): void {
     try {
       // Force checkpoint to merge WAL into main database file
       console.log('Audit database: Running TRUNCATE checkpoint...')
-      auditDb.pragma('wal_checkpoint(TRUNCATE)')
+      try {
+        auditDb.pragma('wal_checkpoint(TRUNCATE)')
+      } catch (checkpointErr) {
+        console.warn('Audit database: Checkpoint failed (may be locked):', checkpointErr)
+      }
 
-      // Switch to DELETE journal mode to remove WAL files
-      console.log('Audit database: Switching to DELETE journal mode...')
-      auditDb.pragma('journal_mode = DELETE')
+      // Only try to switch journal mode if forceDeleteWal is true (app shutdown)
+      if (forceDeleteWal) {
+        try {
+          console.log('Audit database: Switching to DELETE journal mode...')
+          auditDb.pragma('journal_mode = DELETE')
+        } catch (journalErr) {
+          console.warn('Audit database: Could not switch journal mode:', journalErr)
+        }
+      }
 
       console.log('Audit database: Closing...')
       auditDb.close()
@@ -134,23 +183,28 @@ export function closeDatabase(): void {
       console.log('Audit database closed successfully')
     } catch (err) {
       console.error('Error closing audit database:', err)
+      // Still try to nullify the reference
+      try { auditDb?.close() } catch { /* ignore */ }
       auditDb = null
     }
   }
 
-  // Force delete WAL and SHM files if they still exist
-  const walFiles = [
-    `${mainDbPath}-wal`, `${mainDbPath}-shm`,
-    `${auditDbPath}-wal`, `${auditDbPath}-shm`
-  ]
+  // Only try to delete WAL files if explicitly requested (app shutdown)
+  if (forceDeleteWal) {
+    const walFiles = [
+      `${mainDbPath}-wal`, `${mainDbPath}-shm`,
+      `${auditDbPath}-wal`, `${auditDbPath}-shm`
+    ]
 
-  for (const walFile of walFiles) {
-    if (fs.existsSync(walFile)) {
-      try {
-        fs.unlinkSync(walFile)
-        console.log(`Deleted WAL/SHM file: ${walFile}`)
-      } catch (err) {
-        console.error(`Failed to delete WAL/SHM file ${walFile}:`, err)
+    for (const walFile of walFiles) {
+      if (fs.existsSync(walFile)) {
+        try {
+          fs.unlinkSync(walFile)
+          console.log(`Deleted WAL/SHM file: ${walFile}`)
+        } catch (err) {
+          // Log but don't fail - these will be cleaned up on next proper shutdown
+          console.warn(`Could not delete WAL/SHM file ${walFile} (may be in use)`)
+        }
       }
     }
   }

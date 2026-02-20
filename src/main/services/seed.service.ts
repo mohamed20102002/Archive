@@ -637,8 +637,9 @@ export async function clearAllData(userId: string): Promise<{ success: boolean; 
     db.exec("DELETE FROM secure_references")
     db.exec("DELETE FROM credentials")
     db.exec("DELETE FROM handovers")
-    // Keep only active admin users (remove deleted admins and all non-admins)
-    db.exec(`DELETE FROM users WHERE role != 'admin' OR deleted_at IS NOT NULL`)
+    // Keep only the admin user who is performing the clear (the "real" admin)
+    // This removes all seeded users including seeded admins
+    db.prepare(`DELETE FROM users WHERE id != ?`).run(userId)
     // Clear shift_id for remaining users before deleting shifts (to avoid FK issues)
     db.exec(`UPDATE users SET shift_id = NULL`)
     // Now safe to delete shifts and other config tables

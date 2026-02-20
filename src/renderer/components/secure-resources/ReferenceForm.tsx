@@ -73,7 +73,7 @@ export function ReferenceForm({ reference, onSubmit, onCancel }: ReferenceFormPr
     <form onSubmit={handleSubmit} className="space-y-4">
       {/* Name */}
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">
+        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
           Name <span className="text-red-500">*</span>
         </label>
         <input
@@ -81,8 +81,8 @@ export function ReferenceForm({ reference, onSubmit, onCancel }: ReferenceFormPr
           value={name}
           onChange={(e) => setName(e.target.value)}
           placeholder="e.g., Network Diagrams, Security Policies"
-          className={`w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 ${
-            errors.name ? 'border-red-300' : 'border-gray-300'
+          className={`w-full px-3 py-2 border rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-primary-500 ${
+            errors.name ? 'border-red-300 dark:border-red-500' : 'border-gray-300 dark:border-gray-600'
           }`}
         />
         {errors.name && <p className="text-xs text-red-500 mt-1">{errors.name}</p>}
@@ -90,23 +90,23 @@ export function ReferenceForm({ reference, onSubmit, onCancel }: ReferenceFormPr
 
       {/* Description */}
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Description</label>
         <textarea
           value={description}
           onChange={(e) => setDescription(e.target.value)}
           placeholder="What this reference collection contains..."
           rows={3}
-          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 resize-none"
+          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-primary-500 resize-none"
         />
       </div>
 
       {/* Category */}
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
+        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Category</label>
         <select
           value={category}
           onChange={(e) => setCategory(e.target.value)}
-          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-primary-500"
         >
           {categories.map(cat => (
             <option key={cat} value={cat}>{cat}</option>
@@ -116,7 +116,7 @@ export function ReferenceForm({ reference, onSubmit, onCancel }: ReferenceFormPr
 
       {/* Color Label */}
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-2">Color Label</label>
+        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Color Label</label>
         <div className="flex items-center gap-2">
           {RESOURCE_COLORS_DATA.map(c => (
             <button
@@ -125,13 +125,13 @@ export function ReferenceForm({ reference, onSubmit, onCancel }: ReferenceFormPr
               onClick={() => setColor(c.value as ResourceColor)}
               className={`w-7 h-7 rounded-full border-2 transition-all flex items-center justify-center ${
                 color === c.value
-                  ? 'border-gray-900 ring-2 ring-gray-300'
-                  : 'border-gray-300 hover:border-gray-400'
-              } ${c.class || 'bg-gray-100'}`}
+                  ? 'border-gray-900 dark:border-white ring-2 ring-gray-300 dark:ring-gray-600'
+                  : 'border-gray-300 dark:border-gray-600 hover:border-gray-400 dark:hover:border-gray-500'
+              } ${c.class || 'bg-gray-100 dark:bg-gray-600'}`}
               title={c.label}
             >
               {c.value === null && color === null && (
-                <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-4 h-4 text-gray-500 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                 </svg>
               )}
@@ -147,7 +147,7 @@ export function ReferenceForm({ reference, onSubmit, onCancel }: ReferenceFormPr
 
       {/* Admin Only Toggle - Only visible to admins */}
       {isAdmin && (
-        <div className="flex items-center gap-3 pt-2 border-t border-gray-200">
+        <div className="flex items-center gap-3 pt-2 border-t border-gray-200 dark:border-gray-700">
           <label className="relative inline-flex items-center cursor-pointer">
             <input
               type="checkbox"
@@ -155,11 +155,11 @@ export function ReferenceForm({ reference, onSubmit, onCancel }: ReferenceFormPr
               onChange={(e) => setAdminOnly(e.target.checked)}
               className="sr-only peer"
             />
-            <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-primary-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary-600"></div>
+            <div className="w-11 h-6 bg-gray-200 dark:bg-gray-600 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-primary-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary-600"></div>
           </label>
           <div>
-            <span className="text-sm font-medium text-gray-700">Admin Only</span>
-            <p className="text-xs text-gray-500">Hide this reference from non-admin users (files will be encrypted)</p>
+            <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Admin Only</span>
+            <p className="text-xs text-gray-500 dark:text-gray-400">Hide this reference from non-admin users (files will be encrypted)</p>
           </div>
         </div>
       )}
@@ -169,7 +169,7 @@ export function ReferenceForm({ reference, onSubmit, onCancel }: ReferenceFormPr
         <button
           type="button"
           onClick={onCancel}
-          className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+          className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
         >
           Cancel
         </button>

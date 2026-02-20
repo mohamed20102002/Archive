@@ -17,10 +17,10 @@ interface IssueDetailProps {
 }
 
 const importanceBadgeStyles: Record<string, string> = {
-  low: 'bg-gray-100 text-gray-600',
-  medium: 'bg-blue-100 text-blue-700',
-  high: 'bg-orange-100 text-orange-700',
-  critical: 'bg-red-100 text-red-700'
+  low: 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400',
+  medium: 'bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300',
+  high: 'bg-orange-100 dark:bg-orange-900/50 text-orange-700 dark:text-orange-300',
+  critical: 'bg-red-100 dark:bg-red-900/50 text-red-700 dark:text-red-300'
 }
 
 function getAgingText(createdAt: string): string {
@@ -245,7 +245,7 @@ export function IssueDetail({ issue: initialIssue, onClose, onUpdated }: IssueDe
     return (
       <div>
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-semibold text-gray-900">Edit Issue</h3>
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Edit Issue</h3>
         </div>
         <IssueForm
           issue={issue}
@@ -264,18 +264,18 @@ export function IssueDetail({ issue: initialIssue, onClose, onUpdated }: IssueDe
       <div>
         <div className="flex items-start justify-between gap-4">
           <div className="flex-1">
-            <h3 className="text-lg font-semibold text-gray-900">{issue.title}</h3>
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">{issue.title}</h3>
             <div className="flex items-center gap-3 mt-2 flex-wrap">
               <span className={`inline-flex px-2.5 py-0.5 text-xs font-medium rounded-full ${badgeStyle}`}>
                 {issue.importance}
               </span>
               <span className={`inline-flex px-2.5 py-0.5 text-xs font-medium rounded-full ${
-                issue.status === 'open' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'
+                issue.status === 'open' ? 'bg-green-100 dark:bg-green-900/50 text-green-700 dark:text-green-300' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400'
               }`}>
                 {issue.status}
               </span>
               {issue.status === 'open' && (
-                <span className="text-xs text-gray-500">
+                <span className="text-xs text-gray-500 dark:text-gray-400">
                   {getAgingText(issue.created_at)}
                 </span>
               )}
@@ -287,8 +287,8 @@ export function IssueDetail({ issue: initialIssue, onClose, onUpdated }: IssueDe
       {/* Details */}
       {issue.description && (
         <div>
-          <h4 className="text-sm font-medium text-gray-700 mb-1">Description</h4>
-          <p className="text-sm text-gray-600 whitespace-pre-wrap">{issue.description}</p>
+          <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Description</h4>
+          <p className="text-sm text-gray-600 dark:text-gray-400 whitespace-pre-wrap">{issue.description}</p>
         </div>
       )}
 
@@ -296,41 +296,41 @@ export function IssueDetail({ issue: initialIssue, onClose, onUpdated }: IssueDe
       <div className="grid grid-cols-2 gap-4 text-sm">
         {issue.topic_title && (
           <div>
-            <span className="text-gray-500">Topic:</span>{' '}
-            <span className="font-medium text-gray-900">{issue.topic_title}</span>
+            <span className="text-gray-500 dark:text-gray-400">Topic:</span>{' '}
+            <span className="font-medium text-gray-900 dark:text-gray-100">{issue.topic_title}</span>
             {issue.subcategory_title && (
-              <span className="text-gray-500"> / {issue.subcategory_title}</span>
+              <span className="text-gray-500 dark:text-gray-400"> / {issue.subcategory_title}</span>
             )}
           </div>
         )}
         <div>
-          <span className="text-gray-500">Created by:</span>{' '}
-          <span className="font-medium text-gray-900">{issue.creator_name || 'Unknown'}</span>
+          <span className="text-gray-500 dark:text-gray-400">Created by:</span>{' '}
+          <span className="font-medium text-gray-900 dark:text-gray-100">{issue.creator_name || 'Unknown'}</span>
         </div>
         <div>
-          <span className="text-gray-500">Created:</span>{' '}
-          <span className="text-gray-700">
+          <span className="text-gray-500 dark:text-gray-400">Created:</span>{' '}
+          <span className="text-gray-700 dark:text-gray-300">
             {formatDate(issue.created_at, 'withTime')}
           </span>
         </div>
         {issue.reminder_date && (
           <div>
-            <span className="text-gray-500">Reminder:</span>{' '}
-            <span className={`font-medium ${new Date(issue.reminder_date) < new Date() ? 'text-red-600' : 'text-gray-700'}`}>
+            <span className="text-gray-500 dark:text-gray-400">Reminder:</span>{' '}
+            <span className={`font-medium ${new Date(issue.reminder_date) < new Date() ? 'text-red-600 dark:text-red-400' : 'text-gray-700 dark:text-gray-300'}`}>
               {formatDate(issue.reminder_date, 'withTime')}
             </span>
           </div>
         )}
         {issue.status === 'completed' && issue.completer_name && (
           <div>
-            <span className="text-gray-500">Completed by:</span>{' '}
-            <span className="font-medium text-gray-900">{issue.completer_name}</span>
+            <span className="text-gray-500 dark:text-gray-400">Completed by:</span>{' '}
+            <span className="font-medium text-gray-900 dark:text-gray-100">{issue.completer_name}</span>
           </div>
         )}
         {issue.status === 'completed' && issue.completed_at && (
           <div>
-            <span className="text-gray-500">Completed:</span>{' '}
-            <span className="text-gray-700">
+            <span className="text-gray-500 dark:text-gray-400">Completed:</span>{' '}
+            <span className="text-gray-700 dark:text-gray-300">
               {formatDate(issue.completed_at, 'withTime')}
             </span>
           </div>
@@ -339,17 +339,17 @@ export function IssueDetail({ issue: initialIssue, onClose, onUpdated }: IssueDe
 
       {/* Closure note */}
       {issue.closure_note && (
-        <div className="p-3 bg-gray-50 rounded-lg border border-gray-200">
-          <h4 className="text-xs font-medium text-gray-500 uppercase mb-1">Closure Note</h4>
-          <p className="text-sm text-gray-700 whitespace-pre-wrap">{issue.closure_note}</p>
+        <div className="p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg border border-gray-200 dark:border-gray-700">
+          <h4 className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase mb-1">Closure Note</h4>
+          <p className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap">{issue.closure_note}</p>
         </div>
       )}
 
       {/* Action buttons */}
-      <div className="flex items-center gap-2 pt-2 border-t border-gray-200">
+      <div className="flex items-center gap-2 pt-2 border-t border-gray-200 dark:border-gray-700">
         <button
           onClick={() => setIsEditing(true)}
-          className="px-3 py-1.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+          className="px-3 py-1.5 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors"
         >
           Edit
         </button>
@@ -374,14 +374,14 @@ export function IssueDetail({ issue: initialIssue, onClose, onUpdated }: IssueDe
 
       {/* Close dialog */}
       {showCloseDialog && (
-        <div className="p-4 bg-green-50 rounded-lg border border-green-200">
-          <h4 className="text-sm font-medium text-green-800 mb-2">Close Issue</h4>
+        <div className="p-4 bg-green-50 dark:bg-green-900/30 rounded-lg border border-green-200 dark:border-green-800">
+          <h4 className="text-sm font-medium text-green-800 dark:text-green-300 mb-2">Close Issue</h4>
           <textarea
             value={closureNote}
             onChange={(e) => setClosureNote(e.target.value)}
             placeholder="Optional closure note..."
             rows={2}
-            className="w-full px-3 py-2 border border-green-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-500 resize-none mb-2"
+            className="w-full px-3 py-2 border border-green-300 dark:border-green-700 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-500 resize-none mb-2 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder-gray-400"
           />
           <div className="flex gap-2">
             <button
@@ -393,7 +393,7 @@ export function IssueDetail({ issue: initialIssue, onClose, onUpdated }: IssueDe
             </button>
             <button
               onClick={() => { setShowCloseDialog(false); setClosureNote('') }}
-              className="px-3 py-1.5 text-sm font-medium text-gray-600 hover:text-gray-800 transition-colors"
+              className="px-3 py-1.5 text-sm font-medium text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 transition-colors"
             >
               Cancel
             </button>
@@ -403,7 +403,7 @@ export function IssueDetail({ issue: initialIssue, onClose, onUpdated }: IssueDe
 
       {/* Add comment */}
       <div>
-        <h4 className="text-sm font-medium text-gray-700 mb-2">Add Comment</h4>
+        <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Add Comment</h4>
         <div className="flex gap-2">
           <div className="flex-1 space-y-2">
             <textarea
@@ -412,20 +412,20 @@ export function IssueDetail({ issue: initialIssue, onClose, onUpdated }: IssueDe
               onKeyDown={handleCommentKeyDown}
               placeholder="Write a comment... (Ctrl+Enter to submit)"
               rows={2}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 resize-none"
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 resize-none bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-400"
             />
 
             {/* Linked records chips */}
             {linkedRecords.length > 0 && (
               <div className="flex flex-wrap gap-1.5">
                 {linkedRecords.map(r => (
-                  <span key={r.id} className="inline-flex items-center gap-1 px-2 py-1 bg-blue-50 text-blue-700 rounded-md text-xs">
+                  <span key={r.id} className="inline-flex items-center gap-1 px-2 py-1 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded-md text-xs">
                     <span
                       className="inline-flex items-center gap-1 cursor-pointer hover:underline"
                       onClick={() => r.topic_id && navigate(`/topics/${r.topic_id}?recordId=${r.id}`)}
                       title="Go to record"
                     >
-                      <span className="inline-flex px-1 py-0.5 rounded bg-blue-100 text-blue-600 text-[10px] font-semibold leading-none uppercase">{r.type}</span>
+                      <span className="inline-flex px-1 py-0.5 rounded bg-blue-100 dark:bg-blue-800 text-blue-600 dark:text-blue-300 text-[10px] font-semibold leading-none uppercase">{r.type}</span>
                       <span className="text-blue-400 font-medium">{r.topic_title}{r.subcategory_title ? ` / ${r.subcategory_title}` : ''}:</span> {r.title}
                     </span>
                     <button onClick={() => setLinkedRecords(prev => prev.filter(lr => lr.id !== r.id))} className="ml-0.5 text-blue-400 hover:text-blue-600">
@@ -454,7 +454,7 @@ export function IssueDetail({ issue: initialIssue, onClose, onUpdated }: IssueDe
                   <select
                     value={selectedTopicId}
                     onChange={(e) => { setSelectedTopicId(e.target.value); setRecordSearch(''); setRecordResults([]) }}
-                    className="w-full px-3 py-1.5 border border-gray-300 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white"
+                    className="w-full px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
                   >
                     <option value="">All Topics</option>
                     {pickerTopics.map(t => (
@@ -467,10 +467,10 @@ export function IssueDetail({ issue: initialIssue, onClose, onUpdated }: IssueDe
                       value={recordSearch}
                       onChange={(e) => setRecordSearch(e.target.value)}
                       placeholder="Search records by title..."
-                      className="w-full px-3 py-1.5 border border-gray-300 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-primary-500"
+                      className="w-full px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-400"
                     />
                     {recordResults.length > 0 && (
-                      <div className="absolute z-20 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-52 overflow-auto">
+                      <div className="absolute z-20 left-0 right-0 mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg max-h-52 overflow-auto">
                         {recordResults.map(r => (
                           <button
                             key={r.id}
@@ -480,12 +480,12 @@ export function IssueDetail({ issue: initialIssue, onClose, onUpdated }: IssueDe
                               setRecordSearch('')
                               setRecordResults([])
                             }}
-                            className="w-full text-left px-3 py-2 text-xs hover:bg-gray-50 border-b border-gray-100 last:border-0"
+                            className="w-full text-left px-3 py-2 text-xs hover:bg-gray-50 dark:hover:bg-gray-700 border-b border-gray-100 dark:border-gray-700 last:border-0"
                           >
                             <div className="flex items-center gap-1.5">
-                              <span className="inline-flex px-1 py-0.5 rounded bg-gray-100 text-gray-500 text-[10px] font-semibold leading-none uppercase flex-shrink-0">{r.type}</span>
+                              <span className="inline-flex px-1 py-0.5 rounded bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 text-[10px] font-semibold leading-none uppercase flex-shrink-0">{r.type}</span>
                               <span className="text-gray-400">{r.topic_title} / {r.subcategory_title || '\u2014'} /</span>
-                              <span className="font-medium text-gray-700 truncate">{r.title}</span>
+                              <span className="font-medium text-gray-700 dark:text-gray-300 truncate">{r.title}</span>
                             </div>
                             <div className="text-[10px] text-gray-400 mt-0.5 ml-[calc(1.5rem+6px)]">
                               {formatDate(r.created_at)}
@@ -513,7 +513,7 @@ export function IssueDetail({ issue: initialIssue, onClose, onUpdated }: IssueDe
 
       {/* Timeline */}
       <div>
-        <h4 className="text-sm font-medium text-gray-700 mb-3">History</h4>
+        <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">History</h4>
         <IssueTimeline history={history} onHistoryChanged={loadHistory} />
       </div>
     </div>

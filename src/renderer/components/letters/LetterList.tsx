@@ -12,6 +12,7 @@ import { AuthorityManager } from './AuthorityManager'
 import { ContactManager } from './ContactManager'
 import { Modal } from '../common/Modal'
 import { ExportButton } from '../common/ExportButton'
+import { notifyMentionDataChanged } from '../mentions'
 
 interface PendingReference {
   targetLetter: Letter
@@ -40,6 +41,7 @@ export function LetterList() {
   const [isLoadingMore, setIsLoadingMore] = useState(false)
   const [hasMore, setHasMore] = useState(false)
   const [totalCount, setTotalCount] = useState(0)
+  const [refreshKey, setRefreshKey] = useState(0) // Force card remount to refetch tags
   const [viewMode, setViewMode] = useState<ViewMode>('card')
   const [tabMode, setTabMode] = useState<TabMode>('all')
   const [showCreateModal, setShowCreateModal] = useState(false)
@@ -193,6 +195,46 @@ export function LetterList() {
     }
   }, [location.state, loading, tabMode])
 
+  // Handle highlight from URL query param (e.g., from mentions)
+  useEffect(() => {
+    const highlightId = searchParams.get('highlightId')
+    if (!highlightId || loading) return
+
+    const handleHighlightFromUrl = async () => {
+      // Fetch the letter to verify it exists
+      const letter = await window.electronAPI.letters.getById(highlightId) as Letter | null
+      if (!letter) {
+        setSearchParams({}, { replace: true })
+        return
+      }
+
+      // Always switch to 'all' tab and clear filters to ensure visibility
+      if (tabMode !== 'all') {
+        setTabMode('all')
+      }
+      clearFilters()
+
+      // Wait for tab switch and data reload
+      setTimeout(() => {
+        setHighlightedLetterId(highlightId)
+        setSearchParams({}, { replace: true })
+
+        // Scroll to the letter
+        setTimeout(() => {
+          const element = document.getElementById(`letter-${highlightId}`)
+          if (element) {
+            element.scrollIntoView({ behavior: 'smooth', block: 'center' })
+          }
+        }, 100)
+
+        // Clear highlight after 5 seconds
+        setTimeout(() => setHighlightedLetterId(null), 5000)
+      }, tabMode !== 'all' ? 500 : 100)
+    }
+
+    handleHighlightFromUrl()
+  }, [searchParams, loading, tabMode])
+
   const handleSearch = async () => {
     if (!searchQuery && !filterType && !filterStatus && !filterPriority && !filterAuthority && !filterTopic) {
       loadData()
@@ -304,6 +346,20 @@ export function LetterList() {
           }
         }
 
+        // Create mentions if any
+        if (data.mentions && data.mentions.length > 0) {
+          await window.electronAPI.mentions.createBulk(
+            data.mentions.map((m: any) => ({
+              entity_type: 'letter' as const,
+              entity_id: result.letter.id,
+              mentioned_user_id: m.user.id,
+              note: m.note || undefined
+            })),
+            user.id
+          )
+          notifyMentionDataChanged()
+        }
+
         // Record operation for undo/redo
         recordOperation({
           operation: 'create',
@@ -320,6 +376,7 @@ export function LetterList() {
         })
 
         setShowCreateModal(false)
+        setRefreshKey(k => k + 1) // Force cards to refetch tags
         loadData()
       } else {
         toast.error('Error', result.error || 'Failed to create letter')
@@ -388,6 +445,7 @@ export function LetterList() {
 
         setEditingLetter(null)
         setEditingReferences([])
+        setRefreshKey(k => k + 1) // Force cards to refetch tags
         loadData()
         if (selectedLetter?.id === id) {
           const updated = await window.electronAPI.letters.getById(id)
@@ -470,22 +528,22 @@ export function LetterList() {
 
   const getStatusColor = (status: LetterStatus) => {
     switch (status) {
-      case 'pending': return 'bg-yellow-100 text-yellow-800'
-      case 'in_progress': return 'bg-blue-100 text-blue-800'
-      case 'replied': return 'bg-green-100 text-green-800'
-      case 'closed': return 'bg-gray-100 text-gray-800'
-      case 'archived': return 'bg-purple-100 text-purple-800'
-      default: return 'bg-gray-100 text-gray-800'
+      case 'pending': return 'bg-yellow-100 dark:bg-yellow-900/50 text-yellow-800 dark:text-yellow-300'
+      case 'in_progress': return 'bg-blue-100 dark:bg-blue-900/50 text-blue-800 dark:text-blue-300'
+      case 'replied': return 'bg-green-100 dark:bg-green-900/50 text-green-800 dark:text-green-300'
+      case 'closed': return 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-300'
+      case 'archived': return 'bg-purple-100 dark:bg-purple-900/50 text-purple-800 dark:text-purple-300'
+      default: return 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-300'
     }
   }
 
   const getPriorityColor = (priority: LetterPriority) => {
     switch (priority) {
-      case 'urgent': return 'bg-red-100 text-red-800'
-      case 'high': return 'bg-orange-100 text-orange-800'
-      case 'normal': return 'bg-gray-100 text-gray-800'
-      case 'low': return 'bg-blue-100 text-blue-800'
-      default: return 'bg-gray-100 text-gray-800'
+      case 'urgent': return 'bg-red-100 dark:bg-red-900/50 text-red-800 dark:text-red-300'
+      case 'high': return 'bg-orange-100 dark:bg-orange-900/50 text-orange-800 dark:text-orange-300'
+      case 'normal': return 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-300'
+      case 'low': return 'bg-blue-100 dark:bg-blue-900/50 text-blue-800 dark:text-blue-300'
+      default: return 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-300'
     }
   }
 
@@ -515,12 +573,12 @@ export function LetterList() {
   if (tabMode === 'authorities') {
     return (
       <div className="flex-1 flex flex-col">
-        <div className="sticky top-0 z-10 bg-archive-light border-b border-gray-200">
+        <div className="sticky top-0 z-10 bg-archive-light dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700">
           <div className="px-6 py-4">
             <div className="flex items-center justify-between">
               <div>
-                <h2 className="text-2xl font-bold text-gray-900">Letters</h2>
-                <p className="text-gray-500 mt-1">Manage official correspondence and authorities</p>
+                <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Letters</h2>
+                <p className="text-gray-500 dark:text-gray-400 mt-1">Manage official correspondence and authorities</p>
               </div>
             </div>
 
@@ -533,7 +591,7 @@ export function LetterList() {
                   className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                     tabMode === tab
                       ? 'bg-primary-600 text-white'
-                      : 'bg-white text-gray-600 hover:bg-gray-100'
+                      : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
                   }`}
                 >
                   {tab === 'all' ? 'All Letters' :
@@ -553,12 +611,12 @@ export function LetterList() {
   if (tabMode === 'contacts') {
     return (
       <div className="flex-1 flex flex-col">
-        <div className="sticky top-0 z-10 bg-archive-light border-b border-gray-200">
+        <div className="sticky top-0 z-10 bg-archive-light dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700">
           <div className="px-6 py-4">
             <div className="flex items-center justify-between">
               <div>
-                <h2 className="text-2xl font-bold text-gray-900">Letters</h2>
-                <p className="text-gray-500 mt-1">Manage official correspondence and contacts</p>
+                <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Letters</h2>
+                <p className="text-gray-500 dark:text-gray-400 mt-1">Manage official correspondence and contacts</p>
               </div>
             </div>
 
@@ -571,7 +629,7 @@ export function LetterList() {
                   className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                     tabMode === tab
                       ? 'bg-primary-600 text-white'
-                      : 'bg-white text-gray-600 hover:bg-gray-100'
+                      : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
                   }`}
                 >
                   {tab === 'all' ? 'All Letters' :
@@ -591,12 +649,12 @@ export function LetterList() {
   return (
     <div className="flex-1 flex flex-col">
       {/* Sticky Header */}
-      <div className="sticky top-0 z-10 bg-archive-light border-b border-gray-200">
+      <div className="sticky top-0 z-10 bg-archive-light dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700">
         <div className="px-6 py-4">
           <div className="flex items-center justify-between">
             <div>
-              <h2 className="text-2xl font-bold text-gray-900">Letters</h2>
-              <p className="text-gray-500 mt-1">
+              <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Letters</h2>
+              <p className="text-gray-500 dark:text-gray-400 mt-1">
                 {tabMode === 'pending' ? 'Letters awaiting response' :
                  tabMode === 'overdue' ? 'Overdue letters' :
                  `${letters.length} letter${letters.length !== 1 ? 's' : ''}`}
@@ -604,10 +662,10 @@ export function LetterList() {
             </div>
             <div className="flex items-center gap-3">
               {/* View Toggle */}
-              <div className="flex bg-white rounded-lg border border-gray-200 p-1">
+              <div className="flex bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-1">
                 <button
                   onClick={() => setViewMode('card')}
-                  className={`p-2 rounded ${viewMode === 'card' ? 'bg-primary-100 text-primary-600' : 'text-gray-500 hover:text-gray-700'}`}
+                  className={`p-2 rounded ${viewMode === 'card' ? 'bg-primary-100 dark:bg-primary-900/50 text-primary-600 dark:text-primary-400' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'}`}
                   title="Card view"
                 >
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -616,7 +674,7 @@ export function LetterList() {
                 </button>
                 <button
                   onClick={() => setViewMode('table')}
-                  className={`p-2 rounded ${viewMode === 'table' ? 'bg-primary-100 text-primary-600' : 'text-gray-500 hover:text-gray-700'}`}
+                  className={`p-2 rounded ${viewMode === 'table' ? 'bg-primary-100 dark:bg-primary-900/50 text-primary-600 dark:text-primary-400' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'}`}
                   title="Table view"
                 >
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -646,7 +704,7 @@ export function LetterList() {
                 className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                   tabMode === tab
                     ? 'bg-primary-600 text-white'
-                    : 'bg-white text-gray-600 hover:bg-gray-100'
+                    : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
                 }`}
               >
                 {tab === 'all' ? 'All Letters' :
@@ -667,13 +725,13 @@ export function LetterList() {
                     placeholder="Search letters..."
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
-                    className="input w-full"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-primary-500"
                   />
                 </div>
                 <select
                   value={filterType}
                   onChange={(e) => setFilterType(e.target.value as LetterType | '')}
-                  className="input w-40"
+                  className="w-40 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-primary-500"
                 >
                   <option value="">All Types</option>
                   <option value="incoming">Incoming</option>
@@ -683,7 +741,7 @@ export function LetterList() {
                 <select
                   value={filterStatus}
                   onChange={(e) => setFilterStatus(e.target.value as LetterStatus | '')}
-                  className="input w-40"
+                  className="w-40 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-primary-500"
                 >
                   <option value="">All Statuses</option>
                   <option value="pending">Pending</option>
@@ -697,7 +755,7 @@ export function LetterList() {
                 <select
                   value={filterPriority}
                   onChange={(e) => setFilterPriority(e.target.value as LetterPriority | '')}
-                  className="input w-40"
+                  className="w-40 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-primary-500"
                 >
                   <option value="">All Priorities</option>
                   <option value="urgent">Urgent</option>
@@ -708,7 +766,7 @@ export function LetterList() {
                 <select
                   value={filterAuthority}
                   onChange={(e) => setFilterAuthority(e.target.value)}
-                  className="input min-w-64 max-w-md"
+                  className="min-w-64 max-w-md px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-primary-500"
                 >
                   <option value="">All Authorities</option>
                   {authorities.map((auth) => (
@@ -718,7 +776,7 @@ export function LetterList() {
                 <select
                   value={filterTopic}
                   onChange={(e) => setFilterTopic(e.target.value)}
-                  className="input w-48"
+                  className="w-48 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-primary-500"
                 >
                   <option value="">All Topics</option>
                   {topics.map((topic) => (
@@ -744,11 +802,11 @@ export function LetterList() {
           </div>
         ) : letters.length === 0 ? (
           <div className="text-center py-12">
-            <svg className="w-16 h-16 mx-auto text-gray-300 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="w-16 h-16 mx-auto text-gray-300 dark:text-gray-600 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
             </svg>
-            <h3 className="text-lg font-medium text-gray-900 mb-2">No letters found</h3>
-            <p className="text-gray-500 mb-4">
+            <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-2">No letters found</h3>
+            <p className="text-gray-500 dark:text-gray-400 mb-4">
               {tabMode === 'pending' ? 'No pending letters' :
                tabMode === 'overdue' ? 'No overdue letters' :
                'Get started by creating your first letter'}
@@ -763,7 +821,7 @@ export function LetterList() {
           <>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {sortedLetters.map((letter) => (
-                <div key={letter.id} id={`letter-${letter.id}`}>
+                <div key={`${letter.id}-${refreshKey}`} id={`letter-${letter.id}`} className="h-full">
                   <LetterCard
                     letter={letter}
                     onClick={() => setSelectedLetter(letter)}
@@ -780,11 +838,11 @@ export function LetterList() {
                   <button
                     onClick={() => loadData(true, letters.length)}
                     disabled={isLoadingMore}
-                    className="px-6 py-2 text-sm font-medium text-primary-600 bg-primary-50 rounded-lg hover:bg-primary-100 transition-colors disabled:opacity-50"
+                    className="px-6 py-2 text-sm font-medium text-primary-600 dark:text-primary-400 bg-primary-50 dark:bg-primary-900/30 rounded-lg hover:bg-primary-100 dark:hover:bg-primary-900/50 transition-colors disabled:opacity-50"
                   >
                     {isLoadingMore ? (
                       <span className="flex items-center gap-2">
-                        <div className="w-4 h-4 border-2 border-primary-600 border-t-transparent rounded-full animate-spin" />
+                        <div className="w-4 h-4 border-2 border-primary-600 dark:border-primary-400 border-t-transparent rounded-full animate-spin" />
                         Loading...
                       </span>
                     ) : (
@@ -795,7 +853,7 @@ export function LetterList() {
                 {letters.length > PAGE_SIZE && (
                   <button
                     onClick={() => loadData(false)}
-                    className="px-6 py-2 text-sm font-medium text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+                    className="px-6 py-2 text-sm font-medium text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
                   >
                     Show Less
                   </button>
@@ -804,51 +862,51 @@ export function LetterList() {
             )}
           </>
         ) : (
-          <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
+          <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
+            <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+              <thead className="bg-gray-50 dark:bg-gray-700/50">
                 <tr>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Reference</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Subject</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Authority</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Topic</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Priority</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Due</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Type</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Reference</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Subject</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Authority</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Topic</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Status</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Priority</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Date</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Due</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-200">
+              <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
                 {letters.map((letter) => (
                   <tr
                     key={letter.id}
                     id={`letter-${letter.id}`}
                     data-letter-id={letter.id}
                     onClick={() => setSelectedLetter(letter)}
-                    className={`hover:bg-gray-50 cursor-pointer transition-colors duration-700 ${highlightedLetterId === letter.id ? 'bg-primary-50 ring-2 ring-primary-300 ring-inset animate-pulse' : ''}`}
+                    className={`hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer transition-colors duration-700 ${highlightedLetterId === letter.id ? 'bg-primary-50 dark:bg-primary-900/30 ring-2 ring-primary-300 dark:ring-primary-600 ring-inset animate-pulse' : ''}`}
                   >
                     <td className="px-4 py-3 whitespace-nowrap">
                       <div className="flex items-center gap-2">
                         {getTypeIcon(letter.letter_type)}
-                        <span className="text-sm capitalize">{letter.letter_type}</span>
+                        <span className="text-sm capitalize text-gray-900 dark:text-gray-100">{letter.letter_type}</span>
                       </div>
                     </td>
                     <td className="px-4 py-3 whitespace-nowrap">
-                      <span className="text-sm font-mono text-gray-600">
+                      <span className="text-sm font-mono text-gray-600 dark:text-gray-400">
                         {letter.reference_number || letter.incoming_number || letter.outgoing_number || '-'}
                       </span>
                     </td>
                     <td className="px-4 py-3">
-                      <span className="text-sm text-gray-900 line-clamp-1">{letter.subject}</span>
+                      <span className="text-sm text-gray-900 dark:text-gray-100 line-clamp-1">{letter.subject}</span>
                     </td>
                     <td className="px-4 py-3 whitespace-nowrap">
-                      <span className="text-sm text-gray-600">
+                      <span className="text-sm text-gray-600 dark:text-gray-400">
                         {letter.authority_short_name || letter.authority_name || '-'}
                       </span>
                     </td>
                     <td className="px-4 py-3 whitespace-nowrap">
-                      <span className="text-sm text-gray-600">{letter.topic_title || '-'}</span>
+                      <span className="text-sm text-gray-600 dark:text-gray-400">{letter.topic_title || '-'}</span>
                     </td>
                     <td className="px-4 py-3 whitespace-nowrap">
                       <span className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${getStatusColor(letter.status)}`}>
@@ -860,10 +918,10 @@ export function LetterList() {
                         {letter.priority}
                       </span>
                     </td>
-                    <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500">
+                    <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
                       {letter.letter_date ? new Date(letter.letter_date).toLocaleDateString() : '-'}
                     </td>
-                    <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500">
+                    <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
                       {letter.due_date ? new Date(letter.due_date).toLocaleDateString() : '-'}
                     </td>
                   </tr>

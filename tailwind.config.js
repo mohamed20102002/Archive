@@ -28,9 +28,12 @@ export default {
         }
       },
       fontFamily: {
-        sans: ['Inter', 'system-ui', 'sans-serif']
+        sans: ['Inter', 'system-ui', 'sans-serif'],
+        arabic: ['Noto Sans Arabic', 'Tahoma', 'Arial', 'sans-serif']
       }
     }
   },
-  plugins: []
+  plugins: [
+    require('tailwindcss-rtl')
+  ]
 }

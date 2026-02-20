@@ -45,7 +45,7 @@
   }
 
   .btn-secondary {
-    @apply btn bg-gray-100 text-gray-700 hover:bg-gray-200 focus:ring-gray-500;
+    @apply btn bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600 focus:ring-gray-500;
   }
 
   .btn-danger {
@@ -53,7 +53,8 @@
   }
 
   .input {
-    @apply w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 cursor-text;
+    @apply w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 cursor-text bg-white text-gray-900 placeholder-gray-400;
+    @apply dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100 dark:placeholder-gray-400;
   }
 
   .input:disabled {
@@ -69,31 +70,68 @@
   }
 
   .label {
-    @apply block text-sm font-medium text-gray-700 mb-1;
+    @apply block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1;
   }
 
   .card {
-    @apply bg-white rounded-xl shadow-sm border border-gray-100 p-4;
+    @apply bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 p-4;
   }
 
   .card-hover {
-    @apply card hover:shadow-md transition-shadow duration-200;
+    @apply card hover:shadow-md dark:hover:shadow-gray-900/50 transition-shadow duration-200;
   }
 
   .sidebar-item {
-    @apply flex items-center gap-3 px-3 py-2 rounded-lg text-gray-600 hover:bg-gray-100 hover:text-gray-900 transition-colors duration-150;
+    @apply flex items-center gap-3 px-3 py-2 rounded-lg text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 hover:text-gray-900 dark:hover:text-gray-100 transition-colors duration-150;
   }
 
   .sidebar-item-active {
-    @apply sidebar-item bg-primary-50 text-primary-700 hover:bg-primary-100;
+    @apply sidebar-item bg-primary-50 dark:bg-primary-900/50 text-primary-700 dark:text-primary-300 hover:bg-primary-100 dark:hover:bg-primary-900/70;
   }
 
   .timeline-line {
-    @apply absolute left-4 top-8 bottom-0 w-0.5 bg-gray-200;
+    @apply absolute left-4 top-8 bottom-0 w-0.5 bg-gray-200 dark:bg-gray-700;
   }
 
   .timeline-dot {
-    @apply absolute left-2.5 w-3 h-3 rounded-full bg-primary-500 border-2 border-white shadow;
+    @apply absolute left-2.5 w-3 h-3 rounded-full bg-primary-500 border-2 border-white dark:border-gray-800 shadow;
+  }
+
+  /* Stats card */
+  .stat-card {
+    @apply bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4;
+  }
+
+  /* Page section background */
+  .page-section {
+    @apply bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700;
+  }
+
+  /* Tab buttons */
+  .tab-button {
+    @apply px-4 py-2 text-sm font-medium text-gray-600 dark:text-gray-400 border-b-2 border-transparent hover:text-gray-900 dark:hover:text-gray-100 hover:border-gray-300 dark:hover:border-gray-600 transition-colors;
+  }
+
+  .tab-button-active {
+    @apply text-primary-600 dark:text-primary-400 border-primary-600 dark:border-primary-400;
+  }
+
+  /* Text utilities for dark mode */
+  .text-title {
+    @apply text-gray-900 dark:text-gray-100;
+  }
+
+  .text-subtitle {
+    @apply text-gray-600 dark:text-gray-400;
+  }
+
+  .text-muted {
+    @apply text-gray-500 dark:text-gray-400;
+  }
+
+  /* Date headers in timelines */
+  .date-header {
+    @apply text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider;
   }
 
   /* Modal styles */
@@ -109,6 +147,82 @@
 @layer utilities {
   .text-balance {
     text-wrap: balance;
+  }
+
+  /* Screen reader only - visually hidden but accessible */
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border-width: 0;
+  }
+
+  /* Make sr-only visible when focused (for skip links) */
+  .sr-only:focus,
+  .sr-only:focus-within,
+  .focus\:not-sr-only:focus {
+    position: static;
+    width: auto;
+    height: auto;
+    padding: inherit;
+    margin: inherit;
+    overflow: visible;
+    clip: auto;
+    white-space: normal;
+  }
+
+  /* Enhanced focus indicators for better visibility */
+  .focus-visible-ring:focus-visible {
+    @apply outline-none ring-2 ring-primary-500 ring-offset-2 ring-offset-white dark:ring-offset-gray-900;
+  }
+
+  /* High contrast focus for accessibility */
+  .focus-high-contrast:focus-visible {
+    @apply outline-2 outline-offset-2 outline-current;
+  }
+
+  /* Reduced motion support */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+
+  /* High contrast mode support */
+  @media (forced-colors: active) {
+    .btn, .card, .input {
+      border: 2px solid currentColor;
+    }
+
+    .focus-visible-ring:focus-visible {
+      outline: 3px solid currentColor;
+      outline-offset: 2px;
+    }
+  }
+
+  /* Ensure minimum touch target size for accessibility */
+  .touch-target {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  /* Text selection colors for better visibility */
+  ::selection {
+    @apply bg-primary-200 text-primary-900;
+  }
+
+  .dark ::selection {
+    @apply bg-primary-700 text-primary-100;
   }
 
   .animate-fade-in {
@@ -184,6 +298,62 @@
     50% {
       opacity: 0.5;
       box-shadow: 0 0 0 4px rgba(34, 197, 94, 0);
+    }
+  }
+
+  /* Progress bar animations */
+  .animate-progress-indeterminate {
+    animation: progressIndeterminate 1.5s ease-in-out infinite;
+  }
+
+  @keyframes progressIndeterminate {
+    0% {
+      transform: translateX(-100%);
+    }
+    100% {
+      transform: translateX(400%);
+    }
+  }
+
+  /* Striped background for progress bars */
+  .bg-stripes {
+    background-image: linear-gradient(
+      45deg,
+      rgba(255, 255, 255, 0.15) 25%,
+      transparent 25%,
+      transparent 50%,
+      rgba(255, 255, 255, 0.15) 50%,
+      rgba(255, 255, 255, 0.15) 75%,
+      transparent 75%,
+      transparent
+    );
+    background-size: 1rem 1rem;
+  }
+
+  .animate-stripes {
+    animation: stripes 1s linear infinite;
+  }
+
+  @keyframes stripes {
+    0% {
+      background-position: 1rem 0;
+    }
+    100% {
+      background-position: 0 0;
+    }
+  }
+
+  /* Shimmer effect for skeleton loading */
+  .animate-shimmer {
+    animation: shimmer 1.5s infinite;
+  }
+
+  @keyframes shimmer {
+    0% {
+      background-position: -200% 0;
+    }
+    100% {
+      background-position: 200% 0;
     }
   }
 }

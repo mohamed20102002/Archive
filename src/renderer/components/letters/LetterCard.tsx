@@ -1,6 +1,7 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { PinButton } from '../common/PinButton'
-import { Letter, LetterType, LetterStatus, LetterPriority } from '../../types'
+import { TagBadge } from '../tags/TagBadge'
+import { Letter, LetterType, LetterStatus, LetterPriority, Tag } from '../../types'
 
 interface LetterCardProps {
   letter: Letter
@@ -13,6 +14,15 @@ interface LetterCardProps {
 export function LetterCard({ letter, onClick, highlighted, isPinned = false, onTogglePin }: LetterCardProps) {
   const [copied, setCopied] = useState(false)
   const [copiedRef, setCopiedRef] = useState(false)
+  const [tags, setTags] = useState<Tag[]>([])
+
+  useEffect(() => {
+    window.electronAPI.tags.getLetterTags(letter.id).then(t => {
+      setTags(t as Tag[])
+    }).catch(err => {
+      console.error('[LetterCard] Error fetching tags:', err)
+    })
+  }, [letter.id])
 
   const handleCopyId = async (e: React.MouseEvent) => {
     e.stopPropagation()
@@ -95,7 +105,7 @@ export function LetterCard({ letter, onClick, highlighted, isPinned = false, onT
     <div
       data-letter-id={letter.id}
       onClick={onClick}
-      className={`bg-white rounded-lg border ${isOverdue ? 'border-red-300 bg-red-50' : 'border-gray-200'} p-4 hover:shadow-md transition-all duration-700 cursor-pointer group ${highlighted ? 'ring-2 ring-primary-400 bg-primary-50/50' : ''} ${isPinned ? 'ring-2 ring-amber-200 bg-amber-50/30' : ''}`}
+      className={`bg-white dark:bg-gray-800 rounded-lg border ${isOverdue ? 'border-red-300 bg-red-50 dark:bg-red-900/20' : 'border-gray-200 dark:border-gray-700'} p-4 hover:shadow-md dark:hover:shadow-gray-900/50 transition-all duration-700 cursor-pointer group flex flex-col h-full ${highlighted ? 'ring-2 ring-primary-400 bg-primary-50/50 dark:bg-primary-900/20' : ''} ${isPinned ? 'ring-2 ring-amber-400 dark:ring-amber-600 bg-amber-50/30 dark:bg-amber-900/20' : ''}`}
     >
       {/* Header */}
       <div className="flex items-start justify-between mb-3">
@@ -106,7 +116,7 @@ export function LetterCard({ letter, onClick, highlighted, isPinned = false, onT
             </svg>
           )}
           {getTypeIcon(letter.letter_type)}
-          <span className="text-sm font-medium text-gray-600 capitalize">{letter.letter_type}</span>
+          <span className="text-sm font-medium text-gray-600 dark:text-gray-400 capitalize">{letter.letter_type}</span>
         </div>
         <div className="flex items-center gap-2">
           {onTogglePin && (
@@ -130,7 +140,7 @@ export function LetterCard({ letter, onClick, highlighted, isPinned = false, onT
             </span>
           )}
           {(letter.reference_number || letter.incoming_number || letter.outgoing_number) && (
-            <span className="inline-flex items-center gap-1 text-xs font-mono text-gray-500 bg-gray-100 px-2 py-0.5 rounded">
+            <span className="inline-flex items-center gap-1 text-xs font-mono text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded">
               {letter.reference_number || letter.incoming_number || letter.outgoing_number}
               <button
                 onClick={handleCopyRef}
@@ -153,18 +163,18 @@ export function LetterCard({ letter, onClick, highlighted, isPinned = false, onT
       )}
 
       {/* Subject */}
-      <h3 className="font-medium text-gray-900 line-clamp-2 mb-2">{letter.subject}</h3>
+      <h3 className="font-medium text-gray-900 dark:text-gray-100 line-clamp-2 mb-2">{letter.subject}</h3>
 
       {/* Summary */}
       {letter.summary && (
-        <p className="text-sm text-gray-600 line-clamp-2 mb-3">{letter.summary}</p>
+        <p className="text-sm text-gray-600 dark:text-gray-400 line-clamp-2 mb-3">{letter.summary}</p>
       )}
 
       {/* Metadata */}
-      <div className="space-y-2 text-sm">
+      <div className="space-y-2 text-sm flex-grow">
         {/* Authority */}
         {(letter.authority_name || letter.authority_short_name) && (
-          <div className="flex items-center gap-2 text-gray-600">
+          <div className="flex items-center gap-2 text-gray-600 dark:text-gray-400">
             <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
             </svg>
@@ -174,7 +184,7 @@ export function LetterCard({ letter, onClick, highlighted, isPinned = false, onT
 
         {/* Topic */}
         {letter.topic_title && (
-          <div className="flex items-center gap-2 text-gray-600">
+          <div className="flex items-center gap-2 text-gray-600 dark:text-gray-400">
             <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
             </svg>
@@ -183,7 +193,7 @@ export function LetterCard({ letter, onClick, highlighted, isPinned = false, onT
         )}
 
         {/* Dates */}
-        <div className="flex items-center justify-between text-gray-500">
+        <div className="flex items-center justify-between text-gray-500 dark:text-gray-400">
           <div className="flex items-center gap-1">
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
@@ -201,8 +211,18 @@ export function LetterCard({ letter, onClick, highlighted, isPinned = false, onT
         </div>
       </div>
 
+      {/* Tags - always reserve space for consistent card height */}
+      <div className="mt-3 min-h-[24px] flex flex-wrap items-center gap-2">
+        {tags.slice(0, 5).map(tag => (
+          <TagBadge key={tag.id} tag={tag} size="sm" />
+        ))}
+        {tags.length > 5 && (
+          <span className="text-xs text-gray-400">+{tags.length - 5}</span>
+        )}
+      </div>
+
       {/* Footer - Counts */}
-      <div className="flex items-center justify-between mt-3 pt-3 border-t border-gray-100 text-xs text-gray-500">
+      <div className="flex items-center justify-between mt-3 pt-3 border-t border-gray-100 dark:border-gray-700 text-xs text-gray-500 dark:text-gray-400">
         <div className="flex items-center gap-4">
           {letter.attachment_count !== undefined && letter.attachment_count > 0 && (
             <div className="flex items-center gap-1">

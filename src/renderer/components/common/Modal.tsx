@@ -1,4 +1,5 @@
-import React, { useEffect, useRef, ReactNode } from 'react'
+import React, { useEffect, useRef, useMemo, ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 
 interface ModalProps {
   title: string
@@ -8,6 +9,8 @@ interface ModalProps {
   size?: 'sm' | 'md' | 'lg' | 'xl'
   closeOnOverlayClick?: boolean
   closeOnEscape?: boolean
+  /** If true, renders to document.body covering entire screen. If false (default), renders to #modal-root covering only main content */
+  fullScreen?: boolean
 }
 
 const sizeClasses = {
@@ -24,10 +27,35 @@ export function Modal({
   isOpen = true,
   size = 'md',
   closeOnOverlayClick = false,
-  closeOnEscape = false
+  closeOnEscape = false,
+  fullScreen = false
 }: ModalProps) {
   const overlayRef = useRef<HTMLDivElement>(null)
   const contentRef = useRef<HTMLDivElement>(null)
+
+  // Create a stable container element for this modal instance
+  const portalContainer = useMemo(() => {
+    const container = document.createElement('div')
+    container.className = 'modal-portal-container'
+    container.style.cssText = 'position: absolute; inset: 0; z-index: 9999; pointer-events: none;'
+    return container
+  }, [])
+
+  // Mount/unmount the container to the appropriate parent
+  useEffect(() => {
+    const parent = fullScreen
+      ? document.body
+      : (document.getElementById('modal-root') || document.body)
+
+    parent.appendChild(portalContainer)
+
+    return () => {
+      // Safe cleanup - check if container is still a child before removing
+      if (portalContainer.parentNode === parent) {
+        parent.removeChild(portalContainer)
+      }
+    }
+  }, [fullScreen, portalContainer])
 
   // Handle escape key (only if enabled)
   useEffect(() => {
@@ -76,27 +104,27 @@ export function Modal({
   // Don't render if not open (after all hooks)
   if (!isOpen) return null
 
-  return (
+  const modalContent = (
     <div
       ref={overlayRef}
       onClick={handleOverlayClick}
-      className="modal-overlay fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fade-in"
+      className="modal-overlay absolute inset-0 z-[9999] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fade-in pointer-events-auto"
     >
       <div
         ref={contentRef}
-        className={`modal-content w-full ${sizeClasses[size]} bg-white rounded-2xl shadow-2xl animate-slide-in`}
+        className={`modal-content w-full ${sizeClasses[size]} max-h-[90vh] flex flex-col bg-white dark:bg-gray-800 rounded-2xl shadow-2xl animate-slide-in`}
         role="dialog"
         aria-modal="true"
         aria-labelledby="modal-title"
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
-          <h2 id="modal-title" className="text-lg font-semibold text-gray-900">
+        <div className="flex-shrink-0 flex items-center justify-between px-6 py-4 border-b border-gray-100 dark:border-gray-700">
+          <h2 id="modal-title" className="text-lg font-semibold text-gray-900 dark:text-gray-100">
             {title}
           </h2>
           <button
             onClick={onClose}
-            className="p-2 rounded-lg hover:bg-gray-100 text-gray-500 hover:text-gray-700 transition-colors"
+            className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors"
             aria-label="Close modal"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -106,10 +134,13 @@ export function Modal({
         </div>
 
         {/* Content */}
-        <div className="px-6 py-4 max-h-[calc(100vh-200px)] overflow-y-auto">
+        <div className="flex-1 min-h-0 px-6 py-4 overflow-y-auto">
           {children}
         </div>
       </div>
     </div>
   )
+
+  // Use portal to render - to modal-root (main content only) or document.body (fullScreen)
+  return createPortal(modalContent, portalContainer)
 }

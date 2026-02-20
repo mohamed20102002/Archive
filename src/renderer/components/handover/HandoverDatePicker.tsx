@@ -29,14 +29,14 @@ export function HandoverDatePicker({
     <div className="flex items-center justify-between gap-6">
       {/* Week Number */}
       <div className="flex items-center gap-2">
-        <span className="text-sm text-gray-500">Week</span>
-        <span className="text-xl font-bold text-primary-600">{weekNumber}</span>
+        <span className="text-sm text-gray-500 dark:text-gray-400">Week</span>
+        <span className="text-xl font-bold text-primary-600 dark:text-primary-400">{weekNumber}</span>
       </div>
 
       {/* Date Range Picker */}
       <div className="flex items-center gap-3">
         <div className="flex items-center gap-2">
-          <label className="text-xs text-gray-500">From</label>
+          <label className="text-xs text-gray-500 dark:text-gray-400">From</label>
           <input
             type="date"
             value={formatForInput(startDate)}
@@ -51,12 +51,12 @@ export function HandoverDatePicker({
           />
         </div>
 
-        <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <svg className="w-4 h-4 text-gray-400 dark:text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8l4 4m0 0l-4 4m4-4H3" />
         </svg>
 
         <div className="flex items-center gap-2">
-          <label className="text-xs text-gray-500">To</label>
+          <label className="text-xs text-gray-500 dark:text-gray-400">To</label>
           <input
             type="date"
             value={formatForInput(endDate)}

@@ -1,7 +1,8 @@
-import React from 'react'
+import React, { useState, useEffect } from 'react'
 import { parseISO, differenceInDays } from 'date-fns'
 import { PinButton } from '../common/PinButton'
-import type { Issue } from '../../types'
+import { TagBadge } from '../tags/TagBadge'
+import type { Issue, Tag } from '../../types'
 
 interface IssueCardProps {
   issue: Issue
@@ -36,15 +37,24 @@ function isReminderOverdue(reminderDate: string | null): boolean {
 export function IssueCard({ issue, onClick, highlighted, isPinned = false, onTogglePin }: IssueCardProps) {
   const styles = importanceStyles[issue.importance] || importanceStyles.medium
   const reminderOverdue = issue.status === 'open' && isReminderOverdue(issue.reminder_date)
+  const [tags, setTags] = useState<Tag[]>([])
+
+  useEffect(() => {
+    window.electronAPI.tags.getIssueTags(issue.id).then(t => {
+      setTags(t as Tag[])
+    }).catch(err => {
+      console.error('[IssueCard] Error fetching tags:', err)
+    })
+  }, [issue.id])
 
   return (
     <div
       onClick={onClick}
-      className={`bg-white rounded-lg border border-l-4 ${styles.border} p-4 hover:shadow-md transition-all cursor-pointer group ${
+      className={`bg-white dark:bg-gray-800 rounded-lg border border-l-4 ${styles.border} p-4 hover:shadow-md dark:hover:shadow-gray-900/50 transition-all cursor-pointer group flex flex-col h-full ${
         highlighted
           ? 'border-primary-500 ring-2 ring-primary-500 ring-opacity-50 shadow-lg'
-          : 'border-gray-200'
-      } ${isPinned ? 'ring-2 ring-amber-200 bg-amber-50/30' : ''}`}
+          : 'border-gray-200 dark:border-gray-700'
+      } ${isPinned ? 'ring-2 ring-amber-400 dark:ring-amber-600 bg-amber-50/30 dark:bg-amber-900/20' : ''}`}
     >
       {/* Header */}
       <div className="flex items-start justify-between gap-3 mb-2">
@@ -54,7 +64,7 @@ export function IssueCard({ issue, onClick, highlighted, isPinned = false, onTog
               <path d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
             </svg>
           )}
-          <h3 className="text-sm font-semibold text-gray-900 line-clamp-2">{issue.title}</h3>
+          <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100 line-clamp-2">{issue.title}</h3>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
           {onTogglePin && (
@@ -70,11 +80,11 @@ export function IssueCard({ issue, onClick, highlighted, isPinned = false, onTog
 
       {/* Description preview */}
       {issue.description && (
-        <p className="text-sm text-gray-600 line-clamp-2 mb-3">{issue.description}</p>
+        <p className="text-sm text-gray-600 dark:text-gray-400 line-clamp-2 mb-3">{issue.description}</p>
       )}
 
       {/* Badges row */}
-      <div className="flex flex-wrap items-center gap-2 mb-3">
+      <div className="flex flex-wrap items-center gap-2 mb-3 flex-grow">
         {issue.topic_title && (
           <span className="inline-flex items-center px-2 py-0.5 text-xs font-medium rounded-full bg-purple-50 text-purple-700">
             {issue.topic_title}
@@ -94,8 +104,18 @@ export function IssueCard({ issue, onClick, highlighted, isPinned = false, onTog
         )}
       </div>
 
+      {/* Tags - always reserve space for consistent card height */}
+      <div className="min-h-[24px] flex flex-wrap items-center gap-2 mb-3">
+        {tags.slice(0, 5).map(tag => (
+          <TagBadge key={tag.id} tag={tag} size="sm" />
+        ))}
+        {tags.length > 5 && (
+          <span className="text-xs text-gray-400">+{tags.length - 5}</span>
+        )}
+      </div>
+
       {/* Footer */}
-      <div className="flex items-center justify-between text-xs text-gray-500">
+      <div className="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
         <span>{issue.status === 'open' ? getAgingText(issue.created_at) : `Completed`}</span>
         <span>{issue.creator_name || 'Unknown'}</span>
       </div>

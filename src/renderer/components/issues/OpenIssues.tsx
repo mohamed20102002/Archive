@@ -10,6 +10,7 @@ import { IssueDetail } from './IssueDetail'
 import { IssuesSummaryModal } from './IssuesSummaryModal'
 import { ExportButton } from '../common/ExportButton'
 import { notifyReminderDataChanged } from '../reminders/ReminderBadge'
+import { notifyMentionDataChanged } from '../mentions'
 import type { Issue, Topic, IssueImportance, IssueFilters, CreateIssueData } from '../../types'
 
 type TabMode = 'open' | 'completed'
@@ -41,6 +42,7 @@ export function OpenIssues() {
   const [isLoadingMore, setIsLoadingMore] = useState(false)
   const [hasMore, setHasMore] = useState(false)
   const [totalCount, setTotalCount] = useState(0)
+  const [refreshKey, setRefreshKey] = useState(0) // Force card remount to refetch tags
 
   // UI state
   const [tabMode, setTabMode] = useState<TabMode>('open')
@@ -142,6 +144,40 @@ export function OpenIssues() {
       handleSearchHighlight()
     }
   }, [location.state, loading, tabMode])
+
+  // Handle highlight from URL query param (e.g., from mentions)
+  useEffect(() => {
+    const highlightId = searchParams.get('highlightId')
+    if (!highlightId || loading) return
+
+    const handleHighlightFromUrl = async () => {
+      // Fetch the issue to check its status
+      const issue = await window.electronAPI.issues.getById(highlightId) as Issue | null
+      if (!issue) {
+        setSearchParams({}, { replace: true })
+        return
+      }
+
+      // Check if we need to switch tabs
+      const issueTab = issue.status === 'completed' ? 'completed' : 'open'
+      if (issueTab !== tabMode) {
+        setTabMode(issueTab)
+        // Wait for tab switch and data reload
+        setTimeout(() => {
+          setHighlightedIssueId(highlightId)
+          setSearchParams({}, { replace: true })
+          setTimeout(() => setHighlightedIssueId(null), 5000)
+        }, 500)
+      } else {
+        // Same tab, just highlight
+        setHighlightedIssueId(highlightId)
+        setSearchParams({}, { replace: true })
+        setTimeout(() => setHighlightedIssueId(null), 5000)
+      }
+    }
+
+    handleHighlightFromUrl()
+  }, [searchParams, loading, tabMode])
 
   const buildFilters = useCallback((currentOffset = 0): IssueFilters => {
     const filters: IssueFilters = {}
@@ -251,12 +287,26 @@ export function OpenIssues() {
     return () => clearTimeout(debounce)
   }, [searchQuery])
 
-  const handleCreateIssue = async (data: CreateIssueData) => {
+  const handleCreateIssue = async (data: CreateIssueData & { mentions?: any[] }) => {
     if (!user) return
     try {
       const result = await window.electronAPI.issues.create(data, user.id)
       if (result.success) {
         const createdIssue = result.issue as Issue
+
+        // Create mentions if any
+        if (data.mentions && data.mentions.length > 0) {
+          await window.electronAPI.mentions.createBulk(
+            data.mentions.map((m: any) => ({
+              entity_type: 'issue' as const,
+              entity_id: createdIssue.id,
+              mentioned_user_id: m.user.id,
+              note: m.note || undefined
+            })),
+            user.id
+          )
+          notifyMentionDataChanged()
+        }
 
         // Record operation for undo/redo
         recordOperation({
@@ -274,6 +324,7 @@ export function OpenIssues() {
         })
 
         setShowCreateModal(false)
+        setRefreshKey(k => k + 1) // Force cards to refetch tags
         loadIssues()
         loadStats()
         notifyReminderDataChanged()
@@ -286,6 +337,7 @@ export function OpenIssues() {
   }
 
   const handleIssueUpdated = () => {
+    setRefreshKey(k => k + 1) // Force cards to refetch tags
     loadIssues()
     loadStats()
     notifyReminderDataChanged()
@@ -309,18 +361,18 @@ export function OpenIssues() {
   return (
     <div className="flex-1 flex flex-col">
       {/* Sticky Header */}
-      <div className="sticky top-0 z-10 bg-archive-light border-b border-gray-200">
+      <div className="sticky top-0 z-10 bg-archive-light dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700">
         {/* Title row */}
         <div className="px-6 pt-6 pb-4">
           <div className="flex items-center justify-between mb-4">
             <div>
-              <h1 className="text-2xl font-bold text-gray-900">Open Issues</h1>
-              <p className="text-sm text-gray-500 mt-1">Track events, problems, and tasks requiring follow-up</p>
+              <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Open Issues</h1>
+              <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Track events, problems, and tasks requiring follow-up</p>
             </div>
             <div className="flex items-center gap-2">
               <button
                 onClick={() => setShowSummaryModal(true)}
-                className="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+                className="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors"
                 title="View quick summary of all open issues with their latest updates"
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -344,21 +396,21 @@ export function OpenIssues() {
           {/* Stats cards */}
           {stats && (
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
-              <div className="bg-white rounded-lg border border-gray-200 p-3">
-                <p className="text-xs text-gray-500 uppercase font-medium">Open</p>
-                <p className="text-xl font-bold text-gray-900">{stats.totalOpen}</p>
+              <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-3">
+                <p className="text-xs text-gray-500 dark:text-gray-400 uppercase font-medium">Open</p>
+                <p className="text-xl font-bold text-gray-900 dark:text-gray-100">{stats.totalOpen}</p>
               </div>
-              <div className="bg-white rounded-lg border border-gray-200 p-3">
+              <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-3">
                 <p className="text-xs text-red-500 uppercase font-medium">Critical</p>
-                <p className="text-xl font-bold text-red-700">{stats.byImportance.critical || 0}</p>
+                <p className="text-xl font-bold text-red-700 dark:text-red-400">{stats.byImportance.critical || 0}</p>
               </div>
-              <div className="bg-white rounded-lg border border-gray-200 p-3">
+              <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-3">
                 <p className="text-xs text-orange-500 uppercase font-medium">High</p>
-                <p className="text-xl font-bold text-orange-700">{stats.byImportance.high || 0}</p>
+                <p className="text-xl font-bold text-orange-700 dark:text-orange-400">{stats.byImportance.high || 0}</p>
               </div>
-              <div className="bg-white rounded-lg border border-gray-200 p-3">
-                <p className="text-xs text-gray-500 uppercase font-medium">Overdue Reminders</p>
-                <p className={`text-xl font-bold ${stats.overdueReminders > 0 ? 'text-red-600' : 'text-gray-900'}`}>
+              <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-3">
+                <p className="text-xs text-gray-500 dark:text-gray-400 uppercase font-medium">Overdue Reminders</p>
+                <p className={`text-xl font-bold ${stats.overdueReminders > 0 ? 'text-red-600 dark:text-red-400' : 'text-gray-900 dark:text-gray-100'}`}>
                   {stats.overdueReminders}
                 </p>
               </div>
@@ -366,34 +418,34 @@ export function OpenIssues() {
           )}
 
           {/* Tabs */}
-          <div className="flex items-center gap-1 border-b border-gray-200 -mb-4">
+          <div className="flex items-center gap-1 border-b border-gray-200 dark:border-gray-700 -mb-4">
             <button
               onClick={() => setTabMode('open')}
               className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
                 tabMode === 'open'
-                  ? 'border-primary-600 text-primary-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700'
+                  ? 'border-primary-600 text-primary-600 dark:border-primary-400 dark:text-primary-400'
+                  : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'
               }`}
             >
               Open Issues
-              {stats && <span className="ml-1.5 text-xs px-1.5 py-0.5 rounded-full bg-gray-100">{stats.totalOpen}</span>}
+              {stats && <span className="ml-1.5 text-xs px-1.5 py-0.5 rounded-full bg-gray-100 dark:bg-gray-700">{stats.totalOpen}</span>}
             </button>
             <button
               onClick={() => setTabMode('completed')}
               className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
                 tabMode === 'completed'
-                  ? 'border-primary-600 text-primary-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700'
+                  ? 'border-primary-600 text-primary-600 dark:border-primary-400 dark:text-primary-400'
+                  : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'
               }`}
             >
               Completed
-              {stats && <span className="ml-1.5 text-xs px-1.5 py-0.5 rounded-full bg-gray-100">{stats.totalCompleted}</span>}
+              {stats && <span className="ml-1.5 text-xs px-1.5 py-0.5 rounded-full bg-gray-100 dark:bg-gray-700">{stats.totalCompleted}</span>}
             </button>
           </div>
         </div>
 
         {/* Filter bar */}
-        <div className="px-6 py-3 bg-white border-t border-gray-100 flex flex-wrap items-center gap-3">
+        <div className="px-6 py-3 bg-white dark:bg-gray-800 border-t border-gray-100 dark:border-gray-700 flex flex-wrap items-center gap-3">
           {/* Search */}
           <div className="relative flex-1 min-w-[200px] max-w-sm">
             <input
@@ -401,7 +453,7 @@ export function OpenIssues() {
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search issues..."
-              className="w-full pl-9 pr-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+              className="input pl-9 pr-3 py-1.5 text-sm"
             />
             <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
@@ -412,7 +464,7 @@ export function OpenIssues() {
           <select
             value={filterTopic}
             onChange={(e) => setFilterTopic(e.target.value)}
-            className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+            className="input w-auto px-3 py-1.5 text-sm"
           >
             <option value="">All Topics</option>
             {topics.map(t => (
@@ -424,7 +476,7 @@ export function OpenIssues() {
           <select
             value={filterImportance}
             onChange={(e) => setFilterImportance(e.target.value as IssueImportance | '')}
-            className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+            className="input w-auto px-3 py-1.5 text-sm"
           >
             <option value="">All Importance</option>
             <option value="critical">Critical</option>
@@ -437,7 +489,7 @@ export function OpenIssues() {
           <select
             value={filterHasReminder}
             onChange={(e) => setFilterHasReminder(e.target.value as '' | 'yes' | 'no')}
-            className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+            className="input w-auto px-3 py-1.5 text-sm"
           >
             <option value="">Reminders: Any</option>
             <option value="yes">Has Reminder</option>
@@ -497,8 +549,9 @@ export function OpenIssues() {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {sortedIssues.map((issue) => (
                 <div
-                  key={issue.id}
+                  key={`${issue.id}-${refreshKey}`}
                   ref={issue.id === highlightedIssueId ? highlightedCardRef : undefined}
+                  className="h-full"
                 >
                   <IssueCard
                     issue={issue}

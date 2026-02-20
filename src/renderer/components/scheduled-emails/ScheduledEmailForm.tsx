@@ -233,17 +233,17 @@ export function ScheduledEmailForm({ schedule, onClose, onSave }: ScheduledEmail
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-3xl max-h-[90vh] overflow-hidden flex flex-col">
+      <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl w-full max-w-3xl max-h-[90vh] overflow-hidden flex flex-col">
         {/* Header */}
-        <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-gray-900">
+        <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
             {schedule ? 'Edit Schedule' : 'New Email Schedule'}
           </h2>
           <button
             onClick={onClose}
-            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+            className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
           >
-            <svg className="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="w-5 h-5 text-gray-500 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
             </svg>
           </button>
@@ -252,7 +252,7 @@ export function ScheduledEmailForm({ schedule, onClose, onSave }: ScheduledEmail
         {/* Form */}
         <div className="flex-1 overflow-y-auto p-6 space-y-6">
           {error && (
-            <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+            <div className="p-3 bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 rounded-lg text-sm text-red-700 dark:text-red-300">
               {error}
             </div>
           )}
@@ -260,21 +260,21 @@ export function ScheduledEmailForm({ schedule, onClose, onSave }: ScheduledEmail
           {/* Basic Info */}
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Name *</label>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Name *</label>
               <input
                 type="text"
                 value={formData.name}
                 onChange={(e) => handleInputChange('name', e.target.value)}
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                className="input"
                 placeholder="Daily Report Email"
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Language</label>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Language</label>
               <select
                 value={formData.language}
                 onChange={(e) => handleInputChange('language', e.target.value)}
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                className="input"
               >
                 <option value="en">English</option>
                 <option value="ar">Arabic</option>
@@ -283,27 +283,27 @@ export function ScheduledEmailForm({ schedule, onClose, onSave }: ScheduledEmail
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Description</label>
             <input
               type="text"
               value={formData.description}
               onChange={(e) => handleInputChange('description', e.target.value)}
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+              className="input"
               placeholder="Optional description..."
             />
           </div>
 
           {/* Schedule */}
-          <div className="p-4 bg-gray-50 rounded-xl space-y-4">
-            <h3 className="font-medium text-gray-900">Schedule</h3>
+          <div className="p-4 bg-gray-50 dark:bg-gray-700/50 rounded-xl space-y-4">
+            <h3 className="font-medium text-gray-900 dark:text-gray-100">Schedule</h3>
 
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Frequency</label>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Frequency</label>
                 <select
                   value={formData.frequency_type}
                   onChange={(e) => handleInputChange('frequency_type', e.target.value)}
-                  className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                  className="input"
                 >
                   <option value="daily">Daily</option>
                   <option value="weekly">Weekly (select days)</option>
@@ -311,12 +311,12 @@ export function ScheduledEmailForm({ schedule, onClose, onSave }: ScheduledEmail
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Time</label>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Time</label>
                 <input
                   type="time"
                   value={formData.send_time}
                   onChange={(e) => handleInputChange('send_time', e.target.value)}
-                  className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                  className="input"
                 />
               </div>
             </div>
@@ -324,7 +324,7 @@ export function ScheduledEmailForm({ schedule, onClose, onSave }: ScheduledEmail
             {/* Weekly Days */}
             {formData.frequency_type === 'weekly' && (
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Days of Week</label>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Days of Week</label>
                 <div className="flex gap-2 flex-wrap">
                   {DAY_NAMES.map((day, index) => (
                     <button
@@ -334,7 +334,7 @@ export function ScheduledEmailForm({ schedule, onClose, onSave }: ScheduledEmail
                       className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
                         formData.frequency_days.includes(index)
                           ? 'bg-primary-600 text-white'
-                          : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50'
+                          : 'bg-white dark:bg-gray-600 border border-gray-300 dark:border-gray-500 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-500'
                       }`}
                     >
                       {day.substring(0, 3)}
@@ -347,7 +347,7 @@ export function ScheduledEmailForm({ schedule, onClose, onSave }: ScheduledEmail
             {/* Monthly Days */}
             {formData.frequency_type === 'monthly' && (
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Days of Month</label>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Days of Month</label>
                 <div className="grid grid-cols-7 gap-2">
                   {Array.from({ length: 31 }, (_, i) => i + 1).map((day) => (
                     <button
@@ -357,7 +357,7 @@ export function ScheduledEmailForm({ schedule, onClose, onSave }: ScheduledEmail
                       className={`px-2 py-1 rounded text-sm font-medium transition-colors ${
                         formData.frequency_days.includes(day)
                           ? 'bg-primary-600 text-white'
-                          : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50'
+                          : 'bg-white dark:bg-gray-600 border border-gray-300 dark:border-gray-500 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-500'
                       }`}
                     >
                       {day}
@@ -370,25 +370,25 @@ export function ScheduledEmailForm({ schedule, onClose, onSave }: ScheduledEmail
 
           {/* Recipients */}
           <div className="space-y-4">
-            <h3 className="font-medium text-gray-900">Recipients</h3>
+            <h3 className="font-medium text-gray-900 dark:text-gray-100">Recipients</h3>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">To *</label>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">To *</label>
               <input
                 type="text"
                 value={formData.to_emails}
                 onChange={(e) => handleInputChange('to_emails', e.target.value)}
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                className="input"
                 placeholder="email@example.com; another@example.com"
               />
-              <p className="mt-1 text-xs text-gray-500">Separate multiple emails with semicolon (;)</p>
+              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Separate multiple emails with semicolon (;)</p>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">CC</label>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">CC</label>
               <input
                 type="text"
                 value={formData.cc_emails}
                 onChange={(e) => handleInputChange('cc_emails', e.target.value)}
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                className="input"
                 placeholder="cc@example.com"
               />
             </div>
@@ -397,11 +397,11 @@ export function ScheduledEmailForm({ schedule, onClose, onSave }: ScheduledEmail
           {/* Email Content */}
           <div className="space-y-4">
             <div className="flex items-center justify-between">
-              <h3 className="font-medium text-gray-900">Email Content</h3>
+              <h3 className="font-medium text-gray-900 dark:text-gray-100">Email Content</h3>
               <button
                 type="button"
                 onClick={handlePreview}
-                className="text-sm text-primary-600 hover:text-primary-700 flex items-center gap-1"
+                className="text-sm text-primary-600 dark:text-primary-400 hover:text-primary-700 dark:hover:text-primary-300 flex items-center gap-1"
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
@@ -412,10 +412,10 @@ export function ScheduledEmailForm({ schedule, onClose, onSave }: ScheduledEmail
             </div>
 
             {/* Shared Placeholders - inserts at focused field */}
-            <div className="p-3 bg-blue-50 rounded-lg">
+            <div className="p-3 bg-blue-50 dark:bg-blue-900/30 rounded-lg">
               <div className="flex items-center justify-between mb-2">
-                <p className="text-sm font-medium text-blue-900">Placeholders</p>
-                <span className="text-xs text-blue-600">
+                <p className="text-sm font-medium text-blue-900 dark:text-blue-200">Placeholders</p>
+                <span className="text-xs text-blue-600 dark:text-blue-400">
                   Insert into: <span className="font-medium">{focusedField === 'subject' ? 'Subject' : 'Body'}</span>
                 </span>
               </div>
@@ -425,7 +425,7 @@ export function ScheduledEmailForm({ schedule, onClose, onSave }: ScheduledEmail
                     key={p.placeholder}
                     type="button"
                     onClick={() => handleInsertPlaceholder(p.placeholder)}
-                    className="px-2 py-0.5 bg-white border border-blue-200 rounded text-xs text-blue-700 hover:bg-blue-100 transition-colors"
+                    className="px-2 py-0.5 bg-white dark:bg-blue-800 border border-blue-200 dark:border-blue-700 rounded text-xs text-blue-700 dark:text-blue-200 hover:bg-blue-100 dark:hover:bg-blue-700 transition-colors"
                     title={p.description}
                   >
                     {p.placeholder}
@@ -435,14 +435,14 @@ export function ScheduledEmailForm({ schedule, onClose, onSave }: ScheduledEmail
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Subject *</label>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Subject *</label>
               <input
                 ref={subjectInputRef}
                 type="text"
                 value={formData.subject_template}
                 onChange={(e) => handleInputChange('subject_template', e.target.value)}
                 onFocus={() => setFocusedField('subject')}
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                className="input"
                 placeholder={formData.language === 'ar' ? 'تقرير أسبوعي - {{date}}' : 'Weekly Report - {{date}}'}
                 dir="auto"
               />
@@ -450,12 +450,12 @@ export function ScheduledEmailForm({ schedule, onClose, onSave }: ScheduledEmail
 
             <div>
               <div className="flex items-center justify-between mb-1">
-                <label className="block text-sm font-medium text-gray-700">Body *</label>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Body *</label>
                 <div className="flex gap-2">
                   <button
                     type="button"
                     onClick={handlePasteFormatted}
-                    className="text-xs px-2 py-1 bg-green-100 text-green-700 rounded hover:bg-green-200 flex items-center gap-1"
+                    className="text-xs px-2 py-1 bg-green-100 dark:bg-green-900/50 text-green-700 dark:text-green-300 rounded hover:bg-green-200 dark:hover:bg-green-900/70 flex items-center gap-1"
                   >
                     <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
@@ -465,7 +465,7 @@ export function ScheduledEmailForm({ schedule, onClose, onSave }: ScheduledEmail
                   <button
                     type="button"
                     onClick={handleClearBody}
-                    className="text-xs px-2 py-1 bg-gray-100 text-gray-600 rounded hover:bg-gray-200"
+                    className="text-xs px-2 py-1 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 rounded hover:bg-gray-200 dark:hover:bg-gray-600"
                   >
                     Clear
                   </button>
@@ -475,11 +475,11 @@ export function ScheduledEmailForm({ schedule, onClose, onSave }: ScheduledEmail
                 ref={bodyEditorRef}
                 contentEditable
                 onFocus={() => setFocusedField('body')}
-                className="w-full min-h-[200px] max-h-[300px] overflow-y-auto text-sm px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+                className="w-full min-h-[200px] max-h-[300px] overflow-y-auto text-sm px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
                 dir="auto"
                 style={{ whiteSpace: 'pre-wrap' }}
               />
-              <p className="text-xs text-gray-500 mt-1">
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                 You can paste formatted text from Outlook or other email clients to preserve styling.
               </p>
             </div>
@@ -487,7 +487,7 @@ export function ScheduledEmailForm({ schedule, onClose, onSave }: ScheduledEmail
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-4 border-t border-gray-200 flex items-center justify-end gap-3">
+        <div className="px-6 py-4 border-t border-gray-200 dark:border-gray-700 flex items-center justify-end gap-3">
           <button
             onClick={onClose}
             className="btn-secondary"
@@ -515,10 +515,10 @@ export function ScheduledEmailForm({ schedule, onClose, onSave }: ScheduledEmail
       {/* Preview Modal */}
       {showPreview && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-lg">
-            <div className="px-4 py-3 border-b border-gray-200 flex items-center justify-between">
-              <h3 className="font-medium text-gray-900">Preview</h3>
-              <button onClick={() => setShowPreview(false)} className="text-gray-400 hover:text-gray-600">
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl w-full max-w-lg">
+            <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+              <h3 className="font-medium text-gray-900 dark:text-gray-100">Preview</h3>
+              <button onClick={() => setShowPreview(false)} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                 </svg>
@@ -526,21 +526,21 @@ export function ScheduledEmailForm({ schedule, onClose, onSave }: ScheduledEmail
             </div>
             <div className="p-4 space-y-4">
               <div>
-                <label className="text-xs font-medium text-gray-500 uppercase">Subject</label>
-                <p className="mt-1 text-gray-900 font-medium" dir="auto">
+                <label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Subject</label>
+                <p className="mt-1 text-gray-900 dark:text-gray-100 font-medium" dir="auto">
                   {previewSubject}
                 </p>
               </div>
               <div>
-                <label className="text-xs font-medium text-gray-500 uppercase">Body</label>
+                <label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Body</label>
                 <div
-                  className="mt-1 p-3 bg-gray-50 rounded-lg text-gray-900 text-sm max-h-60 overflow-y-auto"
+                  className="mt-1 p-3 bg-gray-50 dark:bg-gray-700 rounded-lg text-gray-900 dark:text-gray-100 text-sm max-h-60 overflow-y-auto"
                   dir="auto"
                   dangerouslySetInnerHTML={{ __html: previewBody }}
                 />
               </div>
             </div>
-            <div className="px-4 py-3 border-t border-gray-200 flex justify-end">
+            <div className="px-4 py-3 border-t border-gray-200 dark:border-gray-700 flex justify-end">
               <button onClick={() => setShowPreview(false)} className="btn-secondary">
                 Close
               </button>

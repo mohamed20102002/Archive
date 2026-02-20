@@ -4,6 +4,8 @@ import { formatDistanceToNow } from 'date-fns'
 import { useAuth } from '../../context/AuthContext'
 import { useSettings } from '../../context/SettingsContext'
 import { ScheduledEmailBadge } from '../scheduled-emails/ScheduledEmailBadge'
+import { MentionsBadge } from '../mentions/MentionsBadge'
+import { RecentItemsCompact } from '../common/RecentItems'
 
 interface NavItem {
   path: string
@@ -12,6 +14,7 @@ interface NavItem {
   adminOnly?: boolean
   showConnectionIndicator?: boolean
   showScheduledEmailBadge?: boolean
+  showMentionsBadge?: boolean
 }
 
 const navItems: NavItem[] = [
@@ -50,6 +53,16 @@ const navItems: NavItem[] = [
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
       </svg>
     )
+  },
+  {
+    path: '/mentions',
+    label: 'Mentions',
+    icon: (
+      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 12a4 4 0 10-8 0 4 4 0 008 0zm0 0v1.5a2.5 2.5 0 005 0V12a9 9 0 10-9 9m4.5-1.206a8.959 8.959 0 01-4.5 1.207" />
+      </svg>
+    ),
+    showMentionsBadge: true
   },
   {
     path: '/calendar',
@@ -230,7 +243,7 @@ export function Sidebar() {
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 px-4 py-6 space-y-1">
+      <nav className="flex-1 px-4 py-6 space-y-1 overflow-y-auto">
         {filteredItems.map((item) => {
           const isActive = location.pathname === item.path ||
             (item.path !== '/' && location.pathname.startsWith(item.path))
@@ -258,9 +271,18 @@ export function Sidebar() {
               {item.showScheduledEmailBadge && (
                 <ScheduledEmailBadge className="absolute right-3" />
               )}
+              {/* Mentions badge */}
+              {item.showMentionsBadge && (
+                <MentionsBadge className="absolute right-3" />
+              )}
             </NavLink>
           )
         })}
+
+        {/* Recent Items */}
+        <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+          <RecentItemsCompact limit={5} />
+        </div>
       </nav>
 
       {/* Footer */}

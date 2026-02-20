@@ -41,8 +41,111 @@ export interface TokenPayload {
   exp: number
 }
 
-// In-memory session store for active tokens
-const activeSessions = new Map<string, { userId: string; expiresAt: number }>()
+// Session management settings
+const DEFAULT_SESSION_TIMEOUT_MINUTES = 30
+let sessionTimeoutMinutes = DEFAULT_SESSION_TIMEOUT_MINUTES
+
+// In-memory session store for active tokens with activity tracking
+interface Session {
+  userId: string
+  expiresAt: number
+  lastActivity: number
+  warningShown: boolean
+}
+const activeSessions = new Map<string, Session>()
+
+// Get/set session timeout setting
+export function getSessionTimeout(): number {
+  return sessionTimeoutMinutes
+}
+
+export function setSessionTimeout(minutes: number): void {
+  sessionTimeoutMinutes = Math.max(5, Math.min(480, minutes)) // 5 min to 8 hours
+}
+
+// Update last activity for a session
+export function updateSessionActivity(token: string): { valid: boolean; timeoutWarning: boolean; remainingSeconds: number } {
+  const session = activeSessions.get(token)
+  if (!session) {
+    return { valid: false, timeoutWarning: false, remainingSeconds: 0 }
+  }
+
+  const now = Date.now()
+  const timeoutMs = sessionTimeoutMinutes * 60 * 1000
+  const warningThresholdMs = 5 * 60 * 1000 // 5 minutes before timeout
+
+  // Check if session has timed out due to inactivity
+  const timeSinceActivity = now - session.lastActivity
+  if (timeSinceActivity > timeoutMs) {
+    activeSessions.delete(token)
+    return { valid: false, timeoutWarning: false, remainingSeconds: 0 }
+  }
+
+  // Update last activity
+  session.lastActivity = now
+
+  // Calculate remaining time
+  const remainingMs = timeoutMs - timeSinceActivity
+  const remainingSeconds = Math.ceil(remainingMs / 1000)
+
+  // Check if we should show a warning (within 5 minutes of timeout)
+  const timeoutWarning = remainingMs <= warningThresholdMs && !session.warningShown
+  if (timeoutWarning) {
+    session.warningShown = true
+  }
+
+  // Reset warning flag if user becomes active again with plenty of time
+  if (remainingMs > warningThresholdMs) {
+    session.warningShown = false
+  }
+
+  return { valid: true, timeoutWarning, remainingSeconds }
+}
+
+// Extend session (reset the activity timer)
+export function extendSession(token: string): { success: boolean; newExpiresIn: number } {
+  const session = activeSessions.get(token)
+  if (!session) {
+    return { success: false, newExpiresIn: 0 }
+  }
+
+  session.lastActivity = Date.now()
+  session.warningShown = false
+
+  const newExpiresIn = sessionTimeoutMinutes * 60
+  return { success: true, newExpiresIn }
+}
+
+// Get session info
+export function getSessionInfo(token: string): {
+  valid: boolean
+  userId?: string
+  lastActivity?: number
+  remainingSeconds?: number
+} {
+  const session = activeSessions.get(token)
+  if (!session) {
+    return { valid: false }
+  }
+
+  const now = Date.now()
+  const timeoutMs = sessionTimeoutMinutes * 60 * 1000
+  const timeSinceActivity = now - session.lastActivity
+
+  if (timeSinceActivity > timeoutMs) {
+    activeSessions.delete(token)
+    return { valid: false }
+  }
+
+  const remainingMs = timeoutMs - timeSinceActivity
+
+  return {
+    valid: true,
+    userId: session.userId,
+    lastActivity: session.lastActivity,
+    remainingSeconds: Math.ceil(remainingMs / 1000)
+  }
+}
 
 // Brute-force protection settings
 const MAX_FAILED_ATTEMPTS = 5
@@ -268,11 +371,14 @@ export async function login(username: string, password: string): Promise<AuthRes
     { expiresIn: JWT_EXPIRES_IN }
   )
 
-  // Store in active sessions
+  // Store in active sessions with activity tracking
   const decoded = jwt.decode(token) as TokenPayload
+  const nowTimestamp = Date.now()
   activeSessions.set(token, {
     userId: user.id,
-    expiresAt: decoded.exp * 1000
+    expiresAt: decoded.exp * 1000,
+    lastActivity: nowTimestamp,
+    warningShown: false
   })
 
   // Log successful login
@@ -304,7 +410,7 @@ export function logout(token: string, userId: string): void {
   }
 }
 
-export function verifyToken(token: string): { valid: boolean; payload?: TokenPayload; error?: string } {
+export function verifyToken(token: string): { valid: boolean; payload?: TokenPayload; error?: string; timeoutWarning?: boolean; remainingSeconds?: number } {
   try {
     // Check if token is in active sessions
     const session = activeSessions.get(token)
@@ -312,14 +418,31 @@ export function verifyToken(token: string): { valid: boolean; payload?: TokenPay
       return { valid: false, error: 'Session not found' }
     }
 
-    // Check if session has expired
+    // Check if JWT has expired
     if (Date.now() > session.expiresAt) {
       activeSessions.delete(token)
       return { valid: false, error: 'Session expired' }
     }
 
+    // Check session activity timeout
+    const now = Date.now()
+    const timeoutMs = sessionTimeoutMinutes * 60 * 1000
+    const timeSinceActivity = now - session.lastActivity
+
+    if (timeSinceActivity > timeoutMs) {
+      activeSessions.delete(token)
+      logAudit('USER_SESSION_TIMEOUT', session.userId, null, 'user', session.userId, { reason: 'inactivity' })
+      return { valid: false, error: 'Session timed out due to inactivity' }
+    }
+
+    // Calculate remaining time and warning
+    const remainingMs = timeoutMs - timeSinceActivity
+    const remainingSeconds = Math.ceil(remainingMs / 1000)
+    const warningThresholdMs = 5 * 60 * 1000
+    const timeoutWarning = remainingMs <= warningThresholdMs
+
     const payload = jwt.verify(token, JWT_SECRET) as TokenPayload
-    return { valid: true, payload }
+    return { valid: true, payload, timeoutWarning, remainingSeconds }
   } catch (error) {
     if (error instanceof jwt.TokenExpiredError) {
       activeSessions.delete(token)
@@ -614,12 +737,64 @@ export function deleteUser(
   }
 }
 
-// Clean up expired sessions periodically
+// Clean up expired sessions periodically (checks both JWT expiry and inactivity timeout)
 setInterval(() => {
   const now = Date.now()
+  const timeoutMs = sessionTimeoutMinutes * 60 * 1000
+
   for (const [token, session] of activeSessions.entries()) {
+    // Check JWT expiry
     if (now > session.expiresAt) {
       activeSessions.delete(token)
+      continue
+    }
+
+    // Check inactivity timeout
+    const timeSinceActivity = now - session.lastActivity
+    if (timeSinceActivity > timeoutMs) {
+      activeSessions.delete(token)
+      logAudit('USER_SESSION_TIMEOUT', session.userId, null, 'user', session.userId, { reason: 'inactivity_cleanup' })
     }
   }
 }, 60000) // Check every minute
+
+// Admin function to reset lockout for a user
+export function resetUserLockout(username: string, adminId: string): { success: boolean; error?: string } {
+  const admin = getUserById(adminId)
+  if (!admin || admin.role !== 'admin') {
+    return { success: false, error: 'Unauthorized' }
+  }
+
+  const key = username.toLowerCase()
+  const wasLocked = failedAttempts.has(key)
+  failedAttempts.delete(key)
+
+  if (wasLocked) {
+    logAudit('USER_LOCKOUT_RESET', adminId, admin.username, 'user', null, { target_username: username })
+  }
+
+  return { success: true }
+}
+
+// Get lockout status for admin UI
+export function getUserLockoutStatus(username: string): { isLocked: boolean; remainingSeconds?: number; failedAttempts?: number } {
+  const key = username.toLowerCase()
+  const record = failedAttempts.get(key)
+
+  if (!record) {
+    return { isLocked: false }
+  }
+
+  if (record.lockedUntil) {
+    const now = Date.now()
+    if (now < record.lockedUntil) {
+      const remainingSeconds = Math.ceil((record.lockedUntil - now) / 1000)
+      return { isLocked: true, remainingSeconds, failedAttempts: record.attempts }
+    }
+    // Lockout expired
+    failedAttempts.delete(key)
+    return { isLocked: false }
+  }
+
+  return { isLocked: false, failedAttempts: record.attempts }
+}

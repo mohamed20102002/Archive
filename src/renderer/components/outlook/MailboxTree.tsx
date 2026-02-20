@@ -99,14 +99,14 @@ export function MailboxTree({
   }
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200 h-full overflow-hidden flex flex-col">
-      <div className="px-4 py-3 border-b border-gray-200 bg-gray-50">
-        <h3 className="font-medium text-gray-900 text-sm">Mailboxes</h3>
+    <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 h-full overflow-hidden flex flex-col">
+      <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700/50">
+        <h3 className="font-medium text-gray-900 dark:text-gray-100 text-sm">Mailboxes</h3>
       </div>
 
       <div className="flex-1 overflow-y-auto p-2">
         {mailboxes.length === 0 ? (
-          <p className="text-sm text-gray-500 text-center py-4">No mailboxes found</p>
+          <p className="text-sm text-gray-500 dark:text-gray-400 text-center py-4">No mailboxes found</p>
         ) : (
           <div className="space-y-1">
             {mailboxes.map((mailbox) => (
@@ -115,8 +115,8 @@ export function MailboxTree({
                   onClick={() => onSelectMailbox(mailbox)}
                   className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left text-sm transition-colors ${
                     selectedMailbox?.id === mailbox.id
-                      ? 'bg-primary-50 text-primary-700'
-                      : 'text-gray-700 hover:bg-gray-100'
+                      ? 'bg-primary-50 dark:bg-primary-900/50 text-primary-700 dark:text-primary-300'
+                      : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
                   }`}
                 >
                   <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -138,12 +138,12 @@ export function MailboxTree({
                           onClick={() => onSelectFolder(folder)}
                           className={`w-full flex items-center gap-2 px-2 py-1.5 rounded text-left text-sm transition-colors ${
                             isSelected
-                              ? 'bg-primary-100 text-primary-700'
-                              : 'text-gray-600 hover:bg-gray-50'
+                              ? 'bg-primary-100 dark:bg-primary-900/50 text-primary-700 dark:text-primary-300'
+                              : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'
                           }`}
                           style={{ paddingLeft: `${(depth + 1) * 12}px` }}
                         >
-                          <span className={isSelected ? 'text-primary-600' : 'text-gray-400'}>
+                          <span className={isSelected ? 'text-primary-600 dark:text-primary-400' : 'text-gray-400'}>
                             {getFolderIcon(folder.name)}
                           </span>
                           <span className="truncate">{folder.name}</span>

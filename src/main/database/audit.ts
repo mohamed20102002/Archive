@@ -87,6 +87,18 @@ export type AuditAction =
   | 'BACKUP_FAILED'
   | 'SYSTEM_STARTUP'
   | 'SYSTEM_SHUTDOWN'
+  | 'USER_DELETE'
+  | 'USER_2FA_ENABLED'
+  | 'USER_2FA_DISABLED'
+  | 'USER_2FA_CODE_SENT'
+  | 'USER_2FA_SUCCESS'
+  | 'USER_2FA_FAILED'
+  | 'USER_2FA_MAX_ATTEMPTS'
+  | 'USER_2FA_CANCELLED'
+  | 'USER_SESSION_TIMEOUT'
+  | 'USER_LOCKOUT_RESET'
+  | 'AUDIT_INTEGRITY_CHECK'
+  | 'AUDIT_INTEGRITY_FAILED'
 
 export function initializeAuditSchema(): void {
   const db = getAuditDatabase()
@@ -353,4 +365,181 @@ export function getAuditStats(): {
     entriesByUser: Object.fromEntries(userStats.map(s => [s.username, s.count])),
     recentActivity
   }
+}
+
+// ===== Background Integrity Verification =====
+
+interface IntegrityStatus {
+  lastCheck: string | null
+  isValid: boolean
+  errors: string[]
+  checkedCount: number
+  isChecking: boolean
+}
+
+let integrityStatus: IntegrityStatus = {
+  lastCheck: null,
+  isValid: true,
+  errors: [],
+  checkedCount: 0,
+  isChecking: false
+}
+
+// Callbacks for integrity status changes
+const integrityCallbacks: ((status: IntegrityStatus) => void)[] = []
+
+export function onIntegrityStatusChange(callback: (status: IntegrityStatus) => void): void {
+  integrityCallbacks.push(callback)
+}
+
+export function removeIntegrityCallback(callback: (status: IntegrityStatus) => void): void {
+  const index = integrityCallbacks.indexOf(callback)
+  if (index !== -1) {
+    integrityCallbacks.splice(index, 1)
+  }
+}
+
+function notifyIntegrityChange(): void {
+  for (const callback of integrityCallbacks) {
+    try {
+      callback(integrityStatus)
+    } catch (e) {
+      console.error('Error in integrity callback:', e)
+    }
+  }
+}
+
+export function getIntegrityStatus(): IntegrityStatus {
+  return { ...integrityStatus }
+}
+
+/**
+ * Run audit integrity check in background
+ * This is called on startup and can be called manually
+ */
+export async function runBackgroundIntegrityCheck(): Promise<IntegrityStatus> {
+  if (integrityStatus.isChecking) {
+    return integrityStatus
+  }
+
+  integrityStatus.isChecking = true
+  notifyIntegrityChange()
+
+  return new Promise((resolve) => {
+    // Run in next tick to not block startup
+    setTimeout(() => {
+      try {
+        const result = verifyAuditIntegrity()
+
+        integrityStatus = {
+          lastCheck: new Date().toISOString(),
+          isValid: result.valid,
+          errors: result.errors,
+          checkedCount: result.checkedCount,
+          isChecking: false
+        }
+
+        // Log the check result
+        logAudit(
+          result.valid ? 'AUDIT_INTEGRITY_CHECK' : 'AUDIT_INTEGRITY_FAILED',
+          null,
+          'SYSTEM',
+          'audit',
+          null,
+          {
+            valid: result.valid,
+            errors_count: result.errors.length,
+            checked_count: result.checkedCount
+          }
+        )
+
+        notifyIntegrityChange()
+        resolve(integrityStatus)
+      } catch (e) {
+        console.error('Error during integrity check:', e)
+        integrityStatus = {
+          lastCheck: new Date().toISOString(),
+          isValid: false,
+          errors: [`Check failed: ${e}`],
+          checkedCount: 0,
+          isChecking: false
+        }
+        notifyIntegrityChange()
+        resolve(integrityStatus)
+      }
+    }, 100)
+  })
+}
+
+/**
+ * Verify a specific range of entries (for incremental verification)
+ */
+export function verifyAuditRange(startId: number, endId: number): {
+  valid: boolean
+  errors: string[]
+  checkedCount: number
+} {
+  const db = getAuditDatabase()
+  const errors: string[] = []
+
+  const entries = db.prepare(
+    'SELECT * FROM audit_log WHERE id >= ? AND id <= ? ORDER BY id ASC'
+  ).all(startId, endId) as AuditEntry[]
+
+  if (entries.length === 0) {
+    return { valid: true, errors: [], checkedCount: 0 }
+  }
+
+  // Get the entry before start to verify chain
+  const prevEntry = startId > 1
+    ? db.prepare('SELECT * FROM audit_log WHERE id = ?').get(startId - 1) as AuditEntry | undefined
+    : null
+
+  for (let i = 0; i < entries.length; i++) {
+    const entry = entries[i]
+
+    // Verify previous checksum chain
+    if (i === 0 && prevEntry) {
+      if (entry.previous_checksum !== prevEntry.checksum) {
+        errors.push(`Entry ${entry.id}: Previous checksum chain broken from entry ${prevEntry.id}`)
+      }
+    } else if (i > 0) {
+      const prev = entries[i - 1]
+      if (entry.previous_checksum !== prev.checksum) {
+        errors.push(`Entry ${entry.id}: Previous checksum chain broken`)
+      }
+    }
+
+    // Verify entry checksum
+    const entryData = JSON.stringify({
+      timestamp: entry.timestamp,
+      user_id: entry.user_id,
+      username: entry.username,
+      action: entry.action,
+      entity_type: entry.entity_type,
+      entity_id: entry.entity_id,
+      details: entry.details ? JSON.parse(entry.details) : null,
+      previous_checksum: entry.previous_checksum
+    })
+
+    const computedChecksum = crypto.createHash('sha256').update(entryData).digest('hex')
+    if (computedChecksum !== entry.checksum) {
+      errors.push(`Entry ${entry.id}: Checksum verification failed (data may have been tampered)`)
+    }
+  }
+
+  return {
+    valid: errors.length === 0,
+    errors,
+    checkedCount: entries.length
+  }
+}
+
+/**
+ * Get the latest entry ID for incremental checks
+ */
+export function getLatestAuditId(): number {
+  const db = getAuditDatabase()
+  const result = db.prepare('SELECT MAX(id) as max_id FROM audit_log').get() as { max_id: number | null }
+  return result.max_id || 0
 }

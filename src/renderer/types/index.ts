@@ -780,6 +780,7 @@ export const SIDEBAR_TABS = [
   { path: '/topics', label: 'Topics' },
   { path: '/issues', label: 'Open Issues' },
   { path: '/reminders', label: 'Reminders' },
+  { path: '/mentions', label: 'Mentions' },
   { path: '/calendar', label: 'Calendar' },
   { path: '/search', label: 'Advanced Search' },
   { path: '/mom', label: 'Minutes of Meeting' },
@@ -1319,6 +1320,8 @@ export interface CreateMomData {
   location_id?: string
   topic_ids?: string[]
   record_ids?: string[]
+  tag_ids?: string[]
+  mentions?: MentionWithNote[]
 }
 
 export interface UpdateMomData {
@@ -1326,6 +1329,7 @@ export interface UpdateMomData {
   subject?: string
   meeting_date?: string
   location_id?: string
+  tag_ids?: string[]
 }
 
 export interface CreateMomLocationData {
@@ -1527,4 +1531,56 @@ export interface UpdateEmailScheduleData {
   send_time?: string
   language?: EmailScheduleLanguage
   is_active?: boolean
+}
+
+// Mention types
+export type MentionEntityType = 'record' | 'mom' | 'letter' | 'issue'
+export type MentionStatus = 'pending' | 'acknowledged' | 'archived'
+
+export interface Mention {
+  id: string
+  entity_type: MentionEntityType
+  entity_id: string
+  mentioned_user_id: string
+  created_by: string
+  note: string | null
+  status: MentionStatus
+  acknowledged_at: string | null
+  archived_at: string | null
+  created_at: string
+  updated_at: string
+  // Joined fields
+  mentioned_user_name?: string
+  creator_name?: string
+  entity_title?: string
+  topic_id?: string // For records - needed for navigation
+  entity_deleted?: boolean // True if the referenced entity was deleted
+}
+
+export interface CreateMentionData {
+  entity_type: MentionEntityType
+  entity_id: string
+  mentioned_user_id: string
+  note?: string
+}
+
+export interface MentionFilters {
+  status?: MentionStatus
+  entity_type?: MentionEntityType
+}
+
+export interface MentionCounts {
+  pending: number
+  acknowledged: number
+  archived: number
+  sent: number
+}
+
+export interface MentionWithNote {
+  user: {
+    id: string
+    display_name: string
+    username: string
+  }
+  note: string
 }

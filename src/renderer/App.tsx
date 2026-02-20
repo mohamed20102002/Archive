@@ -6,6 +6,7 @@ import { SearchHighlightProvider } from './context/SearchHighlightContext'
 import { MainLayout } from './components/layout/MainLayout'
 import { LoginForm } from './components/auth/LoginForm'
 import { FirstRunSetup } from './components/auth/FirstRunSetup'
+import { SessionTimeoutWarning } from './components/auth/SessionTimeoutWarning'
 import { TopicList } from './components/topics/TopicList'
 import { Timeline } from './components/records/Timeline'
 import { LetterList } from './components/letters/LetterList'
@@ -148,6 +149,8 @@ export function App() {
   return (
     <HashRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
       <SearchHighlightProvider>
+      {/* Session timeout warning overlay */}
+      <SessionTimeoutWarning />
       <Routes>
         {/* Public routes */}
         <Route
@@ -177,6 +180,7 @@ export function App() {
           <Route path="topics/:topicId" element={<Timeline />} />
           <Route path="issues" element={null} />
           <Route path="reminders" element={null} />
+          <Route path="mentions" element={null} />
           <Route path="mom" element={null} />
           <Route path="letters" element={null} />
           <Route path="outlook" element={null} />

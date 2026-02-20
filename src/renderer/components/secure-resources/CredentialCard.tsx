@@ -3,11 +3,11 @@ import { useAuth } from '../../context/AuthContext'
 import type { Credential } from '../../types'
 
 const categoryColors: Record<string, string> = {
-  Software: 'bg-blue-100 text-blue-700',
-  Desktop: 'bg-purple-100 text-purple-700',
-  Server: 'bg-green-100 text-green-700',
-  Network: 'bg-orange-100 text-orange-700',
-  Other: 'bg-gray-100 text-gray-600'
+  Software: 'bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300',
+  Desktop: 'bg-purple-100 dark:bg-purple-900/50 text-purple-700 dark:text-purple-300',
+  Server: 'bg-green-100 dark:bg-green-900/50 text-green-700 dark:text-green-300',
+  Network: 'bg-orange-100 dark:bg-orange-900/50 text-orange-700 dark:text-orange-300',
+  Other: 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'
 }
 
 const colorClasses: Record<string, string> = {
@@ -96,10 +96,10 @@ export function CredentialCard({ credential, onClick, highlighted }: CredentialC
   return (
     <div
       onClick={onClick}
-      className={`relative bg-white rounded-lg border p-4 hover:shadow-md transition-all cursor-pointer ${
+      className={`relative bg-white dark:bg-gray-800 rounded-lg border p-4 hover:shadow-md transition-all cursor-pointer ${
         highlighted
           ? 'border-primary-400 ring-2 ring-primary-300 animate-pulse shadow-lg'
-          : 'border-gray-200 hover:border-gray-300'
+          : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
       }`}
     >
       {/* Color indicator - left border */}
@@ -119,9 +119,9 @@ export function CredentialCard({ credential, onClick, highlighted }: CredentialC
             </div>
           )}
           <div className="min-w-0">
-            <h3 className="text-sm font-semibold text-gray-900 truncate">{credential.system_name}</h3>
+            <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100 truncate">{credential.system_name}</h3>
             {credential.description && (
-              <p className="text-xs text-gray-500 mt-0.5 truncate">{credential.description}</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 truncate">{credential.description}</p>
             )}
           </div>
         </div>
@@ -132,13 +132,13 @@ export function CredentialCard({ credential, onClick, highlighted }: CredentialC
 
       {/* Username row */}
       <div className="flex items-center gap-2 mb-2">
-        <svg className="w-4 h-4 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <svg className="w-4 h-4 text-gray-400 dark:text-gray-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
         </svg>
-        <span className="text-sm text-gray-700 truncate flex-1 font-mono">{credential.username}</span>
+        <span className="text-sm text-gray-700 dark:text-gray-300 truncate flex-1 font-mono">{credential.username}</span>
         <button
           onClick={handleCopyUsername}
-          className="p-1 text-gray-400 hover:text-primary-600 transition-colors flex-shrink-0"
+          className="p-1 text-gray-400 dark:text-gray-500 hover:text-primary-600 dark:hover:text-primary-400 transition-colors flex-shrink-0"
           title="Copy username"
         >
           {copying === 'username' ? (
@@ -155,15 +155,15 @@ export function CredentialCard({ credential, onClick, highlighted }: CredentialC
 
       {/* Password row */}
       <div className="flex items-center gap-2">
-        <svg className="w-4 h-4 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <svg className="w-4 h-4 text-gray-400 dark:text-gray-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
         </svg>
-        <span className="text-sm text-gray-700 truncate flex-1 font-mono">
+        <span className="text-sm text-gray-700 dark:text-gray-300 truncate flex-1 font-mono">
           {passwordVisible ? passwordValue : '\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022'}
         </span>
         <button
           onClick={handleRevealPassword}
-          className="p-1 text-gray-400 hover:text-primary-600 transition-colors flex-shrink-0"
+          className="p-1 text-gray-400 dark:text-gray-500 hover:text-primary-600 dark:hover:text-primary-400 transition-colors flex-shrink-0"
           title={passwordVisible ? 'Hide password' : 'Show password'}
         >
           {passwordVisible ? (
@@ -179,7 +179,7 @@ export function CredentialCard({ credential, onClick, highlighted }: CredentialC
         </button>
         <button
           onClick={handleCopyPassword}
-          className="p-1 text-gray-400 hover:text-primary-600 transition-colors flex-shrink-0"
+          className="p-1 text-gray-400 dark:text-gray-500 hover:text-primary-600 dark:hover:text-primary-400 transition-colors flex-shrink-0"
           title="Copy password"
         >
           {copying === 'password' ? (

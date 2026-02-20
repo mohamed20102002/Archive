@@ -68,7 +68,7 @@ export function TopicCard({ topic, isPinned = false, onEdit, onDelete, onToggleP
   return (
     <div
       onClick={handleClick}
-      className={`card-hover cursor-pointer group ${isPinned ? 'ring-2 ring-amber-200 bg-amber-50/30' : ''}`}
+      className={`card-hover cursor-pointer group ${isPinned ? 'ring-2 ring-amber-400 dark:ring-amber-600 bg-amber-50/30 dark:bg-amber-900/20' : ''}`}
     >
       {/* Header */}
       <div className="flex items-start justify-between mb-3">
@@ -93,7 +93,7 @@ export function TopicCard({ topic, isPinned = false, onEdit, onDelete, onToggleP
           )}
           <button
             onClick={handleEdit}
-            className="p-1.5 rounded hover:bg-gray-100 text-gray-500 hover:text-gray-700"
+            className="p-1.5 rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
             title="Edit topic"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -102,7 +102,7 @@ export function TopicCard({ topic, isPinned = false, onEdit, onDelete, onToggleP
           </button>
           <button
             onClick={handleDelete}
-            className="p-1.5 rounded hover:bg-red-100 text-gray-500 hover:text-red-600"
+            className="p-1.5 rounded hover:bg-red-100 dark:hover:bg-red-900/30 text-gray-500 dark:text-gray-400 hover:text-red-600"
             title="Delete topic"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -113,20 +113,20 @@ export function TopicCard({ topic, isPinned = false, onEdit, onDelete, onToggleP
       </div>
 
       {/* Title */}
-      <h3 className="text-lg font-semibold text-gray-900 mb-2 line-clamp-2">
+      <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2 line-clamp-2">
         {topic.title}
       </h3>
 
       {/* Description */}
       {topic.description && (
-        <p className="text-sm text-gray-600 mb-4 line-clamp-2">
+        <p className="text-sm text-gray-600 dark:text-gray-400 mb-4 line-clamp-2">
           {topic.description}
         </p>
       )}
 
       {/* Footer Stats */}
-      <div className="flex items-center justify-between pt-3 border-t border-gray-100">
-        <div className="flex items-center gap-4 text-sm text-gray-500">
+      <div className="flex items-center justify-between pt-3 border-t border-gray-100 dark:border-gray-700">
+        <div className="flex items-center gap-4 text-sm text-gray-500 dark:text-gray-400">
           {/* Record Count */}
           <div className="flex items-center gap-1">
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

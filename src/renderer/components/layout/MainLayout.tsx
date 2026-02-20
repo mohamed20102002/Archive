@@ -1,27 +1,37 @@
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, Suspense, lazy } from 'react'
 import { Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { Sidebar } from './Sidebar'
 import { Header } from './Header'
 import { FloatingConsole } from '../common/FloatingConsole'
-import { OutlookBrowser } from '../outlook/OutlookBrowser'
-import { Dashboard } from '../dashboard/Dashboard'
-import { TopicList } from '../topics/TopicList'
-import { LetterList } from '../letters/LetterList'
-import { MOMList } from '../mom/MOMList'
-import { OpenIssues } from '../issues/OpenIssues'
-import { ReminderList } from '../reminders/ReminderList'
-import { ShiftHandover } from '../handover/ShiftHandover'
-import { AttendancePage } from '../attendance/AttendancePage'
-import { CalendarView } from '../calendar/CalendarView'
-import { AdvancedSearchPage } from '../search/AdvancedSearchPage'
-import { SecureResources } from '../secure-resources/SecureResources'
-import { AuditLog } from '../audit/AuditLog'
-import { BackupRestore } from '../backup/BackupRestore'
-import { Settings } from '../settings/Settings'
-import { ScheduledEmails } from '../scheduled-emails/ScheduledEmails'
+import { SuspenseFallback } from '../common/Skeleton'
+import { ErrorBoundary } from '../common/ErrorBoundary'
 import { useBackupProgress } from '../../hooks/useBackupProgress'
 import { BackupProgressOverlay } from '../backup/BackupProgressOverlay'
 import { useSettings } from '../../context/SettingsContext'
+import { CommandPalette, useCommandPalette } from '../common/CommandPalette'
+import { KeyboardShortcutsOverlay, useKeyboardShortcutsOverlay, GoToIndicator } from '../common/KeyboardShortcuts'
+import { useGoToNavigation } from '../../hooks/useKeyboardNavigation'
+import { Breadcrumbs } from '../common/Breadcrumbs'
+import { SkipLinks } from '../accessibility/SkipLinks'
+
+// Lazy loaded components for code splitting
+const OutlookBrowser = lazy(() => import('../outlook/OutlookBrowser').then(m => ({ default: m.OutlookBrowser })))
+const Dashboard = lazy(() => import('../dashboard/Dashboard').then(m => ({ default: m.Dashboard })))
+const TopicList = lazy(() => import('../topics/TopicList').then(m => ({ default: m.TopicList })))
+const LetterList = lazy(() => import('../letters/LetterList').then(m => ({ default: m.LetterList })))
+const MOMList = lazy(() => import('../mom/MOMList').then(m => ({ default: m.MOMList })))
+const OpenIssues = lazy(() => import('../issues/OpenIssues').then(m => ({ default: m.OpenIssues })))
+const ReminderList = lazy(() => import('../reminders/ReminderList').then(m => ({ default: m.ReminderList })))
+const ShiftHandover = lazy(() => import('../handover/ShiftHandover').then(m => ({ default: m.ShiftHandover })))
+const AttendancePage = lazy(() => import('../attendance/AttendancePage').then(m => ({ default: m.AttendancePage })))
+const CalendarView = lazy(() => import('../calendar/CalendarView').then(m => ({ default: m.CalendarView })))
+const AdvancedSearchPage = lazy(() => import('../search/AdvancedSearchPage').then(m => ({ default: m.AdvancedSearchPage })))
+const SecureResources = lazy(() => import('../secure-resources/SecureResources').then(m => ({ default: m.SecureResources })))
+const AuditLog = lazy(() => import('../audit/AuditLog').then(m => ({ default: m.AuditLog })))
+const BackupRestore = lazy(() => import('../backup/BackupRestore').then(m => ({ default: m.BackupRestore })))
+const Settings = lazy(() => import('../settings/Settings').then(m => ({ default: m.Settings })))
+const ScheduledEmails = lazy(() => import('../scheduled-emails/ScheduledEmails').then(m => ({ default: m.ScheduledEmails })))
+const MentionsPage = lazy(() => import('../mentions/MentionsPage').then(m => ({ default: m.MentionsPage })))
 
 // Backup Reminder Banner Component
 function BackupReminderBanner() {
@@ -165,28 +175,30 @@ function DiskSpaceWarningBanner() {
   )
 }
 
-const keepAliveRoutes: { path: string; Component: React.ComponentType }[] = [
-  { path: '/dashboard', Component: Dashboard },
-  { path: '/topics', Component: TopicList },
-  { path: '/issues', Component: OpenIssues },
-  { path: '/reminders', Component: ReminderList },
-  { path: '/mom', Component: MOMList },
-  { path: '/letters', Component: LetterList },
-  { path: '/handover', Component: ShiftHandover },
-  { path: '/secure-resources', Component: SecureResources },
-  { path: '/attendance', Component: AttendancePage },
-  { path: '/calendar', Component: CalendarView },
-  { path: '/search', Component: AdvancedSearchPage },
-  { path: '/scheduled-emails', Component: ScheduledEmails },
-  { path: '/audit', Component: AuditLog },
-  { path: '/backup', Component: BackupRestore },
-  { path: '/settings', Component: Settings },
+const keepAliveRoutes: { path: string; Component: React.LazyExoticComponent<React.ComponentType<any>>; fallbackType: 'page' | 'list' | 'dashboard' }[] = [
+  { path: '/dashboard', Component: Dashboard, fallbackType: 'dashboard' },
+  { path: '/topics', Component: TopicList, fallbackType: 'list' },
+  { path: '/issues', Component: OpenIssues, fallbackType: 'list' },
+  { path: '/reminders', Component: ReminderList, fallbackType: 'list' },
+  { path: '/mom', Component: MOMList, fallbackType: 'list' },
+  { path: '/letters', Component: LetterList, fallbackType: 'list' },
+  { path: '/handover', Component: ShiftHandover, fallbackType: 'page' },
+  { path: '/secure-resources', Component: SecureResources, fallbackType: 'list' },
+  { path: '/attendance', Component: AttendancePage, fallbackType: 'page' },
+  { path: '/calendar', Component: CalendarView, fallbackType: 'page' },
+  { path: '/search', Component: AdvancedSearchPage, fallbackType: 'page' },
+  { path: '/scheduled-emails', Component: ScheduledEmails, fallbackType: 'list' },
+  { path: '/mentions', Component: MentionsPage, fallbackType: 'list' },
+  { path: '/audit', Component: AuditLog, fallbackType: 'list' },
+  { path: '/backup', Component: BackupRestore, fallbackType: 'page' },
+  { path: '/settings', Component: Settings, fallbackType: 'page' },
 ]
 
 const keepAlivePaths = new Set(keepAliveRoutes.map(r => r.path))
 
 export function MainLayout() {
   const location = useLocation()
+  const navigate = useNavigate()
   const currentPath = location.pathname
   const isOutlookRoute = currentPath === '/outlook'
   const isKeepAliveRoute = keepAlivePaths.has(currentPath)
@@ -195,6 +207,11 @@ export function MainLayout() {
   const { progress } = useBackupProgress()
   const showGlobalProgress = progress && progress.phase !== 'complete' && progress.phase !== 'error'
 
+  // Command palette and keyboard shortcuts
+  const commandPalette = useCommandPalette()
+  const shortcutsOverlay = useKeyboardShortcutsOverlay()
+  const { pendingGo } = useGoToNavigation(navigate)
+
   // Log route changes to debug blink issue
   React.useEffect(() => {
     console.log(`[MainLayout] Route: ${currentPath}, isKeepAlive=${isKeepAliveRoute}, isOutlook=${isOutlookRoute}`)
@@ -202,6 +219,9 @@ export function MainLayout() {
 
   return (
     <div className="min-h-screen bg-archive-light dark:bg-gray-900 flex">
+      {/* Skip Links for Keyboard Navigation */}
+      <SkipLinks />
+
       {/* Sidebar */}
       <Sidebar />
 
@@ -214,17 +234,33 @@ export function MainLayout() {
         <DiskSpaceWarningBanner />
         <BackupReminderBanner />
 
+        {/* Breadcrumbs - show on detail pages */}
+        {currentPath.includes('/topics/') && (
+          <div className="px-6 py-2 bg-gray-50 dark:bg-gray-800/50 border-b border-gray-200 dark:border-gray-700">
+            <Breadcrumbs />
+          </div>
+        )}
+
         {/* Page content - each page handles its own scroll */}
-        <main className="flex-1 overflow-hidden relative">
+        <main id="main-content" className="flex-1 overflow-hidden relative" role="main" tabIndex={-1}>
+          {/* Modal Portal Container - modals render here to only blur main content */}
+          <div id="modal-root" className="absolute inset-0 z-[100] pointer-events-none" />
+
           {/* Always render OutlookBrowser, hide when not active */}
           <div className={isOutlookRoute ? 'h-full' : 'hidden'}>
-            <OutlookBrowser isActive={isOutlookRoute} />
+            <Suspense fallback={<SuspenseFallback type="page" />}>
+              <OutlookBrowser isActive={isOutlookRoute} />
+            </Suspense>
           </div>
 
           {/* Keep-alive routes: always mounted, toggle visibility */}
-          {keepAliveRoutes.map(({ path, Component }) => (
+          {keepAliveRoutes.map(({ path, Component, fallbackType }) => (
             <div key={path} className={currentPath === path ? 'h-full overflow-auto' : 'hidden'}>
-              <Component />
+              <ErrorBoundary level="page">
+                <Suspense fallback={<SuspenseFallback type={fallbackType} />}>
+                  <Component />
+                </Suspense>
+              </ErrorBoundary>
             </div>
           ))}
 
@@ -253,6 +289,21 @@ export function MainLayout() {
       {showGlobalProgress && progress && (
         <BackupProgressOverlay progress={progress} />
       )}
+
+      {/* Command Palette (Ctrl+K) */}
+      <CommandPalette
+        isOpen={commandPalette.isOpen}
+        onClose={commandPalette.close}
+      />
+
+      {/* Keyboard Shortcuts Overlay (Ctrl+/ or ?) */}
+      <KeyboardShortcutsOverlay
+        isOpen={shortcutsOverlay.isOpen}
+        onClose={shortcutsOverlay.close}
+      />
+
+      {/* Go-to mode indicator */}
+      <GoToIndicator active={pendingGo} />
     </div>
   )
 }

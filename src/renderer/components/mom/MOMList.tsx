@@ -8,6 +8,7 @@ import { MOMCard } from './MOMCard'
 import { MOMForm } from './MOMForm'
 import { MOMDetail } from './MOMDetail'
 import { ExportButton } from '../common/ExportButton'
+import { notifyMentionDataChanged } from '../mentions'
 import type { Mom, MomLocation, MomStats, MomFilters, Topic, CreateMomData } from '../../types'
 
 type TabMode = 'open' | 'closed'
@@ -33,6 +34,7 @@ export function MOMList() {
   const [isLoadingMore, setIsLoadingMore] = useState(false)
   const [hasMore, setHasMore] = useState(false)
   const [totalCount, setTotalCount] = useState(0)
+  const [refreshKey, setRefreshKey] = useState(0) // Force card remount to refetch tags
 
   // UI state
   const [tabMode, setTabMode] = useState<TabMode>('open')
@@ -245,12 +247,78 @@ export function MOMList() {
     }
   }, [location.state, tabMode])
 
+  // Handle highlight from URL query param (e.g., from mentions)
+  useEffect(() => {
+    const highlightId = searchParams.get('highlightId')
+    if (!highlightId || loading) return
+
+    const handleHighlightFromUrl = async () => {
+      // Fetch the MOM to check its status
+      const mom = await window.electronAPI.moms.getById(highlightId) as Mom | null
+      if (!mom) {
+        setSearchParams({}, { replace: true })
+        return
+      }
+
+      // Check if we need to switch tabs
+      const momStatus = mom.status === 'closed' ? 'closed' : 'open'
+      if (momStatus !== tabMode) {
+        setTabMode(momStatus)
+        // Wait for tab switch and data reload
+        setTimeout(() => {
+          setHighlightedMomId(highlightId)
+          setSearchParams({}, { replace: true })
+          requestAnimationFrame(() => {
+            const el = scrollContainerRef.current?.querySelector(`[data-mom-id="${highlightId}"]`)
+            if (el) {
+              el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+            }
+          })
+        }, 500)
+      } else {
+        // Same tab, just highlight
+        setHighlightedMomId(highlightId)
+        setSearchParams({}, { replace: true })
+        setTimeout(() => {
+          const el = scrollContainerRef.current?.querySelector(`[data-mom-id="${highlightId}"]`)
+          if (el) {
+            el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+          }
+        }, 300)
+      }
+
+      // Clear highlight after 5 seconds
+      setTimeout(() => setHighlightedMomId(null), 5000)
+    }
+
+    handleHighlightFromUrl()
+  }, [searchParams, loading, tabMode])
+
   const handleCreateMom = async (data: CreateMomData) => {
     if (!user) return
     try {
       const result = await window.electronAPI.moms.create(data, user.id)
       if (result.success) {
         const newMom = result.mom as Mom
+
+        // Save tags if provided
+        if (data.tag_ids && data.tag_ids.length > 0) {
+          await window.electronAPI.tags.setMomTags(newMom.id, data.tag_ids, user.id)
+        }
+
+        // Create mentions if provided
+        if (data.mentions && data.mentions.length > 0) {
+          await window.electronAPI.mentions.createBulk(
+            data.mentions.map(m => ({
+              entity_type: 'mom' as const,
+              entity_id: newMom.id,
+              mentioned_user_id: m.user.id,
+              note: m.note || undefined
+            })),
+            user.id
+          )
+          notifyMentionDataChanged()
+        }
 
         // Record operation for undo/redo
         recordOperation({
@@ -268,6 +336,7 @@ export function MOMList() {
         })
 
         setShowCreateModal(false)
+        setRefreshKey(k => k + 1) // Force cards to refetch tags
         loadMoms()
         loadStats()
 
@@ -284,6 +353,7 @@ export function MOMList() {
   }
 
   const handleMomUpdated = () => {
+    setRefreshKey(k => k + 1) // Force cards to refetch tags
     loadMoms()
     loadStats()
     // Refresh selected mom
@@ -307,13 +377,13 @@ export function MOMList() {
   return (
     <div className="flex-1 flex flex-col">
       {/* Sticky Header */}
-      <div className="sticky top-0 z-10 bg-archive-light border-b border-gray-200">
+      <div className="sticky top-0 z-10 bg-archive-light dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700">
         {/* Title row */}
         <div className="px-6 pt-6 pb-4">
           <div className="flex items-center justify-between mb-4">
             <div>
-              <h1 className="text-2xl font-bold text-gray-900">Minutes of Meeting</h1>
-              <p className="text-sm text-gray-500 mt-1">Manage meeting minutes, actions, and follow-ups</p>
+              <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Minutes of Meeting</h1>
+              <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Manage meeting minutes, actions, and follow-ups</p>
             </div>
             <div className="flex items-center gap-2">
               <ExportButton exportType="moms" />
@@ -332,21 +402,21 @@ export function MOMList() {
           {/* Stats */}
           {stats && (
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
-              <div className="bg-white rounded-lg border border-gray-200 p-3">
-                <p className="text-xs text-gray-500 uppercase font-medium">Total</p>
-                <p className="text-xl font-bold text-gray-900">{stats.total}</p>
+              <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-3">
+                <p className="text-xs text-gray-500 dark:text-gray-400 uppercase font-medium">Total</p>
+                <p className="text-xl font-bold text-gray-900 dark:text-gray-100">{stats.total}</p>
               </div>
-              <div className="bg-white rounded-lg border border-gray-200 p-3">
-                <p className="text-xs text-green-500 uppercase font-medium">Open</p>
-                <p className="text-xl font-bold text-green-700">{stats.open}</p>
+              <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-3">
+                <p className="text-xs text-green-500 dark:text-green-400 uppercase font-medium">Open</p>
+                <p className="text-xl font-bold text-green-700 dark:text-green-300">{stats.open}</p>
               </div>
-              <div className="bg-white rounded-lg border border-gray-200 p-3">
-                <p className="text-xs text-gray-500 uppercase font-medium">Closed</p>
-                <p className="text-xl font-bold text-gray-700">{stats.closed}</p>
+              <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-3">
+                <p className="text-xs text-gray-500 dark:text-gray-400 uppercase font-medium">Closed</p>
+                <p className="text-xl font-bold text-gray-700 dark:text-gray-300">{stats.closed}</p>
               </div>
-              <div className="bg-white rounded-lg border border-gray-200 p-3">
-                <p className="text-xs text-red-500 uppercase font-medium">Overdue Actions</p>
-                <p className={`text-xl font-bold ${stats.overdueActions > 0 ? 'text-red-600' : 'text-gray-900'}`}>
+              <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-3">
+                <p className="text-xs text-red-500 dark:text-red-400 uppercase font-medium">Overdue Actions</p>
+                <p className={`text-xl font-bold ${stats.overdueActions > 0 ? 'text-red-600 dark:text-red-400' : 'text-gray-900 dark:text-gray-100'}`}>
                   {stats.overdueActions}
                 </p>
               </div>
@@ -354,39 +424,39 @@ export function MOMList() {
           )}
 
           {/* Tabs */}
-          <div className="flex items-center gap-1 border-b border-gray-200 -mb-4">
+          <div className="flex items-center gap-1 border-b border-gray-200 dark:border-gray-700 -mb-4">
             <button
               onClick={() => setTabMode('open')}
               className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
                 tabMode === 'open'
-                  ? 'border-primary-600 text-primary-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700'
+                  ? 'border-primary-600 text-primary-600 dark:text-primary-400'
+                  : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
               }`}
             >
               Open
-              {stats && <span className="ml-1.5 text-xs px-1.5 py-0.5 rounded-full bg-gray-100">{stats.open}</span>}
+              {stats && <span className="ml-1.5 text-xs px-1.5 py-0.5 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300">{stats.open}</span>}
             </button>
             <button
               onClick={() => setTabMode('closed')}
               className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
                 tabMode === 'closed'
-                  ? 'border-primary-600 text-primary-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700'
+                  ? 'border-primary-600 text-primary-600 dark:text-primary-400'
+                  : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
               }`}
             >
               Closed
-              {stats && <span className="ml-1.5 text-xs px-1.5 py-0.5 rounded-full bg-gray-100">{stats.closed}</span>}
+              {stats && <span className="ml-1.5 text-xs px-1.5 py-0.5 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300">{stats.closed}</span>}
             </button>
           </div>
         </div>
 
         {/* Filter bar */}
-        <div className="px-6 py-3 bg-white border-t border-gray-100 flex flex-wrap items-center gap-3">
+        <div className="px-6 py-3 bg-white dark:bg-gray-800 border-t border-gray-100 dark:border-gray-700 flex flex-wrap items-center gap-3">
           {/* View Toggle */}
-          <div className="flex bg-white rounded-lg border border-gray-200 p-1">
+          <div className="flex bg-white dark:bg-gray-700 rounded-lg border border-gray-200 dark:border-gray-600 p-1">
             <button
               onClick={() => setViewMode('card')}
-              className={`p-2 rounded ${viewMode === 'card' ? 'bg-primary-100 text-primary-600' : 'text-gray-500 hover:text-gray-700'}`}
+              className={`p-2 rounded ${viewMode === 'card' ? 'bg-primary-100 dark:bg-primary-900/50 text-primary-600 dark:text-primary-400' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'}`}
               title="Card view"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -395,7 +465,7 @@ export function MOMList() {
             </button>
             <button
               onClick={() => setViewMode('table')}
-              className={`p-2 rounded ${viewMode === 'table' ? 'bg-primary-100 text-primary-600' : 'text-gray-500 hover:text-gray-700'}`}
+              className={`p-2 rounded ${viewMode === 'table' ? 'bg-primary-100 dark:bg-primary-900/50 text-primary-600 dark:text-primary-400' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'}`}
               title="Table view"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -411,9 +481,9 @@ export function MOMList() {
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search MOMs..."
-              className="w-full pl-9 pr-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+              className="w-full pl-9 pr-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-primary-500"
             />
-            <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 dark:text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
             </svg>
           </div>
@@ -422,7 +492,7 @@ export function MOMList() {
           <select
             value={filterLocation}
             onChange={(e) => setFilterLocation(e.target.value)}
-            className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+            className="px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-primary-500"
           >
             <option value="">All Locations</option>
             {locations.map(l => (
@@ -434,7 +504,7 @@ export function MOMList() {
           <select
             value={filterTopic}
             onChange={(e) => setFilterTopic(e.target.value)}
-            className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+            className="px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-primary-500"
           >
             <option value="">All Topics</option>
             {topics.map(t => (
@@ -448,15 +518,15 @@ export function MOMList() {
               type="date"
               value={filterDateFrom}
               onChange={(e) => setFilterDateFrom(e.target.value)}
-              className="min-w-[130px] px-2 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+              className="min-w-[130px] px-2 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-primary-500"
               placeholder="From"
             />
-            <span className="text-gray-400 text-xs">to</span>
+            <span className="text-gray-400 dark:text-gray-500 text-xs">to</span>
             <input
               type="date"
               value={filterDateTo}
               onChange={(e) => setFilterDateTo(e.target.value)}
-              className="min-w-[130px] px-2 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+              className="min-w-[130px] px-2 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-primary-500"
               placeholder="To"
             />
           </div>
@@ -464,7 +534,7 @@ export function MOMList() {
           {hasActiveFilters && (
             <button
               onClick={clearFilters}
-              className="px-2.5 py-1.5 text-xs font-medium text-red-600 bg-red-50 rounded-lg hover:bg-red-100 transition-colors"
+              className="px-2.5 py-1.5 text-xs font-medium text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/30 rounded-lg hover:bg-red-100 dark:hover:bg-red-900/50 transition-colors"
             >
               Clear Filters
             </button>
@@ -480,17 +550,17 @@ export function MOMList() {
           </div>
         ) : moms.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 text-center">
-            <svg className="w-16 h-16 text-gray-300 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="w-16 h-16 text-gray-300 dark:text-gray-600 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
             </svg>
-            <h3 className="text-lg font-medium text-gray-900 mb-1">
+            <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-1">
               {hasActiveFilters
                 ? 'No MOMs match your filters'
                 : tabMode === 'open'
                   ? 'No open MOMs'
                   : 'No closed MOMs'}
             </h3>
-            <p className="text-sm text-gray-500 mb-4">
+            <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
               {hasActiveFilters
                 ? 'Try adjusting your filters'
                 : tabMode === 'open'
@@ -514,7 +584,7 @@ export function MOMList() {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {sortedMoms.map((mom) => (
                 <MOMCard
-                  key={mom.id}
+                  key={`${mom.id}-${refreshKey}`}
                   mom={mom}
                   onClick={() => setSelectedMom(mom)}
                   highlighted={highlightedMomId === mom.id}
@@ -529,7 +599,7 @@ export function MOMList() {
                   <button
                     onClick={() => loadMoms(true, moms.length)}
                     disabled={isLoadingMore}
-                    className="px-6 py-2 text-sm font-medium text-primary-600 bg-primary-50 rounded-lg hover:bg-primary-100 transition-colors disabled:opacity-50"
+                    className="px-6 py-2 text-sm font-medium text-primary-600 dark:text-primary-400 bg-primary-50 dark:bg-primary-900/50 rounded-lg hover:bg-primary-100 dark:hover:bg-primary-900 transition-colors disabled:opacity-50"
                   >
                     {isLoadingMore ? (
                       <span className="flex items-center gap-2">
@@ -544,7 +614,7 @@ export function MOMList() {
                 {moms.length > PAGE_SIZE && (
                   <button
                     onClick={() => loadMoms(false)}
-                    className="px-6 py-2 text-sm font-medium text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+                    className="px-6 py-2 text-sm font-medium text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
                   >
                     Show Less
                   </button>
@@ -553,20 +623,20 @@ export function MOMList() {
             )}
           </>
         ) : (
-          <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
+          <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
+            <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+              <thead className="bg-gray-50 dark:bg-gray-700/50">
                 <tr>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">MOM ID</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Title</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Meeting Date</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Location</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Topics</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">MOM ID</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Title</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Meeting Date</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Location</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Topics</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Actions</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Status</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-200">
+              <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
                 {moms.map((mom) => {
                   const actionTotal = mom.action_total || 0
                   const actionResolved = mom.action_resolved || 0
@@ -577,36 +647,36 @@ export function MOMList() {
                       key={mom.id}
                       data-mom-id={mom.id}
                       onClick={() => setSelectedMom(mom)}
-                      className={`hover:bg-gray-50 cursor-pointer transition-colors duration-700 ${highlightedMomId === mom.id ? 'bg-primary-50 ring-2 ring-primary-300 ring-inset' : ''}`}
+                      className={`hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer transition-colors duration-700 ${highlightedMomId === mom.id ? 'bg-primary-50 dark:bg-primary-900/30 ring-2 ring-primary-300 dark:ring-primary-700 ring-inset' : ''}`}
                     >
                       <td className="px-4 py-3 whitespace-nowrap">
-                        <span className="text-sm font-mono text-gray-600">
+                        <span className="text-sm font-mono text-gray-600 dark:text-gray-400">
                           {mom.mom_id || '-'}
                         </span>
                       </td>
                       <td className="px-4 py-3">
-                        <span className="text-sm font-medium text-gray-900 line-clamp-1">{mom.title}</span>
+                        <span className="text-sm font-medium text-gray-900 dark:text-gray-100 line-clamp-1">{mom.title}</span>
                       </td>
-                      <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500">
+                      <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
                         {mom.meeting_date ? new Date(mom.meeting_date).toLocaleDateString() : '-'}
                       </td>
-                      <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500">
+                      <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
                         {mom.location_name || '-'}
                       </td>
-                      <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500">
+                      <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
                         {mom.topic_count || 0}
                       </td>
                       <td className="px-4 py-3 whitespace-nowrap">
                         <div className="flex items-center gap-1.5 text-xs">
-                          <span className="text-gray-600">{actionResolved}/{actionTotal}</span>
+                          <span className="text-gray-600 dark:text-gray-400">{actionResolved}/{actionTotal}</span>
                           {actionOverdue > 0 && (
-                            <span className="text-red-600 font-medium">({actionOverdue} overdue)</span>
+                            <span className="text-red-600 dark:text-red-400 font-medium">({actionOverdue} overdue)</span>
                           )}
                         </div>
                       </td>
                       <td className="px-4 py-3 whitespace-nowrap">
                         <span className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${
-                          isOpen ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'
+                          isOpen ? 'bg-green-100 dark:bg-green-900/50 text-green-700 dark:text-green-300' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400'
                         }`}>
                           {mom.status}
                         </span>

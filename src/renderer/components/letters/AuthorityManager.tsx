@@ -112,22 +112,22 @@ export function AuthorityManager() {
             placeholder="Search authorities..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="input w-full"
+            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-primary-500"
           />
         </div>
         <select
           value={filterType}
           onChange={(e) => setFilterType(e.target.value as AuthorityType | '')}
-          className="input w-48"
+          className="w-48 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-primary-500"
         >
           <option value="">All Types</option>
           <option value="internal">Internal</option>
           <option value="external">External</option>
         </select>
-        <div className="flex bg-white rounded-lg border border-gray-200 p-1">
+        <div className="flex bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-1">
           <button
             onClick={() => setViewMode('card')}
-            className={`p-2 rounded ${viewMode === 'card' ? 'bg-primary-100 text-primary-600' : 'text-gray-500 hover:text-gray-700'}`}
+            className={`p-2 rounded ${viewMode === 'card' ? 'bg-primary-100 dark:bg-primary-900/50 text-primary-600 dark:text-primary-400' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'}`}
             title="Card view"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -136,7 +136,7 @@ export function AuthorityManager() {
           </button>
           <button
             onClick={() => setViewMode('table')}
-            className={`p-2 rounded ${viewMode === 'table' ? 'bg-primary-100 text-primary-600' : 'text-gray-500 hover:text-gray-700'}`}
+            className={`p-2 rounded ${viewMode === 'table' ? 'bg-primary-100 dark:bg-primary-900/50 text-primary-600 dark:text-primary-400' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'}`}
             title="Table view"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -156,11 +156,11 @@ export function AuthorityManager() {
         </div>
       ) : authorities.length === 0 ? (
         <div className="text-center py-12">
-          <svg className="w-16 h-16 mx-auto text-gray-300 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg className="w-16 h-16 mx-auto text-gray-300 dark:text-gray-600 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
           </svg>
-          <h3 className="text-lg font-medium text-gray-900 mb-2">No authorities found</h3>
-          <p className="text-gray-500 mb-4">Add organizations you communicate with</p>
+          <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-2">No authorities found</h3>
+          <p className="text-gray-500 dark:text-gray-400 mb-4">Add organizations you communicate with</p>
           <button onClick={() => setShowCreateModal(true)} className="btn-primary">
             Add Authority
           </button>
@@ -168,22 +168,22 @@ export function AuthorityManager() {
       ) : viewMode === 'card' ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {authorities.map((auth) => (
-            <div key={auth.id} className="bg-white rounded-lg border border-gray-200 p-4 hover:shadow-md transition-shadow">
+            <div key={auth.id} className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4 hover:shadow-md transition-shadow">
               <div className="flex items-start justify-between mb-3">
                 <div>
-                  <h3 className="font-medium text-gray-900">{auth.name}</h3>
+                  <h3 className="font-medium text-gray-900 dark:text-gray-100">{auth.name}</h3>
                   {auth.short_name && (
-                    <p className="text-sm text-gray-500">{auth.short_name}</p>
+                    <p className="text-sm text-gray-500 dark:text-gray-400">{auth.short_name}</p>
                   )}
                 </div>
-                <span className={`inline-flex px-2 py-0.5 text-xs font-medium rounded-full ${auth.is_internal ? 'bg-blue-100 text-blue-800' : 'bg-amber-100 text-amber-800'}`}>
+                <span className={`inline-flex px-2 py-0.5 text-xs font-medium rounded-full ${auth.is_internal ? 'bg-blue-100 dark:bg-blue-900/50 text-blue-800 dark:text-blue-300' : 'bg-amber-100 dark:bg-amber-900/50 text-amber-800 dark:text-amber-300'}`}>
                   {auth.is_internal ? 'Internal' : 'External'}
                 </span>
               </div>
 
               {auth.address && (
-                <div className="flex items-start gap-2 text-sm text-gray-600 mb-2">
-                  <svg className="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <div className="flex items-start gap-2 text-sm text-gray-600 dark:text-gray-400 mb-2">
+                  <svg className="w-4 h-4 text-gray-400 dark:text-gray-500 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
                   </svg>
@@ -192,8 +192,8 @@ export function AuthorityManager() {
               )}
 
               {auth.contact_email && (
-                <div className="flex items-center gap-2 text-sm text-gray-600 mb-2">
-                  <svg className="w-4 h-4 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400 mb-2">
+                  <svg className="w-4 h-4 text-gray-400 dark:text-gray-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
                   </svg>
                   <span className="truncate">{auth.contact_email}</span>
@@ -201,22 +201,22 @@ export function AuthorityManager() {
               )}
 
               {auth.contact_phone && (
-                <div className="flex items-center gap-2 text-sm text-gray-600 mb-2">
-                  <svg className="w-4 h-4 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400 mb-2">
+                  <svg className="w-4 h-4 text-gray-400 dark:text-gray-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
                   </svg>
                   <span>{auth.contact_phone}</span>
                 </div>
               )}
 
-              <div className="flex items-center justify-between pt-3 mt-3 border-t border-gray-100">
-                <span className="text-xs text-gray-500">
+              <div className="flex items-center justify-between pt-3 mt-3 border-t border-gray-100 dark:border-gray-700">
+                <span className="text-xs text-gray-500 dark:text-gray-400">
                   {auth.letter_count || 0} letter{auth.letter_count !== 1 ? 's' : ''}
                 </span>
                 <div className="flex items-center gap-2">
                   <button
                     onClick={() => setEditingAuthority(auth)}
-                    className="text-gray-400 hover:text-primary-600"
+                    className="text-gray-400 dark:text-gray-500 hover:text-primary-600 dark:hover:text-primary-400"
                   >
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
@@ -224,7 +224,7 @@ export function AuthorityManager() {
                   </button>
                   <button
                     onClick={() => handleDelete(auth.id)}
-                    className="text-gray-400 hover:text-red-600"
+                    className="text-gray-400 dark:text-gray-500 hover:text-red-600 dark:hover:text-red-400"
                   >
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
@@ -236,45 +236,45 @@ export function AuthorityManager() {
           ))}
         </div>
       ) : (
-        <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
+        <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
+          <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+            <thead className="bg-gray-50 dark:bg-gray-700/50">
               <tr>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Short Name</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Email</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Phone</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Letters</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Name</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Short Name</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Type</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Email</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Phone</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Letters</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-200">
+            <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
               {authorities.map((auth) => (
-                <tr key={auth.id} className="hover:bg-gray-50">
+                <tr key={auth.id} className="hover:bg-gray-50 dark:hover:bg-gray-700">
                   <td className="px-4 py-3">
-                    <span className="font-medium text-gray-900">{auth.name}</span>
+                    <span className="font-medium text-gray-900 dark:text-gray-100">{auth.name}</span>
                   </td>
-                  <td className="px-4 py-3 text-gray-600">{auth.short_name || '-'}</td>
+                  <td className="px-4 py-3 text-gray-600 dark:text-gray-400">{auth.short_name || '-'}</td>
                   <td className="px-4 py-3">
-                    <span className={`inline-flex px-2 py-0.5 text-xs font-medium rounded-full ${auth.is_internal ? 'bg-blue-100 text-blue-800' : 'bg-amber-100 text-amber-800'}`}>
+                    <span className={`inline-flex px-2 py-0.5 text-xs font-medium rounded-full ${auth.is_internal ? 'bg-blue-100 dark:bg-blue-900/50 text-blue-800 dark:text-blue-300' : 'bg-amber-100 dark:bg-amber-900/50 text-amber-800 dark:text-amber-300'}`}>
                       {auth.is_internal ? 'Internal' : 'External'}
                     </span>
                   </td>
-                  <td className="px-4 py-3 text-gray-600">{auth.contact_email || '-'}</td>
-                  <td className="px-4 py-3 text-gray-600">{auth.contact_phone || '-'}</td>
-                  <td className="px-4 py-3 text-gray-600">{auth.letter_count || 0}</td>
+                  <td className="px-4 py-3 text-gray-600 dark:text-gray-400">{auth.contact_email || '-'}</td>
+                  <td className="px-4 py-3 text-gray-600 dark:text-gray-400">{auth.contact_phone || '-'}</td>
+                  <td className="px-4 py-3 text-gray-600 dark:text-gray-400">{auth.letter_count || 0}</td>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2">
                       <button
                         onClick={() => setEditingAuthority(auth)}
-                        className="text-primary-600 hover:text-primary-700 text-sm"
+                        className="text-primary-600 dark:text-primary-400 hover:text-primary-700 dark:hover:text-primary-300 text-sm"
                       >
                         Edit
                       </button>
                       <button
                         onClick={() => handleDelete(auth.id)}
-                        className="text-red-600 hover:text-red-700 text-sm"
+                        className="text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 text-sm"
                       >
                         Delete
                       </button>
@@ -381,45 +381,45 @@ function AuthorityForm({ authority, onSubmit, onCancel }: AuthorityFormProps) {
     <form onSubmit={handleSubmit} className="space-y-4">
       <div className="grid grid-cols-2 gap-4">
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
             Name <span className="text-red-500">*</span>
           </label>
           <input
             type="text"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            className={`input w-full ${errors.name ? 'border-red-500' : ''}`}
+            className={`w-full px-3 py-2 border rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-primary-500 ${errors.name ? 'border-red-500' : 'border-gray-300 dark:border-gray-600'}`}
             placeholder="Organization name"
           />
           {errors.name && <p className="text-red-500 text-sm mt-1">{errors.name}</p>}
         </div>
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
             Short Name
           </label>
           <input
             type="text"
             value={shortName}
             onChange={(e) => setShortName(e.target.value)}
-            className="input w-full"
+            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-primary-500"
             placeholder="e.g., ACME"
           />
         </div>
       </div>
 
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">
+        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
           Organization Type <span className="text-red-500">*</span>
         </label>
         <select
           value={isInternal ? 'internal' : 'external'}
           onChange={(e) => setIsInternal(e.target.value === 'internal')}
-          className="input w-full"
+          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-primary-500"
         >
           <option value="internal">Internal</option>
           <option value="external">External</option>
         </select>
-        <p className="text-xs text-gray-500 mt-1">
+        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
           {isInternal
             ? 'Internal organizations are used for internal correspondence'
             : 'External organizations are used for external correspondence with contacts'}
@@ -427,13 +427,13 @@ function AuthorityForm({ authority, onSubmit, onCancel }: AuthorityFormProps) {
       </div>
 
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">
+        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
           Address
         </label>
         <textarea
           value={address}
           onChange={(e) => setAddress(e.target.value)}
-          className="input w-full"
+          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-primary-500 resize-none"
           rows={2}
           placeholder="Full address"
         />
@@ -441,45 +441,45 @@ function AuthorityForm({ authority, onSubmit, onCancel }: AuthorityFormProps) {
 
       <div className="grid grid-cols-2 gap-4">
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
             Email
           </label>
           <input
             type="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            className="input w-full"
+            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-primary-500"
             placeholder="contact@example.com"
           />
         </div>
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
             Phone
           </label>
           <input
             type="tel"
             value={phone}
             onChange={(e) => setPhone(e.target.value)}
-            className="input w-full"
+            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-primary-500"
             placeholder="+1 234 567 890"
           />
         </div>
       </div>
 
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">
+        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
           Notes
         </label>
         <textarea
           value={notes}
           onChange={(e) => setNotes(e.target.value)}
-          className="input w-full"
+          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-primary-500 resize-none"
           rows={2}
           placeholder="Additional notes"
         />
       </div>
 
-      <div className="flex justify-end gap-3 pt-4 border-t">
+      <div className="flex justify-end gap-3 pt-4 border-t border-gray-200 dark:border-gray-700">
         <button type="button" onClick={onCancel} className="btn-secondary">
           Cancel
         </button>

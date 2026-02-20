@@ -40,6 +40,22 @@ export default defineConfig({
       rollupOptions: {
         input: {
           index: resolve(__dirname, 'src/renderer/index.html')
+        },
+        output: {
+          manualChunks: {
+            // Core React dependencies
+            'vendor-react': ['react', 'react-dom', 'react-router-dom'],
+            // TanStack Query
+            'vendor-query': ['@tanstack/react-query'],
+            // 3D graphics (large bundle)
+            'vendor-three': ['three', '@react-three/fiber', '@react-three/drei'],
+            // Charts
+            'vendor-charts': ['recharts'],
+            // Date utilities
+            'vendor-date': ['date-fns'],
+            // Document generation
+            'vendor-docs': ['docx', 'pdfmake', 'xlsx']
+          }
         }
       }
     },

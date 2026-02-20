@@ -71,6 +71,11 @@ export function MOMDetail({ mom, onClose, onUpdated }: MOMDetailProps) {
 
       const result = await window.electronAPI.moms.update(currentMom.id, data, user.id)
       if (result.success) {
+        // Save tags if provided
+        if (data.tag_ids !== undefined) {
+          await window.electronAPI.tags.setMomTags(currentMom.id, data.tag_ids || [], user.id)
+        }
+
         // Capture after state for undo/redo
         const afterData = await window.electronAPI.history.getEntity('mom', currentMom.id)
 
@@ -253,11 +258,11 @@ export function MOMDetail({ mom, onClose, onUpdated }: MOMDetailProps) {
       <div className="flex items-start justify-between gap-4">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1">
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-mono font-medium rounded bg-primary-50 text-primary-700">
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-mono font-medium rounded bg-primary-50 dark:bg-primary-900/50 text-primary-700 dark:text-primary-300">
               {currentMom.id.slice(0, 8)}
               <button
                 onClick={handleCopyId}
-                className="p-0.5 rounded hover:bg-primary-100 transition-colors"
+                className="p-0.5 rounded hover:bg-primary-100 dark:hover:bg-primary-800 transition-colors"
                 title="Copy MOM ID"
               >
                 {copied ? (
@@ -272,43 +277,43 @@ export function MOMDetail({ mom, onClose, onUpdated }: MOMDetailProps) {
               </button>
             </span>
             {currentMom.mom_id && (
-              <span className="inline-flex px-2 py-0.5 text-xs font-mono font-medium rounded bg-gray-100 text-gray-700">
+              <span className="inline-flex px-2 py-0.5 text-xs font-mono font-medium rounded bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300">
                 {currentMom.mom_id}
               </span>
             )}
             <span className={`inline-flex px-2 py-0.5 text-xs font-medium rounded-full ${
-              isOpen ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'
+              isOpen ? 'bg-green-100 dark:bg-green-900/50 text-green-700 dark:text-green-300' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400'
             }`}>
               {currentMom.status}
             </span>
           </div>
-          <h2 className="text-lg font-semibold text-gray-900">{currentMom.title}</h2>
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">{currentMom.title}</h2>
         </div>
         <div className="flex items-center gap-1 flex-shrink-0">
           {isOpen ? (
             <button
               onClick={handleClose}
-              className="px-3 py-1.5 text-xs font-medium text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+              className="px-3 py-1.5 text-xs font-medium text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
             >
               Close
             </button>
           ) : (
             <button
               onClick={handleReopen}
-              className="px-3 py-1.5 text-xs font-medium text-yellow-700 bg-yellow-50 rounded-lg hover:bg-yellow-100 transition-colors"
+              className="px-3 py-1.5 text-xs font-medium text-yellow-700 dark:text-yellow-300 bg-yellow-50 dark:bg-yellow-900/30 rounded-lg hover:bg-yellow-100 dark:hover:bg-yellow-900/50 transition-colors"
             >
               Reopen
             </button>
           )}
           <button
             onClick={() => setIsEditing(true)}
-            className="px-3 py-1.5 text-xs font-medium text-blue-700 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors"
+            className="px-3 py-1.5 text-xs font-medium text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-900/30 rounded-lg hover:bg-blue-100 dark:hover:bg-blue-900/50 transition-colors"
           >
             Edit
           </button>
           <button
             onClick={handleDelete}
-            className="px-3 py-1.5 text-xs font-medium text-red-700 bg-red-50 rounded-lg hover:bg-red-100 transition-colors"
+            className="px-3 py-1.5 text-xs font-medium text-red-700 dark:text-red-300 bg-red-50 dark:bg-red-900/30 rounded-lg hover:bg-red-100 dark:hover:bg-red-900/50 transition-colors"
           >
             Delete
           </button>
@@ -319,31 +324,31 @@ export function MOMDetail({ mom, onClose, onUpdated }: MOMDetailProps) {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {currentMom.subject && (
           <div className="col-span-2 md:col-span-4">
-            <p className="text-xs text-gray-500 uppercase font-medium">Subject</p>
-            <p className="text-sm text-gray-700 mt-0.5">{currentMom.subject}</p>
+            <p className="text-xs text-gray-500 dark:text-gray-400 uppercase font-medium">Subject</p>
+            <p className="text-sm text-gray-700 dark:text-gray-300 mt-0.5">{currentMom.subject}</p>
           </div>
         )}
         <div>
-          <p className="text-xs text-gray-500 uppercase font-medium">Meeting Date</p>
-          <p className="text-sm text-gray-700 mt-0.5">
+          <p className="text-xs text-gray-500 dark:text-gray-400 uppercase font-medium">Meeting Date</p>
+          <p className="text-sm text-gray-700 dark:text-gray-300 mt-0.5">
             {currentMom.meeting_date ? formatDate(currentMom.meeting_date) : '—'}
           </p>
         </div>
         <div>
-          <p className="text-xs text-gray-500 uppercase font-medium">Location</p>
-          <p className="text-sm text-gray-700 mt-0.5">{currentMom.location_name || '—'}</p>
+          <p className="text-xs text-gray-500 dark:text-gray-400 uppercase font-medium">Location</p>
+          <p className="text-sm text-gray-700 dark:text-gray-300 mt-0.5">{currentMom.location_name || '—'}</p>
         </div>
         <div>
-          <p className="text-xs text-gray-500 uppercase font-medium">Creator</p>
-          <p className="text-sm text-gray-700 mt-0.5">{currentMom.creator_name || '—'}</p>
+          <p className="text-xs text-gray-500 dark:text-gray-400 uppercase font-medium">Creator</p>
+          <p className="text-sm text-gray-700 dark:text-gray-300 mt-0.5">{currentMom.creator_name || '—'}</p>
         </div>
         <div className="min-w-0">
-          <p className="text-xs text-gray-500 uppercase font-medium">File</p>
+          <p className="text-xs text-gray-500 dark:text-gray-400 uppercase font-medium">File</p>
           {currentMom.original_filename ? (
             <div className="flex items-center gap-2 mt-0.5">
               <button
                 onClick={handleOpenFile}
-                className="text-sm text-blue-600 hover:text-blue-700 inline-flex items-center gap-1 min-w-0"
+                className="text-sm text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 inline-flex items-center gap-1 min-w-0"
                 title={currentMom.original_filename}
               >
                 <svg className="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -353,7 +358,7 @@ export function MOMDetail({ mom, onClose, onUpdated }: MOMDetailProps) {
               </button>
               <button
                 onClick={() => window.electronAPI.moms.showInFolder(currentMom.id)}
-                className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors"
+                className="p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
                 title="Open folder"
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -364,7 +369,7 @@ export function MOMDetail({ mom, onClose, onUpdated }: MOMDetailProps) {
           ) : (
             <button
               onClick={handleFileUpload}
-              className="text-sm text-primary-600 hover:text-primary-700 mt-0.5"
+              className="text-sm text-primary-600 dark:text-primary-400 hover:text-primary-700 dark:hover:text-primary-300 mt-0.5"
             >
               Upload file
             </button>
@@ -375,27 +380,27 @@ export function MOMDetail({ mom, onClose, onUpdated }: MOMDetailProps) {
       {/* Action Summary */}
       {actionTotal > 0 && (
         <div className="grid grid-cols-4 gap-2">
-          <div className="bg-gray-50 rounded-lg p-2 text-center">
-            <p className="text-xs text-gray-500">Total</p>
-            <p className="text-lg font-bold text-gray-900">{actionTotal}</p>
+          <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-2 text-center">
+            <p className="text-xs text-gray-500 dark:text-gray-400">Total</p>
+            <p className="text-lg font-bold text-gray-900 dark:text-gray-100">{actionTotal}</p>
           </div>
-          <div className="bg-green-50 rounded-lg p-2 text-center">
-            <p className="text-xs text-green-600">Resolved</p>
-            <p className="text-lg font-bold text-green-700">{actionResolved}</p>
+          <div className="bg-green-50 dark:bg-green-900/30 rounded-lg p-2 text-center">
+            <p className="text-xs text-green-600 dark:text-green-400">Resolved</p>
+            <p className="text-lg font-bold text-green-700 dark:text-green-300">{actionResolved}</p>
           </div>
-          <div className="bg-blue-50 rounded-lg p-2 text-center">
-            <p className="text-xs text-blue-600">Open</p>
-            <p className="text-lg font-bold text-blue-700">{actionOpen}</p>
+          <div className="bg-blue-50 dark:bg-blue-900/30 rounded-lg p-2 text-center">
+            <p className="text-xs text-blue-600 dark:text-blue-400">Open</p>
+            <p className="text-lg font-bold text-blue-700 dark:text-blue-300">{actionOpen}</p>
           </div>
-          <div className={`rounded-lg p-2 text-center ${actionOverdue > 0 ? 'bg-red-50' : 'bg-gray-50'}`}>
-            <p className={`text-xs ${actionOverdue > 0 ? 'text-red-600' : 'text-gray-500'}`}>Overdue</p>
-            <p className={`text-lg font-bold ${actionOverdue > 0 ? 'text-red-700' : 'text-gray-900'}`}>{actionOverdue}</p>
+          <div className={`rounded-lg p-2 text-center ${actionOverdue > 0 ? 'bg-red-50 dark:bg-red-900/30' : 'bg-gray-50 dark:bg-gray-700/50'}`}>
+            <p className={`text-xs ${actionOverdue > 0 ? 'text-red-600 dark:text-red-400' : 'text-gray-500 dark:text-gray-400'}`}>Overdue</p>
+            <p className={`text-lg font-bold ${actionOverdue > 0 ? 'text-red-700 dark:text-red-300' : 'text-gray-900 dark:text-gray-100'}`}>{actionOverdue}</p>
           </div>
         </div>
       )}
 
       {/* Tabs */}
-      <div className="border-b border-gray-200">
+      <div className="border-b border-gray-200 dark:border-gray-700">
         <div className="flex items-center gap-1">
           {(['actions', 'drafts', 'links', 'history'] as DetailTab[]).map((tab) => (
             <button
@@ -403,8 +408,8 @@ export function MOMDetail({ mom, onClose, onUpdated }: MOMDetailProps) {
               onClick={() => setActiveTab(tab)}
               className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors capitalize ${
                 activeTab === tab
-                  ? 'border-primary-600 text-primary-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700'
+                  ? 'border-primary-600 text-primary-600 dark:text-primary-400'
+                  : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
               }`}
             >
               {tab}

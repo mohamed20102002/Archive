@@ -173,7 +173,7 @@ export function CategoryManager({ type, onClose, onCategoriesUpdated }: Category
 
   return (
     <div className="space-y-4">
-      <p className="text-sm text-gray-600">
+      <p className="text-sm text-gray-600 dark:text-gray-400">
         Manage {typeLabel.toLowerCase()} categories. Categories are used to organize your {typeLabel.toLowerCase()}s.
       </p>
 
@@ -184,7 +184,7 @@ export function CategoryManager({ type, onClose, onCategoriesUpdated }: Category
           value={newCategoryName}
           onChange={(e) => setNewCategoryName(e.target.value)}
           placeholder={`New ${typeLabel.toLowerCase()} category...`}
-          className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+          className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-primary-500"
           onKeyDown={(e) => {
             if (e.key === 'Enter') handleCreateCategory()
           }}
@@ -204,7 +204,7 @@ export function CategoryManager({ type, onClose, onCategoriesUpdated }: Category
           <div className="animate-spin w-6 h-6 border-2 border-primary-600 border-t-transparent rounded-full" />
         </div>
       ) : categories.length === 0 ? (
-        <div className="text-center py-8 text-gray-500 text-sm">
+        <div className="text-center py-8 text-gray-500 dark:text-gray-400 text-sm">
           No categories found. Add one above.
         </div>
       ) : (
@@ -212,14 +212,14 @@ export function CategoryManager({ type, onClose, onCategoriesUpdated }: Category
           {categories.map((category, index) => (
             <div
               key={category.id}
-              className="flex items-center gap-2 p-2 bg-gray-50 rounded-lg border border-gray-200"
+              className="flex items-center gap-2 p-2 bg-gray-50 dark:bg-gray-700/50 rounded-lg border border-gray-200 dark:border-gray-700"
             >
               {/* Reorder buttons */}
               <div className="flex flex-col">
                 <button
                   onClick={() => handleMoveUp(index)}
                   disabled={index === 0}
-                  className="p-0.5 text-gray-400 hover:text-gray-600 disabled:opacity-30 disabled:cursor-not-allowed"
+                  className="p-0.5 text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 disabled:opacity-30 disabled:cursor-not-allowed"
                   title="Move up"
                 >
                   <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -229,7 +229,7 @@ export function CategoryManager({ type, onClose, onCategoriesUpdated }: Category
                 <button
                   onClick={() => handleMoveDown(index)}
                   disabled={index === categories.length - 1}
-                  className="p-0.5 text-gray-400 hover:text-gray-600 disabled:opacity-30 disabled:cursor-not-allowed"
+                  className="p-0.5 text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 disabled:opacity-30 disabled:cursor-not-allowed"
                   title="Move down"
                 >
                   <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -245,7 +245,7 @@ export function CategoryManager({ type, onClose, onCategoriesUpdated }: Category
                     type="text"
                     value={editingName}
                     onChange={(e) => setEditingName(e.target.value)}
-                    className="w-full px-2 py-1 border border-primary-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+                    className="w-full px-2 py-1 border border-primary-300 dark:border-primary-500 rounded text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-primary-500"
                     onKeyDown={(e) => {
                       if (e.key === 'Enter') handleSaveEdit()
                       if (e.key === 'Escape') handleCancelEdit()
@@ -254,13 +254,13 @@ export function CategoryManager({ type, onClose, onCategoriesUpdated }: Category
                   />
                 ) : deletingId === category.id ? (
                   <div className="text-sm">
-                    <span className="text-red-600 font-medium">Delete "{category.name}"?</span>
+                    <span className="text-red-600 dark:text-red-400 font-medium">Delete "{category.name}"?</span>
                     <div className="mt-1 flex items-center gap-2">
-                      <span className="text-xs text-gray-500">Reassign to:</span>
+                      <span className="text-xs text-gray-500 dark:text-gray-400">Reassign to:</span>
                       <select
                         value={reassignTo}
                         onChange={(e) => setReassignTo(e.target.value)}
-                        className="text-xs px-2 py-1 border border-gray-300 rounded"
+                        className="text-xs px-2 py-1 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
                       >
                         {categories.filter(c => c.id !== category.id).map(c => (
                           <option key={c.id} value={c.id}>{c.name}</option>
@@ -269,7 +269,7 @@ export function CategoryManager({ type, onClose, onCategoriesUpdated }: Category
                     </div>
                   </div>
                 ) : (
-                  <span className="text-sm font-medium text-gray-700">{category.name}</span>
+                  <span className="text-sm font-medium text-gray-700 dark:text-gray-300">{category.name}</span>
                 )}
               </div>
 
@@ -278,7 +278,7 @@ export function CategoryManager({ type, onClose, onCategoriesUpdated }: Category
                 <div className="flex gap-1">
                   <button
                     onClick={handleSaveEdit}
-                    className="p-1.5 text-green-600 hover:bg-green-100 rounded transition-colors"
+                    className="p-1.5 text-green-600 dark:text-green-400 hover:bg-green-100 dark:hover:bg-green-900/30 rounded transition-colors"
                     title="Save"
                   >
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -287,7 +287,7 @@ export function CategoryManager({ type, onClose, onCategoriesUpdated }: Category
                   </button>
                   <button
                     onClick={handleCancelEdit}
-                    className="p-1.5 text-gray-500 hover:bg-gray-200 rounded transition-colors"
+                    className="p-1.5 text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600 rounded transition-colors"
                     title="Cancel"
                   >
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -300,7 +300,7 @@ export function CategoryManager({ type, onClose, onCategoriesUpdated }: Category
                   <button
                     onClick={handleConfirmDelete}
                     disabled={categories.length <= 1}
-                    className="p-1.5 text-red-600 hover:bg-red-100 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="p-1.5 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/30 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                     title="Confirm delete"
                   >
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -309,7 +309,7 @@ export function CategoryManager({ type, onClose, onCategoriesUpdated }: Category
                   </button>
                   <button
                     onClick={handleCancelDelete}
-                    className="p-1.5 text-gray-500 hover:bg-gray-200 rounded transition-colors"
+                    className="p-1.5 text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600 rounded transition-colors"
                     title="Cancel"
                   >
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -321,7 +321,7 @@ export function CategoryManager({ type, onClose, onCategoriesUpdated }: Category
                 <div className="flex gap-1">
                   <button
                     onClick={() => handleStartEdit(category)}
-                    className="p-1.5 text-gray-500 hover:bg-gray-200 rounded transition-colors"
+                    className="p-1.5 text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600 rounded transition-colors"
                     title="Edit"
                   >
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -331,7 +331,7 @@ export function CategoryManager({ type, onClose, onCategoriesUpdated }: Category
                   <button
                     onClick={() => handleStartDelete(category.id)}
                     disabled={categories.length <= 1}
-                    className="p-1.5 text-red-500 hover:bg-red-100 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="p-1.5 text-red-500 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/30 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                     title={categories.length <= 1 ? 'Cannot delete last category' : 'Delete'}
                   >
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -346,10 +346,10 @@ export function CategoryManager({ type, onClose, onCategoriesUpdated }: Category
       )}
 
       {/* Close button */}
-      <div className="flex justify-end pt-2 border-t border-gray-200">
+      <div className="flex justify-end pt-2 border-t border-gray-200 dark:border-gray-700">
         <button
           onClick={onClose}
-          className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+          className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
         >
           Close
         </button>

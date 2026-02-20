@@ -2,8 +2,9 @@ import * as fs from 'fs'
 import * as path from 'path'
 import archiver from 'archiver'
 import yauzl from 'yauzl'
-import { BrowserWindow } from 'electron'
+import { BrowserWindow, app } from 'electron'
 import { getDatabase, getAuditDatabase, getDataPath, getEmailsPath, closeDatabase, checkpointDatabases, setRestoreInProgress } from '../database/connection'
+import { stopHealthMonitoring, startHealthMonitoring } from './health.service'
 import { getCurrentVersion, runMigrations } from '../database/migrations'
 import { initializeSchema } from '../database/schema'
 import { initializeAuditSchema } from '../database/audit'
@@ -523,24 +524,69 @@ function extractZipStreaming(
           fs.mkdirSync(targetDir, { recursive: true })
         }
 
-        // Stream the entry to disk
-        zipfile!.openReadStream(entry, (err, readStream) => {
-          if (err) return reject(err)
+        const isDbFile = normalized.endsWith('.db')
 
-          const writeStream = fs.createWriteStream(targetPath)
-          readStream!.pipe(writeStream)
+        // For database files, buffer the content and write with retries
+        // For other files, stream directly
+        if (isDbFile) {
+          // Buffer the database file content for retry capability
+          zipfile!.openReadStream(entry, (err, readStream) => {
+            if (err) return reject(err)
 
-          writeStream.on('close', () => {
-            extracted++
-            onProgress(extracted, totalEntries, normalized)
-            zipfile!.readEntry()
+            const chunks: Buffer[] = []
+            readStream!.on('data', (chunk: Buffer) => chunks.push(chunk))
+            readStream!.on('error', (readErr) => {
+              zipfile!.close()
+              reject(readErr)
+            })
+            readStream!.on('end', async () => {
+              const content = Buffer.concat(chunks)
+
+              // Write with retries for locked database files
+              let lastErr: Error | null = null
+              for (let attempt = 1; attempt <= 10; attempt++) {
+                try {
+                  fs.writeFileSync(targetPath, content)
+                  console.log(`[extractZipStreaming] Successfully wrote: ${normalized}`)
+                  extracted++
+                  onProgress(extracted, totalEntries, normalized)
+                  zipfile!.readEntry()
+                  return
+                } catch (writeErr: any) {
+                  lastErr = writeErr
+                  if ((writeErr.code === 'EBUSY' || writeErr.code === 'EPERM' || writeErr.code === 'EACCES') && attempt < 10) {
+                    console.log(`[extractZipStreaming] File locked, attempt ${attempt}/10, waiting ${attempt * 500}ms: ${normalized}`)
+                    await new Promise(resolve => setTimeout(resolve, attempt * 500))
+                  } else {
+                    break
+                  }
+                }
+              }
+
+              zipfile!.close()
+              reject(new Error(`Failed to write ${normalized} after 10 attempts: ${lastErr?.message}`))
+            })
           })
+        } else {
+          // Stream non-database files directly
+          zipfile!.openReadStream(entry, (err, readStream) => {
+            if (err) return reject(err)
 
-          writeStream.on('error', (writeErr) => {
-            zipfile!.close()
-            reject(writeErr)
+            const writeStream = fs.createWriteStream(targetPath)
+            readStream!.pipe(writeStream)
+
+            writeStream.on('close', () => {
+              extracted++
+              onProgress(extracted, totalEntries, normalized)
+              zipfile!.readEntry()
+            })
+
+            writeStream.on('error', (writeErr) => {
+              zipfile!.close()
+              reject(writeErr)
+            })
           })
-        })
+        }
       })
 
       zipfile!.on('end', () => resolve())
@@ -698,6 +744,19 @@ export function compareBackup(
 
 // ── Create Rollback Backup ──
 
+// Helper to copy a file with buffer (avoids keeping file handles open)
+function copyFileToArchive(archive: ReturnType<typeof archiver>, filePath: string, archiveName: string): void {
+  try {
+    // Read file into memory buffer to avoid keeping file handle open
+    const content = fs.readFileSync(filePath)
+    archive.append(content, { name: archiveName })
+  } catch (err: any) {
+    console.warn(`[createRollbackBackup] Failed to read file ${filePath}: ${err.message}`)
+    // Try with stream as fallback
+    archive.file(filePath, { name: archiveName })
+  }
+}
+
 async function createRollbackBackup(): Promise<string> {
   const dataPath = getDataPath()
   const now = new Date()
@@ -705,26 +764,53 @@ async function createRollbackBackup(): Promise<string> {
   const rollbackPath = path.join(getRollbackDir(), `Rollback_${dateStr}.zip`)
 
   const files = collectFiles(dataPath)
+  console.log(`[createRollbackBackup] Creating rollback with ${files.length} files...`)
 
   await new Promise<void>((resolve, reject) => {
     const output = fs.createWriteStream(rollbackPath)
     const archive = archiver('zip', { zlib: { level: 6 } })
 
-    output.on('close', () => resolve())
-    archive.on('error', (err: Error) => reject(err))
+    output.on('close', () => {
+      console.log(`[createRollbackBackup] Archive closed, size: ${archive.pointer()} bytes`)
+      resolve()
+    })
+
+    output.on('error', (err: Error) => {
+      console.error('[createRollbackBackup] Output stream error:', err)
+      reject(err)
+    })
+
+    archive.on('error', (err: Error) => {
+      console.error('[createRollbackBackup] Archive error:', err)
+      reject(err)
+    })
+
+    archive.on('warning', (err: Error) => {
+      console.warn('[createRollbackBackup] Archive warning:', err)
+    })
 
     archive.pipe(output)
 
+    // Use buffer-based append for database files to avoid keeping file handles open
     for (const file of files) {
-      archive.file(file.fullPath, { name: file.relativePath })
+      if (file.relativePath.endsWith('.db')) {
+        // For database files, read into memory to ensure no lingering handles
+        copyFileToArchive(archive, file.fullPath, file.relativePath)
+      } else {
+        archive.file(file.fullPath, { name: file.relativePath })
+      }
     }
 
     archive.finalize()
   })
 
+  // Wait a moment for all file handles to be released
+  await new Promise(resolve => setTimeout(resolve, 500))
+
   // Clean up old rollback files - keep only the latest one
   cleanupOldRollbacks(rollbackPath)
 
+  console.log(`[createRollbackBackup] Rollback created at: ${rollbackPath}`)
   return rollbackPath
 }
 
@@ -753,23 +839,34 @@ function cleanupOldRollbacks(keepPath: string): void {
 // ── Delete Data Directory Contents ──
 
 // Helper to delete a file with retries (handles Windows file locking)
-async function unlinkWithRetry(filePath: string, maxRetries: number = 10, delayMs: number = 1000): Promise<void> {
-  console.log(`[unlinkWithRetry] Attempting to delete: ${filePath}`)
-  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+async function unlinkWithRetry(filePath: string, maxRetries: number = 15, delayMs: number = 1000): Promise<void> {
+  const isDbFile = filePath.endsWith('.db') || filePath.endsWith('.db-wal') || filePath.endsWith('.db-shm')
+  const effectiveMaxRetries = isDbFile ? maxRetries : Math.min(maxRetries, 5)
+  const effectiveDelayMs = isDbFile ? delayMs * 2 : delayMs
+
+  console.log(`[unlinkWithRetry] Attempting to delete: ${filePath} (isDbFile: ${isDbFile})`)
+
+  let currentDelay = effectiveDelayMs
+  for (let attempt = 1; attempt <= effectiveMaxRetries; attempt++) {
     try {
       fs.unlinkSync(filePath)
       console.log(`[unlinkWithRetry] Successfully deleted: ${filePath}`)
       return
     } catch (error: any) {
-      console.log(`[unlinkWithRetry] Attempt ${attempt}/${maxRetries} failed for ${filePath}: ${error.code} - ${error.message}`)
+      console.log(`[unlinkWithRetry] Attempt ${attempt}/${effectiveMaxRetries} failed for ${filePath}: ${error.code} - ${error.message}`)
       if (error.code === 'EBUSY' || error.code === 'EPERM' || error.code === 'EACCES') {
-        if (attempt < maxRetries) {
-          console.log(`[unlinkWithRetry] Waiting ${delayMs}ms before retry...`)
-          await new Promise(resolve => setTimeout(resolve, delayMs))
-          delayMs *= 1.5 // Increase delay for each retry
+        if (attempt < effectiveMaxRetries) {
+          // Try garbage collection hint if available
+          if (global.gc && attempt % 3 === 0) {
+            console.log(`[unlinkWithRetry] Running garbage collection...`)
+            global.gc()
+          }
+          console.log(`[unlinkWithRetry] Waiting ${currentDelay}ms before retry...`)
+          await new Promise(resolve => setTimeout(resolve, currentDelay))
+          currentDelay = Math.min(currentDelay * 1.5, 10000) // Cap at 10 seconds
         } else {
-          console.log(`[unlinkWithRetry] All ${maxRetries} attempts failed for: ${filePath}`)
-          throw new Error(`Failed to delete file after ${maxRetries} attempts: ${filePath}`)
+          console.log(`[unlinkWithRetry] All ${effectiveMaxRetries} attempts failed for: ${filePath}`)
+          throw new Error(`Failed to delete file after ${effectiveMaxRetries} attempts: ${filePath}`)
         }
       } else {
         throw error
@@ -805,6 +902,10 @@ async function clearDataDirectory(dataPath: string): Promise<void> {
   const entries = fs.readdirSync(dataPath, { withFileTypes: true })
   console.log(`[clearDataDirectory] Found ${entries.length} entries: ${entries.map(e => e.name).join(', ')}`)
 
+  // Separate entries: process non-database files first, then database files last
+  const dbFiles: { fullPath: string; relPath: string }[] = []
+  const otherFiles: { fullPath: string; relPath: string; isDir: boolean }[] = []
+
   for (const entry of entries) {
     const fullPath = path.join(dataPath, entry.name)
     const relPath = entry.name
@@ -815,6 +916,19 @@ async function clearDataDirectory(dataPath: string): Promise<void> {
       continue
     }
 
+    // Skip WAL/SHM (will be deleted with their parent .db file)
+    if (relPath.endsWith('.db-wal') || relPath.endsWith('.db-shm')) {
+      console.log(`[clearDataDirectory] Deferring WAL/SHM file: ${relPath}`)
+      dbFiles.push({ fullPath, relPath })
+      continue
+    }
+
+    // Database files are deleted last
+    if (relPath.endsWith('.db')) {
+      dbFiles.push({ fullPath, relPath })
+      continue
+    }
+
     // For secure-resources, clear references and .keyfile but keep .temp
     if (relPath === 'secure-resources') {
       console.log(`[clearDataDirectory] Clearing secure-resources contents (except .temp)...`)
@@ -822,19 +936,53 @@ async function clearDataDirectory(dataPath: string): Promise<void> {
       continue
     }
 
-    if (entry.isDirectory()) {
+    otherFiles.push({ fullPath, relPath, isDir: entry.isDirectory() })
+  }
+
+  // Delete non-database files and directories first
+  for (const { fullPath, relPath, isDir } of otherFiles) {
+    if (isDir) {
       console.log(`[clearDataDirectory] Removing directory: ${relPath}`)
       await rmDirWithRetry(fullPath)
     } else {
-      // Skip WAL/SHM (shouldn't exist after checkpoint, but just in case)
-      if (relPath.endsWith('.db-wal') || relPath.endsWith('.db-shm')) {
-        console.log(`[clearDataDirectory] Skipping WAL/SHM file: ${relPath}`)
-        continue
-      }
       console.log(`[clearDataDirectory] Removing file: ${relPath}`)
       await unlinkWithRetry(fullPath)
     }
   }
+
+  // Handle database files
+  if (dbFiles.length > 0) {
+    // Separate WAL/SHM files from main database files
+    const walFiles = dbFiles.filter(f => f.relPath.endsWith('-wal') || f.relPath.endsWith('-shm'))
+    const mainDbFiles = dbFiles.filter(f => f.relPath.endsWith('.db'))
+
+    // Skip WAL/SHM files entirely - they are memory-mapped on Windows and can't be deleted
+    // while the process is running. SQLite will handle WAL recovery when reopening.
+    if (walFiles.length > 0) {
+      console.log(`[clearDataDirectory] Skipping ${walFiles.length} WAL/SHM files (Windows memory-mapped, will be handled by SQLite)`)
+      for (const { relPath } of walFiles) {
+        console.log(`[clearDataDirectory]   - Skipping: ${relPath}`)
+      }
+    }
+
+    // For main database files, try to delete but don't fail the restore if we can't
+    // The backup extraction will overwrite them anyway
+    for (const { fullPath, relPath } of mainDbFiles) {
+      console.log(`[clearDataDirectory] Attempting to remove database file: ${relPath}`)
+      try {
+        // Quick attempt - if it fails, the backup will overwrite it
+        fs.unlinkSync(fullPath)
+        console.log(`[clearDataDirectory] Successfully deleted: ${relPath}`)
+      } catch (err: any) {
+        if (err.code === 'EBUSY' || err.code === 'EPERM' || err.code === 'EACCES') {
+          console.log(`[clearDataDirectory] Cannot delete ${relPath} (locked) - backup will overwrite it`)
+        } else {
+          throw err
+        }
+      }
+    }
+  }
+
   console.log(`[clearDataDirectory] Completed clearing: ${dataPath}`)
 }
 
@@ -971,16 +1119,31 @@ export async function restoreBackup(
     checkpointDatabases()
 
     sendProgress({ phase: 'closing_db', percentage: 15, message: 'Closing database connections...' })
+
+    // CRITICAL: Stop health monitoring BEFORE setting restore flag
+    // Health monitoring holds database handles that prevent file deletion on Windows
+    console.log('[restoreBackup] Stopping health monitoring...')
+    stopHealthMonitoring()
+
+    // Wait a moment for any in-progress health checks to complete
+    await new Promise(resolve => setTimeout(resolve, 500))
+
     console.log('[restoreBackup] Setting restoreInProgress flag...')
     setRestoreInProgress(true)
 
-    console.log('[restoreBackup] Calling closeDatabase()...')
-    closeDatabase()
+    console.log('[restoreBackup] Calling closeDatabase(true) to force WAL cleanup...')
+    closeDatabase(true) // Force delete WAL files
     console.log('[restoreBackup] closeDatabase() completed')
 
-    // Wait for Windows to release file handles
-    console.log('[restoreBackup] Waiting 2 seconds for file handles to be released...')
-    await new Promise(resolve => setTimeout(resolve, 2000))
+    // Hint to garbage collector to release file handles (if available)
+    if (global.gc) {
+      console.log('[restoreBackup] Running garbage collection...')
+      global.gc()
+    }
+
+    // Wait for Windows to release file handles - increased wait time
+    console.log('[restoreBackup] Waiting 3 seconds for file handles to be released...')
+    await new Promise(resolve => setTimeout(resolve, 3000))
     console.log('[restoreBackup] Wait completed, proceeding with restore...')
 
     try {
@@ -1020,90 +1183,78 @@ export async function restoreBackup(
           currentFile: fileName
         })
       })
-    } finally {
-      // Clear the restore flag before reopening databases
-      console.log('[restoreBackup] Clearing restoreInProgress flag...')
+
+      // Extraction successful - now we need to reinitialize the app
+      console.log('[restoreBackup] Extraction complete. Reinitializing...')
+
+      // Clear restore flag
       setRestoreInProgress(false)
 
-      // Always reopen databases
-      sendProgress({ phase: 'reopening_db', percentage: 85, message: 'Reopening database connections...' })
-      getDatabase()
-      getAuditDatabase()
+      if (process.env.NODE_ENV === 'development') {
+        // In development mode, restarting breaks the Vite dev server connection
+        // Instead, we reinitialize the database and reload the window
+        sendProgress({ phase: 'restarting', percentage: 90, message: 'Reinitializing database...' })
 
-      // Run migrations to update restored database to current schema
-      sendProgress({ phase: 'migrating', percentage: 90, message: 'Applying schema migrations...' })
-      try {
-        initializeSchema()
-        initializeAuditSchema()
-        const migrationResult = runMigrations()
-        console.log('[restoreBackup] Migrations applied:', migrationResult.applied)
-        console.log('[restoreBackup] Current schema version:', migrationResult.currentVersion)
-      } catch (migrationError: any) {
-        console.error('[restoreBackup] Migration error:', migrationError)
-        // Continue anyway - the restore might still work
-      }
-    }
-
-    // Verify databases are working
-    sendProgress({ phase: 'verifying', percentage: 95, message: 'Verifying restored data...' })
-    try {
-      const db = getDatabase()
-      db.prepare('SELECT COUNT(*) FROM users').get()
-
-      // Fix any foreign key violations (e.g., if current user doesn't exist in restored DB)
-      const fkFixResult = fixForeignKeyViolations(userId, username, displayName)
-      if (fkFixResult.fixed.length > 0) {
-        console.log('[restoreBackup] FK fixes applied:', fkFixResult.fixed)
-      }
-      if (fkFixResult.errors.length > 0) {
-        console.warn('[restoreBackup] FK fix warnings:', fkFixResult.errors)
-      }
-    } catch (verifyError: any) {
-      // Attempt rollback
-      if (rollbackPath) {
         try {
-          closeDatabase()
+          // Reinitialize database connections (they were closed, now reopen with fresh files)
+          const db = getDatabase()
+          const auditDb = getAuditDatabase()
+
+          // Initialize schemas
+          initializeSchema(db)
+          initializeAuditSchema(auditDb)
+
+          // Run migrations on the restored database
+          sendProgress({ phase: 'restarting', percentage: 93, message: 'Running migrations...' })
+          runMigrations(db)
+
+          // Clear all sessions for security
+          clearAllSessions()
+
+          // Restart health monitoring
+          startHealthMonitoring()
+
+          sendProgress({ phase: 'restarting', percentage: 95, message: 'Restore complete! Reloading...' })
+
+          // Give the UI a moment to show the message
           await new Promise(resolve => setTimeout(resolve, 1000))
-          await clearDataDirectory(getDataPath())
-          await extractZipStreaming(rollbackPath, getDataPath(), getEmailsPath(), () => {})
-          getDatabase()
-          getAuditDatabase()
-          logAudit('BACKUP_ROLLBACK', userId, username, 'BACKUP', null, {
-            reason: 'verification_failed',
-            error: verifyError.message
-          })
-        } catch { /* ignore */ }
+
+          // Reload the renderer window
+          const windows = BrowserWindow.getAllWindows()
+          if (windows.length > 0) {
+            windows[0].webContents.reload()
+          }
+
+          return { success: true }
+        } catch (devRestoreError: any) {
+          console.error('[restoreBackup] Dev mode reinitialization failed:', devRestoreError)
+          // If dev mode reinit fails, fall back to full restart
+          sendProgress({ phase: 'restarting', percentage: 95, message: 'Restarting app...' })
+          await new Promise(resolve => setTimeout(resolve, 500))
+          app.relaunch()
+          app.exit(0)
+          return { success: true }
+        }
+      } else {
+        // In production mode, restart the app for a clean slate
+        // This ensures all memory-mapped WAL files are released
+        sendProgress({ phase: 'restarting', percentage: 95, message: 'Restore complete! Restarting app...' })
+
+        // Give the UI a moment to show the message
+        await new Promise(resolve => setTimeout(resolve, 1500))
+
+        // Relaunch the app
+        app.relaunch()
+        app.exit(0)
+
+        // This return won't be reached, but TypeScript needs it
+        return { success: true }
       }
-      return { success: false, error: `Restore verification failed: ${verifyError.message}` }
+    } catch (extractError: any) {
+      // If extraction fails, clear flag and continue to error handling
+      setRestoreInProgress(false)
+      throw extractError
     }
-
-    // Log audit for rollback creation
-    if (rollbackPath) {
-      logAudit('BACKUP_ROLLBACK', userId, username, 'BACKUP', null, {
-        rollback_path: rollbackPath
-      })
-    }
-
-    // Log successful restore
-    logAudit('BACKUP_RESTORE', userId, username, 'BACKUP', null, {
-      source_file: zipPath,
-      backup_date: analysis.info.backup_date,
-      backup_by: analysis.info.backup_by_username
-    })
-
-    // Clear all active sessions to force re-login
-    // This prevents FK errors when the current user's ID doesn't exist in the restored database
-    clearAllSessions()
-
-    // Notify renderer to refresh session (will trigger re-login if session is invalid)
-    const windows = BrowserWindow.getAllWindows()
-    if (windows.length > 0) {
-      windows[0].webContents.send('backup:sessionInvalidated')
-    }
-
-    sendProgress({ phase: 'complete', percentage: 100, message: 'Restore completed successfully!' })
-
-    return { success: true }
   } catch (error: any) {
     console.error('Restore failed:', error)
 
@@ -1140,6 +1291,10 @@ export async function restoreBackup(
         error: error.message
       })
     } catch { /* ignore */ }
+
+    // Restart health monitoring even on failure
+    console.log('[restoreBackup] Restarting health monitoring after failure...')
+    startHealthMonitoring()
 
     sendProgress({ phase: 'error', percentage: 0, message: `Restore failed: ${error.message}` })
 

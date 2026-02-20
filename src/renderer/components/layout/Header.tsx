@@ -284,9 +284,12 @@ export function Header() {
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               onFocus={() => searchResults && setShowResults(true)}
-              placeholder="Search everything..."
-              className="w-72 pl-10 pr-4 py-2 border border-gray-200 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+              placeholder="Search everything... (Ctrl+K)"
+              className="w-72 pl-10 pr-16 py-2 border border-gray-200 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
             />
+            <kbd className="absolute right-3 top-1/2 -translate-y-1/2 hidden sm:inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-mono bg-gray-100 dark:bg-gray-600 text-gray-500 dark:text-gray-400 rounded border border-gray-200 dark:border-gray-500">
+              Ctrl+K
+            </kbd>
             {isSearching ? (
               <div className="absolute left-3 top-1/2 -translate-y-1/2">
                 <div className="w-4 h-4 border-2 border-primary-500 border-t-transparent rounded-full animate-spin" />

@@ -57,7 +57,7 @@ export function ScheduledEmailCard({
   const isArabic = schedule.language === 'ar'
 
   return (
-    <div className={`bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm hover:shadow-md transition-shadow ${
+    <div className={`bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden shadow-sm hover:shadow-md dark:hover:shadow-gray-900/50 transition-shadow ${
       !schedule.is_active ? 'opacity-60' : ''
     }`}>
       <div className="p-5">
@@ -65,27 +65,27 @@ export function ScheduledEmailCard({
         <div className="flex items-start justify-between gap-4">
           <div className="flex items-start gap-4 flex-1 min-w-0">
             <div className={`p-3 rounded-xl flex-shrink-0 ${
-              schedule.is_active ? 'bg-primary-100' : 'bg-gray-100'
+              schedule.is_active ? 'bg-primary-100 dark:bg-primary-900/50' : 'bg-gray-100 dark:bg-gray-700'
             }`}>
               <svg className={`w-6 h-6 ${
-                schedule.is_active ? 'text-primary-600' : 'text-gray-400'
+                schedule.is_active ? 'text-primary-600 dark:text-primary-400' : 'text-gray-400'
               }`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
               </svg>
             </div>
             <div className="flex-1 min-w-0">
-              <h3 className="font-semibold text-gray-900 text-base">{schedule.name}</h3>
+              <h3 className="font-semibold text-gray-900 dark:text-gray-100 text-base">{schedule.name}</h3>
               {schedule.description && (
-                <p className="text-sm text-gray-500 mt-1 line-clamp-2">{schedule.description}</p>
+                <p className="text-sm text-gray-500 dark:text-gray-400 mt-1 line-clamp-2">{schedule.description}</p>
               )}
-              <div className="flex items-center gap-3 mt-3 text-sm text-gray-500 flex-wrap">
-                <span className="flex items-center gap-1.5 bg-gray-50 px-2.5 py-1 rounded-lg">
+              <div className="flex items-center gap-3 mt-3 text-sm text-gray-500 dark:text-gray-400 flex-wrap">
+                <span className="flex items-center gap-1.5 bg-gray-50 dark:bg-gray-700 px-2.5 py-1 rounded-lg">
                   <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                   </svg>
                   {formatTime(schedule.send_time)}
                 </span>
-                <span className="flex items-center gap-1.5 bg-gray-50 px-2.5 py-1 rounded-lg">
+                <span className="flex items-center gap-1.5 bg-gray-50 dark:bg-gray-700 px-2.5 py-1 rounded-lg">
                   <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                   </svg>
@@ -93,8 +93,8 @@ export function ScheduledEmailCard({
                 </span>
                 <span className={`px-2.5 py-1 rounded-lg text-xs font-medium ${
                   isArabic
-                    ? 'bg-emerald-100 text-emerald-700'
-                    : 'bg-blue-100 text-blue-700'
+                    ? 'bg-emerald-100 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300'
+                    : 'bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300'
                 }`}>
                   {isArabic ? 'Arabic' : 'English'}
                 </span>
@@ -105,7 +105,7 @@ export function ScheduledEmailCard({
           <button
             onClick={() => onToggleActive(schedule)}
             className={`relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors ${
-              schedule.is_active ? 'bg-primary-600' : 'bg-gray-300'
+              schedule.is_active ? 'bg-primary-600' : 'bg-gray-300 dark:bg-gray-600'
             }`}
             title={schedule.is_active ? 'Disable schedule' : 'Enable schedule'}
           >
@@ -118,15 +118,15 @@ export function ScheduledEmailCard({
         </div>
 
         {/* Recipients */}
-        <div className="mt-5 pt-4 border-t border-gray-100 space-y-2 text-sm">
+        <div className="mt-5 pt-4 border-t border-gray-100 dark:border-gray-700 space-y-2 text-sm">
           <div className="flex items-start gap-2">
             <span className="text-gray-400 font-medium flex-shrink-0 w-8">To:</span>
-            <span className="text-gray-700 break-all">{schedule.to_emails}</span>
+            <span className="text-gray-700 dark:text-gray-300 break-all">{schedule.to_emails}</span>
           </div>
           {schedule.cc_emails && (
             <div className="flex items-start gap-2">
               <span className="text-gray-400 font-medium flex-shrink-0 w-8">CC:</span>
-              <span className="text-gray-700 break-all">{schedule.cc_emails}</span>
+              <span className="text-gray-700 dark:text-gray-300 break-all">{schedule.cc_emails}</span>
             </div>
           )}
         </div>
@@ -136,7 +136,7 @@ export function ScheduledEmailCard({
           <div className="flex items-start gap-2">
             <span className="text-gray-400 font-medium flex-shrink-0">Subject:</span>
             <span
-              className="text-gray-800 font-medium flex-1"
+              className="text-gray-800 dark:text-gray-200 font-medium flex-1"
               dir={isArabic ? 'rtl' : 'ltr'}
               style={{ textAlign: isArabic ? 'right' : 'left' }}
             >
@@ -146,7 +146,7 @@ export function ScheduledEmailCard({
         </div>
 
         {/* Actions */}
-        <div className="mt-5 pt-4 border-t border-gray-100 flex items-center justify-between gap-4">
+        <div className="mt-5 pt-4 border-t border-gray-100 dark:border-gray-700 flex items-center justify-between gap-4">
           <div className="text-xs text-gray-400">
             Created {formatDate(schedule.created_at, 'withTime')}
             {schedule.created_by_name && ` by ${schedule.created_by_name}`}
@@ -154,7 +154,7 @@ export function ScheduledEmailCard({
           <div className="flex items-center gap-1">
             <button
               onClick={() => onComposePreview(schedule)}
-              className="p-2 text-gray-400 hover:text-green-600 hover:bg-green-50 rounded-lg transition-colors"
+              className="p-2 text-gray-400 hover:text-green-600 dark:hover:text-green-400 hover:bg-green-50 dark:hover:bg-green-900/30 rounded-lg transition-colors"
               title="Preview in Outlook"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -164,7 +164,7 @@ export function ScheduledEmailCard({
             </button>
             <button
               onClick={() => onViewHistory(schedule)}
-              className="p-2 text-gray-400 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-colors"
+              className="p-2 text-gray-400 hover:text-primary-600 dark:hover:text-primary-400 hover:bg-primary-50 dark:hover:bg-primary-900/30 rounded-lg transition-colors"
               title="View History"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -173,7 +173,7 @@ export function ScheduledEmailCard({
             </button>
             <button
               onClick={() => onEdit(schedule)}
-              className="p-2 text-gray-400 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-colors"
+              className="p-2 text-gray-400 hover:text-primary-600 dark:hover:text-primary-400 hover:bg-primary-50 dark:hover:bg-primary-900/30 rounded-lg transition-colors"
               title="Edit"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -182,7 +182,7 @@ export function ScheduledEmailCard({
             </button>
             <button
               onClick={() => onDelete(schedule.id)}
-              className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+              className="p-2 text-gray-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-colors"
               title="Delete"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
